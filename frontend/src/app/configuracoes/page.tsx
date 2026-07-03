@@ -1,11 +1,3 @@
-/**
- * Página de Configurações e Preferências do aplicativo Study Flow.
- * Esta tela permite gerenciar os dados da conta do usuário, definir opções
- * de privacidade (perfil público, compartilhamentos, visibilidade de horas),
- * acessar o painel de Ajuda e FAQ, deslogar ou excluir permanentemente a conta.
- * @packageDocumentation
- */
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -18,6 +10,7 @@ import {
   Calendar,
   ChevronRight,
   CircleHelp,
+  Gift,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -29,35 +22,19 @@ import {
   X,
 } from "lucide-react";
 
-/**
- * Representa os dados da sessão do usuário autenticado no sistema.
- */
 type UserSession = {
-  /** Endereço de e-mail do usuário logado */
   email: string;
-  /** Nome completo do usuário */
   nome: string;
-  /** Nome de usuário/apelido único do usuário */
   username: string;
 };
 
-/**
- * Representa as opções de privacidade configuráveis pelo usuário.
- */
 type PrivacySettings = {
-  /** Permite o compartilhamento de estatísticas com outros serviços/redes */
   allowSharing: boolean;
-  /** Define se o perfil acadêmico é visível publicamente */
   publicProfile: boolean;
-  /** Define se as conquistas alcançadas são exibidas publicamente */
   showAchievements: boolean;
-  /** Define se o total de horas estudadas é visível no perfil */
   showStudyHours: boolean;
 };
 
-/**
- * Opções de privacidade padrão da conta.
- */
 const defaultPrivacy: PrivacySettings = {
   allowSharing: true,
   publicProfile: false,
@@ -65,9 +42,6 @@ const defaultPrivacy: PrivacySettings = {
   showStudyHours: true,
 };
 
-/**
- * Perguntas frequentes (FAQ) e suas respectivas respostas apresentadas no FAQ modal.
- */
 const faqItems = [
   ["Como adicionar uma disciplina?", "Abra a aba Disciplinas e use a opção de adicionar matéria quando essa integração estiver disponível."],
   ["Como funciona o Timer Pomodoro?", "Escolha o período de foco ou pausa, selecione uma disciplina e inicie o cronômetro."],
@@ -77,9 +51,6 @@ const faqItems = [
   ["Como excluir minha conta?", "Em Configurações, use Excluir minha conta e confirme a ação no aviso de segurança."],
 ];
 
-/**
- * Lista de itens de navegação do menu lateral (Sidebar).
- */
 const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Calendário", href: "/calendario", icon: Calendar },
@@ -87,47 +58,21 @@ const menuItems = [
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
+  { name: "Recompensas", href: "/rewards", icon: Gift },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-/**
- * Componente interno que renderiza a visualização das Configurações.
- *
- * @param props - Propriedades do componente.
- * @param props.basic - Se verdadeiro, limita algumas interações avançadas de configurações (exemplo: exibição resumida).
- */
 export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const router = useRouter();
-
-  /** Sessão do usuário logado */
   const [user, setUser] = useState<UserSession | null>(null);
-
-  /** Controla a exibição da gaveta de notificações rápidas */
   const [showNotifications, setShowNotifications] = useState(false);
-
-  /** Controla a exibição do tooltip/modal de detalhes de perfil no header */
   const [showProfile, setShowProfile] = useState(false);
-
-  /** Controla a exibição do modal de aviso de segurança para exclusão de conta */
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-  /** Controla a exibição do modal de FAQ/Central de Ajuda */
   const [showFaq, setShowFaq] = useState(false);
-
-  /** Controla a exibição do modal de Ajustes de Privacidade */
   const [showPrivacy, setShowPrivacy] = useState(false);
-
-  /** Armazena o índice da pergunta do FAQ que está expandida (null se nenhuma) */
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-
-  /** Estado com as preferências de privacidade do usuário atual */
   const [privacy, setPrivacy] = useState<PrivacySettings>(defaultPrivacy);
 
-  /**
-   * Efeito executado na montagem do componente.
-   * Valida a autenticação do usuário. Em caso de sucesso, carrega os dados da sessão
-   * e as configurações de privacidade associadas ao e-mail do usuário do localStorage.
-   */
   useEffect(() => {
     const storedSession = localStorage.getItem("studyflow_session");
 
@@ -150,18 +95,11 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     }
   }, [router]);
 
-  /**
-   * Encerra a sessão ativa removendo o token/sessão do localStorage e redirecionando.
-   */
   const logout = () => {
     localStorage.removeItem("studyflow_session");
     router.push("/");
   };
 
-  /**
-   * Remove permanentemente o cadastro do usuário atual da lista global no localStorage,
-   * encerra a sessão ativa e redireciona para a tela de login.
-   */
   const deleteAccount = () => {
     if (!user) return;
 
@@ -183,11 +121,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     router.push("/");
   };
 
-  /**
-   * Inverte o valor booleano de uma chave de privacidade e atualiza a persistência local.
-   *
-   * @param key - Chave de configuração de privacidade a ser atualizada
-   */
   const updatePrivacy = (key: keyof PrivacySettings) => {
     if (!user) return;
 
@@ -249,7 +182,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
       </aside>
 
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
-        {/* HEADER */}
         <header className="relative flex items-center justify-between border-b border-gray-100 pb-6">
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[#5f8d87]">Preferências</p>
@@ -309,7 +241,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         </header>
 
         <div className="mx-auto mt-7 flex w-full max-w-5xl flex-col gap-6">
-          {/* Cartão de Identidade do Usuário */}
           <section className="relative overflow-hidden rounded-[28px] border border-[#dcecea] bg-white p-6 shadow-[0_8px_30px_rgba(41,100,94,0.06)] lg:p-8">
             <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full bg-[#e3f3f0]" />
             <div className="relative flex flex-col items-start gap-6 sm:flex-row sm:items-center">
@@ -335,7 +266,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
             </div>
           </section>
 
-          {/* Seção Geral de Opções */}
           <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgba(41,100,94,0.05)] lg:p-8">
             <div className="mb-6 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eaf6f4] text-[#29645e]">
@@ -413,7 +343,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
             </div>
           </section>
 
-          {/* Zona de Perigo */}
           <section className="flex flex-col items-start justify-between gap-5 rounded-[28px] border border-red-100 bg-gradient-to-r from-white to-red-50/40 p-6 shadow-[0_8px_30px_rgba(120,40,40,0.04)] sm:flex-row sm:items-center lg:p-8">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-500">Zona de risco</p>
@@ -434,7 +363,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         </div>
       </main>
 
-      {/* Modal Confirmar Exclusão */}
       {showDeleteModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#142421]/45 p-5 backdrop-blur-sm">
           <section
@@ -481,7 +409,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         </div>
       ) : null}
 
-      {/* Modal Privacidade */}
       {showPrivacy ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#142421]/45 p-5 backdrop-blur-sm">
           <section
@@ -540,7 +467,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         </div>
       ) : null}
 
-      {/* Central de Ajuda */}
       {showFaq ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#142421]/45 p-5 backdrop-blur-sm">
           <section
@@ -594,15 +520,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   );
 }
 
-/**
- * Componente de botão de controle de privacidade com chave liga/desliga (toggle switch).
- *
- * @param props - Propriedades do componente.
- * @param props.checked - Se verdadeiro, exibe a chave como ativada.
- * @param props.description - Texto descritivo do impacto da configuração.
- * @param props.label - Título do controle de privacidade.
- * @param props.onChange - Função de callback disparada ao clicar no botão.
- */
 function PrivacyToggle({
   checked,
   description,
@@ -632,10 +549,6 @@ function PrivacyToggle({
   );
 }
 
-/**
- * Componente padrão que encapsula e exporta a página de Configurações.
- */
 export default function ConfiguracoesPage() {
   return <ConfiguracoesView />;
 }
-

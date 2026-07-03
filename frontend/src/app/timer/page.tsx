@@ -1,11 +1,3 @@
-/**
- * Página do Cronômetro Pomodoro (Timer) do aplicativo Study Flow.
- * Esta tela fornece um temporizador Pomodoro completo com controle de ciclos (foco,
- * pausa curta e pausa longa), associação com disciplinas e bloco de anotações persistente
- * por disciplina no localStorage.
- * @packageDocumentation
- */
-
 "use client";
 
 import type { NextPage } from "next";
@@ -26,62 +18,37 @@ import {
   Pause,
   RotateCcw,
   Book,
-  ClipboardList
+  ClipboardList,
+  Gift
 } from "lucide-react";
 
-/**
- * Representa os dados da sessão do usuário autenticado no sistema.
- */
 interface UserSession {
-  /** Endereço de e-mail do usuário logado */
   email: string;
-  /** Nome completo do usuário */
   nome: string;
-  /** Nome de usuário/apelido único do usuário */
   username: string;
 }
 
-/**
- * Componente principal da página de Timer.
- * Gerencia o fluxo de foco Pomodoro, notas associadas a matérias e notificações locais de status.
- */
 const TimerDashboard: NextPage = () => {
   const router = useRouter();
-
-  /** Dados da sessão ativa do usuário */
   const [user, setUser] = useState<UserSession | null>(null);
-
-  /** Identificador da aba ativa no layout (sempre "Timer") */
   const activeTab = "Timer";
   
-  /** Controla a visibilidade da gaveta de detalhes de perfil */
+  // Perfil e Notificações dropdowns
   const [showProfile, setShowProfile] = useState(false);
-
-  /** Controla a visibilidade da gaveta de notificações */
   const [showNotifications, setShowNotifications] = useState(false);
-
-  /** Lista de mensagens de notificações locais */
   const [notifications, setNotifications] = useState<string[]>([
     "Bem-vindo ao Study Flow! Comece sua primeira sessão.",
     "Dica: Faça pausas regulares para manter o foco."
   ]);
 
-  /** Tipo do temporizador atual (foco de 25 min, pausa curta de 5 min ou pausa longa de 15 min) */
+  // Pomodoro Timer States
   const [timerType, setTimerType] = useState<"foco" | "pausa_curta" | "pausa_longa">("foco");
-
-  /** Quantidade de segundos restantes para o ciclo atual acabar */
   const [secondsLeft, setSecondsLeft] = useState<number>(25 * 60);
-
-  /** Duração total do ciclo atual em segundos (para o cálculo da porcentagem do círculo) */
   const [totalDuration, setTotalDuration] = useState<number>(25 * 60);
-
-  /** Indica se o cronômetro está rodando ativamente */
   const [isRunning, setIsRunning] = useState<boolean>(false);
-
-  /** Referência para o temporizador em background (`setInterval`) */
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  /** Lista de disciplinas acadêmicas disponíveis */
+  // Disciplinas & Notas
   const [disciplines] = useState<string[]>([
     "Banco de Dados",
     "Algoritmos",
@@ -89,17 +56,10 @@ const TimerDashboard: NextPage = () => {
     "Redes de Computadores",
     "Sistemas Operacionais"
   ]);
-
-  /** Disciplina selecionada para vincular a sessão de foco Pomodoro */
   const [selectedDiscipline, setSelectedDiscipline] = useState<string>("Banco de Dados");
-
-  /** Notas e anotações do usuário para a disciplina selecionada */
   const [notes, setNotes] = useState<string>("");
 
-  /**
-   * Efeito para verificar se o usuário está autenticado.
-   * Se não houver sessão ativa no localStorage, redireciona-o para a tela de Login.
-   */
+  // Redirecionamento caso não autenticado e carregamento de sessão
   useEffect(() => {
     const session = localStorage.getItem("studyflow_session");
     if (!session) {
@@ -112,10 +72,7 @@ const TimerDashboard: NextPage = () => {
     }
   }, [router]);
 
-  /**
-   * Efeito para sincronizar as notas de estudo quando o usuário seleciona uma disciplina diferente.
-   * Busca as notas correspondentes no localStorage.
-   */
+  // Sincroniza anotações ao mudar de disciplina ou usuário
   useEffect(() => {
     if (user && selectedDiscipline) {
       const storedNotes = localStorage.getItem(`studyflow_notes_${user.email}_${selectedDiscipline}`);
@@ -125,11 +82,7 @@ const TimerDashboard: NextPage = () => {
     }
   }, [user, selectedDiscipline]);
 
-  /**
-   * Persiste as notas de estudo alteradas na disciplina atual no localStorage.
-   *
-   * @param text - Novo texto digitado no bloco de notas
-   */
+  // Salva anotações no localStorage
   const handleNotesChange = (text: string) => {
     setNotes(text);
     if (user && selectedDiscipline) {
@@ -137,12 +90,7 @@ const TimerDashboard: NextPage = () => {
     }
   };
 
-  /**
-   * Retorna a duração padrão em segundos de acordo com a aba/tipo do timer selecionado.
-   *
-   * @param type - Tipo do timer (foco, pausa curta, pausa longa)
-   * @returns Duração correspondente em segundos
-   */
+  // Ajusta o tempo inicial com base no tipo de timer selecionado
   const getInitialTime = (type: "foco" | "pausa_curta" | "pausa_longa") => {
     switch (type) {
       case "foco":
@@ -154,12 +102,7 @@ const TimerDashboard: NextPage = () => {
     }
   };
 
-  /**
-   * Altera a categoria de tempo selecionada, limpando cronômetros rodando no momento
-   * e resetando o contador de tempo.
-   *
-   * @param type - Novo tipo de timer a ser ativado
-   */
+  // Muda a aba do Timer (Foco, Pausa Curta, Pausa Longa)
   const handleTimerTypeChange = (type: "foco" | "pausa_curta" | "pausa_longa") => {
     setIsRunning(false);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -170,16 +113,12 @@ const TimerDashboard: NextPage = () => {
     setTotalDuration(duration);
   };
 
-  /**
-   * Liga ou desliga (pausa) o cronômetro ativo.
-   */
+  // Iniciar/Pausar cronômetro
   const toggleTimer = () => {
     setIsRunning(!isRunning);
   };
 
-  /**
-   * Reseta o cronômetro para o tempo inicial correspondente ao tipo de timer atual.
-   */
+  // Resetar cronômetro
   const resetTimer = () => {
     setIsRunning(false);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -187,12 +126,7 @@ const TimerDashboard: NextPage = () => {
     setSecondsLeft(duration);
   };
 
-  /**
-   * Efeito núcleo do Pomodoro.
-   * Quando o cronômetro está rodando (`isRunning = true`), inicia um `setInterval`
-   * que decrementa os segundos a cada 1 segundo. Quando o tempo atinge zero,
-   * dispara um alerta e atualiza as notificações de finalização de sessão.
-   */
+  // Efeito principal do Timer (Intervalo de 1 segundo)
   useEffect(() => {
     if (isRunning) {
       timerRef.current = setInterval(() => {
@@ -223,36 +157,27 @@ const TimerDashboard: NextPage = () => {
     };
   }, [isRunning, timerType, selectedDiscipline]);
 
-  /**
-   * Encerra a sessão ativa do usuário no dispositivo atual e redireciona para a tela de Login.
-   */
+  // Função de logout
   const handleLogout = () => {
     localStorage.removeItem("studyflow_session");
     router.push("/");
   };
 
-  /**
-   * Formata uma quantidade total de segundos no formato legível de minutos e segundos (MM:SS).
-   *
-   * @param totalSeconds - Tempo total em segundos
-   * @returns String formatada no formato "MM:SS"
-   */
+  // Formatação de minutos/segundos (MM:SS)
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  /** Raio do círculo do temporizador SVG */
+  // Cálculo do progresso circular do timer (SVG)
   const radius = 90;
-  /** Circunferência total do círculo do temporizador SVG */
   const circumference = 2 * Math.PI * radius;
-  /** Deslocamento (dashoffset) da borda do círculo com base na proporção do tempo restante */
   const strokeDashoffset = totalDuration > 0 
     ? circumference - (secondsLeft / totalDuration) * circumference 
     : 0;
 
-  /** Lista de itens de navegação do menu lateral (Sidebar) */
+  // Renderizador da Barra Lateral (Sidebar)
   const menuItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Calendário", href: "/calendario", icon: Calendar },
@@ -260,6 +185,7 @@ const TimerDashboard: NextPage = () => {
     { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
     { name: "Timer", href: "/timer", icon: TimerIcon },
     { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
+    { name: "Recompensas", href: "/rewards", icon: Gift },
     { name: "Configurações", href: "/configuracoes", icon: Settings },
   ];
 

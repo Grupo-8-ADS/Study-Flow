@@ -1,10 +1,3 @@
-/**
- * Página de Estatísticas e Progresso de Estudos do aplicativo Study Flow.
- * Esta tela compila os dados de tempo dedicado aos estudos, rendimento acadêmico por
- * disciplina, conquistas desbloqueadas (troféus) e controle de nível/experiência.
- * @packageDocumentation
- */
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -16,6 +9,7 @@ import {
   BookOpen,
   Calendar,
   Check,
+  Gift,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -27,26 +21,14 @@ import {
   X,
 } from "lucide-react";
 
-/**
- * Representa a granularidade temporal para visualização do gráfico de estudos.
- */
 type Period = "semana" | "mes" | "acumulado";
 
-/**
- * Representa a sessão ativa do usuário autenticado no sistema.
- */
 type UserSession = {
-  /** Endereço de e-mail do usuário logado */
   email: string;
-  /** Nome completo do usuário */
   nome: string;
-  /** Nome de usuário/apelido único do usuário */
   username: string;
 };
 
-/**
- * Lista de itens de navegação do menu lateral (Sidebar).
- */
 const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Calendário", href: "/calendario", icon: Calendar },
@@ -54,12 +36,10 @@ const menuItems = [
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
+  { name: "Recompensas", href: "/rewards", icon: Gift },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-/**
- * Dados de desempenho simulados indexados pelo período temporal.
- */
 const periodData = {
   semana: {
     label: "Semana",
@@ -99,9 +79,6 @@ const periodData = {
   },
 } satisfies Record<Period, { chart: Array<{ label: string; value: number }>; label: string; topic: string; topicHours: string }>;
 
-/**
- * Lista das 4 últimas conquistas desbloqueadas em destaque na sidebar.
- */
 const featuredAchievements = [
   { name: "Especialista em História I", detail: "10 horas estudadas em História" },
   { name: "Iniciante em Ciências", detail: "Primeira sessão concluída" },
@@ -109,9 +86,6 @@ const featuredAchievements = [
   { name: "Sequência de Foco", detail: "5 dias consecutivos estudando" },
 ];
 
-/**
- * Mapeamento completo de conquistas por status (concluídas, disponíveis, em andamento).
- */
 const allAchievements = {
   completed: [
     { name: "Especialista em História I", detail: "10 horas estudadas em História" },
@@ -131,37 +105,15 @@ const allAchievements = {
   ],
 };
 
-/**
- * Componente principal da página de Estatísticas.
- * Exibe resumos de tempo de estudo em anéis, um gráfico de barras interativo
- * para desempenho por disciplina, o progresso do nível atual e as conquistas do usuário.
- */
 export default function EstatisticasPage() {
   const router = useRouter();
-
-  /** Dados da sessão ativa do usuário */
   const [user, setUser] = useState<UserSession | null>(null);
-
-  /** Período selecionado para exibição do gráfico de desempenho */
   const [period, setPeriod] = useState<Period>("semana");
-
-  /** Controla a exibição do menu suspenso de notificações */
   const [showNotifications, setShowNotifications] = useState(false);
-
-  /** Controla a exibição da gaveta de perfil */
   const [showProfile, setShowProfile] = useState(false);
-
-  /** Indica se o resumo de estatísticas foi copiado com sucesso para a área de transferência */
   const [shared, setShared] = useState(false);
-
-  /** Controla a exibição do modal detalhado contendo todas as conquistas */
   const [showAchievements, setShowAchievements] = useState(false);
 
-  /**
-   * Efeito executado ao montar o componente.
-   * Valida a sessão do usuário no localStorage. Caso seja válida, salva os dados no estado local;
-   * caso contrário, redireciona para a tela de Login.
-   */
   useEffect(() => {
     const storedSession = localStorage.getItem("studyflow_session");
 
@@ -179,18 +131,11 @@ export default function EstatisticasPage() {
     }
   }, [router]);
 
-  /**
-   * Encerra a sessão ativa limpando o localStorage e redireciona para o login.
-   */
   const logout = () => {
     localStorage.removeItem("studyflow_session");
     router.push("/");
   };
 
-  /**
-   * Copia um resumo textual das estatísticas do período selecionado para a área de transferência
-   * do usuário, ativando um feedback visual de cópia bem-sucedida.
-   */
   const shareStats = async () => {
     const current = periodData[period];
     const text = `Estou no nível 12 no Study Flow! Meu tópico mais estudado em ${current.label.toLowerCase()} foi ${current.topic}, com ${current.topicHours}.`;
@@ -508,27 +453,12 @@ export default function EstatisticasPage() {
   );
 }
 
-/**
- * Estrutura de um item de conquista.
- */
 type AchievementItem = {
-  /** Detalhe ou objetivo necessário para a conquista */
   detail: string;
-  /** Nome ou título da conquista */
   name: string;
-  /** Percentual de progresso atual (opcional, aplicável a conquistas em andamento) */
   progress?: number;
 };
 
-/**
- * Componente que renderiza um grupo de conquistas sob uma mesma categoria.
- *
- * @param props - Propriedades do componente.
- * @param props.achievements - Lista de conquistas a serem exibidas.
- * @param props.description - Texto explicativo do propósito do grupo.
- * @param props.title - Título do grupo de conquistas.
- * @param props.type - Estado das conquistas (concluídas, disponíveis ou em andamento).
- */
 function AchievementGroup({
   achievements,
   description,
@@ -605,14 +535,6 @@ function AchievementGroup({
   );
 }
 
-/**
- * Componente que exibe um anel indicador de tempo de estudo para metas semanais ou diárias.
- *
- * @param props - Propriedades do componente.
- * @param props.label - Título ou período (ex: Hoje, Semana).
- * @param props.progress - Percentual de progresso em direção ao objetivo (0 a 100).
- * @param props.value - Texto indicando o valor absoluto (ex: '15H').
- */
 function SummaryRing({ label, progress, value }: { label: string; progress: number; value: string }) {
   return (
     <article className="flex items-center gap-4 rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_8px_25px_rgba(41,100,94,0.045)]">
@@ -633,13 +555,6 @@ function SummaryRing({ label, progress, value }: { label: string; progress: numb
   );
 }
 
-/**
- * Componente que renderiza o painel circular do nível de perfil do estudante.
- *
- * @param props - Propriedades do componente.
- * @param props.level - Nível numérico do usuário (experiência).
- * @param props.progress - Percentual de progresso para o próximo nível (0 a 100).
- */
 function LevelRing({ level, progress }: { level: number; progress: number }) {
   return (
     <div
@@ -654,4 +569,3 @@ function LevelRing({ level, progress }: { level: number; progress: number }) {
     </div>
   );
 }
-
