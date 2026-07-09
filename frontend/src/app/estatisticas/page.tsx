@@ -239,10 +239,7 @@ export default function EstatisticasPage() {
               <button
                 aria-label="Abrir perfil"
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"
-                onClick={() => {
-                  setShowProfile((currentValue) => !currentValue);
-                  setShowNotifications(false);
-                }}
+                onClick={() => router.push("/perfil")}
                 type="button"
               >
                 <User size={22} />

@@ -29,7 +29,8 @@ import {
   CheckSquare,
   Book,
   Clock,
-  Sparkles
+  Sparkles,
+  Gift
 } from "lucide-react";
 
 /**
@@ -70,6 +71,7 @@ const menuItems = [
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
+  { name: "Recompensas", href: "/rewards", icon: Gift },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -349,10 +351,7 @@ export default function DashboardPage() {
               <button
                 aria-label="Abrir perfil"
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"
-                onClick={() => {
-                  setShowProfile((currentValue) => !currentValue);
-                  setShowNotifications(false);
-                }}
+                onClick={() => router.push("/perfil")}
                 type="button"
               >
                 <User size={22} />
@@ -505,20 +504,20 @@ export default function DashboardPage() {
             <form onSubmit={handleAddTask} className="border-t border-gray-100 pt-4 flex flex-col gap-3">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Nova Entrega / Prova</p>
               
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
                 <input
                   type="text"
                   placeholder="Descrição da entrega..."
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
-                  className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none focus:border-[#29645e] transition"
+                  className="min-w-0 rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-[#29645e] md:col-span-2"
                   required
                 />
                 
                 <select
                   value={newTaskDiscipline}
                   onChange={(e) => setNewTaskDiscipline(e.target.value)}
-                  className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-600 outline-none focus:border-[#29645e] cursor-pointer transition bg-white"
+                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 outline-none transition focus:border-[#29645e] cursor-pointer"
                 >
                   {disciplinesList.map((disc) => (
                     <option key={disc} value={disc}>
@@ -531,13 +530,13 @@ export default function DashboardPage() {
                   type="date"
                   value={newTaskDueDate}
                   onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none focus:border-[#29645e] text-gray-500 transition"
+                  className="min-w-0 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-500 outline-none transition focus:border-[#29645e]"
                   required
                 />
 
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#29645e] px-4 py-2.5 text-white hover:bg-[#1e4b47] transition duration-200 flex items-center justify-center gap-1 text-sm font-semibold cursor-pointer active:scale-95"
+                  className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-xl bg-[#29645e] px-4 py-2.5 text-sm font-semibold text-white transition duration-200 hover:bg-[#1e4b47] active:scale-95 md:col-span-2"
                 >
                   <Plus size={18} />
                   Adicionar

@@ -33,8 +33,7 @@ const TimerDashboard: NextPage = () => {
   const [user, setUser] = useState<UserSession | null>(null);
   const activeTab = "Timer";
   
-  // Perfil e Notificações dropdowns
-  const [showProfile, setShowProfile] = useState(false);
+  // Notificações dropdown
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<string[]>([
     "Bem-vindo ao Study Flow! Comece sua primeira sessão.",
@@ -258,7 +257,6 @@ const TimerDashboard: NextPage = () => {
               <button
                 onClick={() => {
                   setShowNotifications(!showNotifications);
-                  setShowProfile(false);
                 }}
                 className="p-2.5 rounded-full bg-white border border-gray-100 shadow-sm text-gray-600 hover:text-[#29645e] hover:bg-[#eaf6f4] transition cursor-pointer relative"
               >
@@ -294,36 +292,13 @@ const TimerDashboard: NextPage = () => {
             {/* AVATAR DO USUÁRIO */}
             <div className="relative">
               <button
-                onClick={() => {
-                  setShowProfile(!showProfile);
-                  setShowNotifications(false);
-                }}
+                aria-label="Abrir perfil"
+                onClick={() => router.push("/perfil")}
                 className="flex items-center justify-center p-2 rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] hover:border-[#29645e] transition cursor-pointer w-10 h-10 shadow-sm"
+                type="button"
               >
                 <User size={22} />
               </button>
-
-              {/* Popover Perfil */}
-              {showProfile && (
-                <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 z-50 animate-fade-in text-center">
-                  <div className="w-16 h-16 rounded-full bg-[#29645e] text-white mx-auto flex items-center justify-center font-bold text-xl mb-3 shadow-md">
-                    {user.nome.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="font-semibold text-gray-800 text-base">{user.nome}</div>
-                  <div className="text-xs text-gray-500 mb-1">@{user.username}</div>
-                  <div className="text-xs text-gray-400 break-all">{user.email}</div>
-                  
-                  <div className="border-t border-gray-100 mt-4 pt-3">
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center justify-center gap-2 text-sm text-red-500 hover:text-red-700 py-1.5 font-medium cursor-pointer"
-                    >
-                      <LogOut size={16} />
-                      Sair da Conta
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </header>

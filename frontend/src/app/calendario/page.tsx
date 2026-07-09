@@ -26,7 +26,8 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Info
+  Info,
+  Gift
 } from "lucide-react";
 
 /**
@@ -67,6 +68,7 @@ const menuItems = [
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
+  { name: "Recompensas", href: "/rewards", icon: Gift },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -360,10 +362,7 @@ export default function CalendarioPage() {
               <button
                 aria-label="Abrir perfil"
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"
-                onClick={() => {
-                  setShowProfile((currentValue) => !currentValue);
-                  setShowNotifications(false);
-                }}
+                onClick={() => router.push("/perfil")}
                 type="button"
               >
                 <User size={22} />
