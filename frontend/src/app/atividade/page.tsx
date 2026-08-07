@@ -19,6 +19,8 @@ import {
   User,
   X,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 type StudyActivity = {
   date: string;
@@ -53,29 +55,58 @@ export default function AtividadePage() {
   const [viewing, setViewing] = useState<StudyActivity | null>(null);
   const [deleting, setDeleting] = useState<StudyActivity | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const session = localStorage.getItem("studyflow_session");
-    if (!session) {
-      router.push("/");
-      return;
+    async function loadActivities() {
+      const parsed = getStoredSession();
+      if (!parsed) {
+        router.push("/");
+        return;
+      }
+
+      try {
+        setUser(parsed);
+        const currentUserId = await getCurrentSupabaseUserId(parsed);
+        setSupabaseUserId(currentUserId);
+
+        if (!currentUserId) {
+          const saved = localStorage.getItem(`studyflow_activities_${parsed.email}`);
+          setActivities(saved ? JSON.parse(saved) : []);
+          return;
+        }
+
+        const { data } = await supabase
+          .from("itens_cronograma")
+          .select("id,nome,data_inicio,data_fim,descricao")
+          .eq("user_id", currentUserId)
+          .eq("tipo", "atividade")
+          .order("data_inicio", { ascending: true });
+
+        setActivities((data ?? []).map((item) => {
+          const startDate = item.data_inicio ? new Date(item.data_inicio) : null;
+          const endDate = item.data_fim ? new Date(item.data_fim) : null;
+
+          return {
+            date: startDate?.toISOString().slice(0, 10) ?? "",
+            endTime: endDate?.toISOString().slice(11, 16) ?? "",
+            id: item.id,
+            name: item.nome,
+            notes: item.descricao ?? "",
+            startTime: startDate?.toISOString().slice(11, 16) ?? "",
+          };
+        }));
+      } catch {
+        router.push("/");
+      }
     }
 
-    try {
-      const parsed = JSON.parse(session) as UserSession;
-      const saved = localStorage.getItem(`studyflow_activities_${parsed.email}`);
-      setTimeout(() => {
-        setUser(parsed);
-        setActivities(saved ? JSON.parse(saved) : []);
-      }, 0);
-    } catch {
-      router.push("/");
-    }
+    void loadActivities();
   }, [router]);
 
   const saveActivities = (next: StudyActivity[]) => {
     setActivities(next);
-    if (user) localStorage.setItem(`studyflow_activities_${user.email}`, JSON.stringify(next));
+    if (user && !supabaseUserId) localStorage.setItem(`studyflow_activities_${user.email}`, JSON.stringify(next));
   };
 
   const openNew = () => {
@@ -97,9 +128,35 @@ export default function AtividadePage() {
     setShowForm(true);
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.name.trim()) return;
+
+    if (supabaseUserId) {
+      const dataInicio = form.date && form.startTime ? `${form.date}T${form.startTime}:00` : null;
+      const dataFim = form.date && form.endTime ? `${form.date}T${form.endTime}:00` : dataInicio;
+      const payload = {
+        data_fim: dataFim,
+        data_inicio: dataInicio,
+        descricao: form.notes,
+        nome: form.name.trim(),
+        tipo: "atividade",
+        user_id: supabaseUserId,
+      };
+
+      if (editingId) {
+        await supabase.from("itens_cronograma").update(payload).eq("id", editingId).eq("user_id", supabaseUserId);
+        saveActivities(activities.map((item) => (item.id === editingId ? { ...form, id: editingId } : item)));
+      } else {
+        const { data } = await supabase.from("itens_cronograma").insert(payload).select("id").single();
+        if (data) saveActivities([...activities, { ...form, id: data.id }]);
+      }
+
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyActivity);
+      return;
+    }
 
     const next = editingId
       ? activities.map((item) => (item.id === editingId ? { ...form, id: editingId } : item))
@@ -111,8 +168,9 @@ export default function AtividadePage() {
     setForm(emptyActivity);
   };
 
-  const remove = () => {
+  const remove = async () => {
     if (!deleting) return;
+    if (supabaseUserId) await supabase.from("itens_cronograma").delete().eq("id", deleting.id).eq("user_id", supabaseUserId);
     saveActivities(activities.filter((item) => item.id !== deleting.id));
     setDeleting(null);
   };

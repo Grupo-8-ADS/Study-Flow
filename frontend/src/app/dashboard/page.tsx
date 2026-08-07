@@ -32,6 +32,15 @@ import {
   Sparkles,
   Gift
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import {
+  buildDistribution,
+  calculateStreak,
+  getCurrentSupabaseUserId,
+  getLocalStudyMinutes,
+  getStoredSession,
+  type StudyDistribution,
+} from "@/lib/studyflow-data";
 
 /**
  * Representa os dados da sessão do usuário autenticado no sistema.
@@ -59,6 +68,13 @@ type Task = {
   dueDate: string;
   /** Estado de conclusão da tarefa */
   completed: boolean;
+  /** Identificador da disciplina no Supabase, quando existir */
+  disciplineId?: string | null;
+};
+
+type DisciplineOption = {
+  id: string;
+  name: string;
 };
 
 /**
@@ -78,14 +94,6 @@ const menuItems = [
 /**
  * Lista de disciplinas cadastradas no sistema.
  */
-const disciplinesList = [
-  "Banco de Dados",
-  "Algoritmos",
-  "Engenharia de Software",
-  "Redes de Computadores",
-  "Sistemas Operacionais"
-];
-
 /**
  * Componente principal da página do Dashboard.
  * Gerencia a renderização de cartões de métricas, carregamento de histórico de foco,
@@ -107,20 +115,26 @@ export default function DashboardPage() {
   /** Lista completa de tarefas carregadas do usuário atual */
   const [tasks, setTasks] = useState<Task[]>([]);
 
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+
+  const [disciplineOptions, setDisciplineOptions] = useState<DisciplineOption[]>([]);
+
   /** Título para a nova tarefa a ser criada no formulário */
   const [newTaskTitle, setNewTaskTitle] = useState("");
 
   /** Disciplina selecionada para a nova tarefa no formulário */
-  const [newTaskDiscipline, setNewTaskDiscipline] = useState(disciplinesList[0]);
+  const [newTaskDiscipline, setNewTaskDiscipline] = useState("");
 
   /** Data de vencimento selecionada para a nova tarefa no formulário */
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
 
   /** Quantidade total acumulada de horas de foco */
-  const [focusHours, setFocusHours] = useState(12.5);
+  const [focusHours, setFocusHours] = useState(0);
 
   /** Dias consecutivos de estudos ativos */
-  const [streakDays] = useState(5);
+  const [streakDays, setStreakDays] = useState(0);
+
+  const [studyDistribution, setStudyDistribution] = useState<StudyDistribution[]>([]);
 
   /**
    * Efeito executado na montagem do componente.
@@ -129,65 +143,96 @@ export default function DashboardPage() {
    * a partir do histórico de atividades reais finalizadas.
    */
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadDashboard() {
+      const parsedSession = getStoredSession();
 
-    if (!storedSession) {
-      router.push("/");
-      return;
-    }
-
-    try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => setUser(parsedSession), 0);
-
-      // Carregar Tarefas
-      const storedTasks = localStorage.getItem(`studyflow_tasks_${parsedSession.email}`);
-      if (storedTasks) {
-        const loadedTasks = JSON.parse(storedTasks);
-        setTimeout(() => setTasks(loadedTasks), 0);
-      } else {
-        // Tarefas iniciais de exemplo
-        const defaultTasks: Task[] = [
-          {
-            id: "1",
-            title: "Entrega do Relatório de Casos de Uso",
-            discipline: "Engenharia de Software",
-            dueDate: "2026-06-25",
-            completed: false
-          },
-          {
-            id: "2",
-            title: "Exercícios de Álgebra de Relacional",
-            discipline: "Banco de Dados",
-            dueDate: "2026-06-22",
-            completed: false
-          },
-          {
-            id: "3",
-            title: "Desenvolvimento do Algoritmo Dijkstra",
-            discipline: "Algoritmos",
-            dueDate: "2026-06-18",
-            completed: true
-          }
-        ];
-        setTimeout(() => setTasks(defaultTasks), 0);
-        localStorage.setItem(`studyflow_tasks_${parsedSession.email}`, JSON.stringify(defaultTasks));
+      if (!parsedSession) {
+        router.push("/");
+        return;
       }
 
-      // Calcular horas de foco a partir do histórico de atividades reais se houver
-      const storedActivity = localStorage.getItem(`studyflow_activity_${parsedSession.email}`);
-      if (storedActivity) {
-        const parsedActivity = JSON.parse(storedActivity);
-        // Cada atividade de foco concluída soma 25 minutos
-        const focusLogs = parsedActivity.filter((a: { type: string }) => a.type === "foco");
-        const realHours = 12.5 + (focusLogs.length * 25) / 60; // 12.5h base + horas reais
-        setTimeout(() => setFocusHours(parseFloat(realHours.toFixed(1))), 0);
-      }
+      try {
+        setUser(parsedSession);
 
-    } catch {
-      localStorage.removeItem("studyflow_session");
-      router.push("/");
+        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+        setSupabaseUserId(currentUserId);
+
+        if (!currentUserId) {
+          const storedTasks = localStorage.getItem(`studyflow_tasks_${parsedSession.email}`);
+          const storedSubjects = localStorage.getItem(`studyflow_subjects_${parsedSession.email}`);
+          const localTasks = storedTasks ? (JSON.parse(storedTasks) as Task[]) : [];
+          const localSubjects = storedSubjects
+            ? (JSON.parse(storedSubjects) as Array<{ id: string; name: string }>).map((subject) => ({
+                id: subject.id,
+                name: subject.name,
+              }))
+            : [];
+          const localMinutes = getLocalStudyMinutes(parsedSession.email);
+
+          setTasks(localTasks);
+          setDisciplineOptions(localSubjects);
+          setNewTaskDiscipline((current) => current || localSubjects[0]?.id || "");
+          setFocusHours(Number((localMinutes / 60).toFixed(1)));
+          setStreakDays(0);
+          setStudyDistribution([]);
+          return;
+        }
+
+        const [{ data: disciplinas }, { data: itens }, { data: sessoes }] = await Promise.all([
+          supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at"),
+          supabase
+            .from("itens_cronograma")
+            .select("id,nome,disciplina_id,data_fim,completed,disciplinas(nome)")
+            .eq("user_id", currentUserId)
+            .order("data_fim", { ascending: true }),
+          supabase
+            .from("sessoes_estudo")
+            .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
+            .eq("user_id", currentUserId),
+        ]);
+
+        const disciplineRows = (disciplinas ?? []).map((disciplina) => ({
+          id: disciplina.id as string,
+          name: disciplina.nome as string,
+        }));
+
+        const taskRows = (itens ?? []).map((item) => {
+          const disciplina = Array.isArray(item.disciplinas) ? item.disciplinas[0] : item.disciplinas;
+
+          return {
+            completed: Boolean(item.completed),
+            discipline: disciplina?.nome ?? "Sem disciplina",
+            disciplineId: item.disciplina_id,
+            dueDate: item.data_fim ? String(item.data_fim).slice(0, 10) : "",
+            id: item.id as string,
+            title: item.nome as string,
+          };
+        });
+
+        const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
+        const totalMinutes = completedSessions.reduce((sum, sessao) => sum + (sessao.duracao_efetiva_min ?? 0), 0);
+        const distributionRows = completedSessions.map((sessao) => {
+          const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+
+          return {
+            disciplina: disciplina?.nome ?? null,
+            minutes: sessao.duracao_efetiva_min ?? 0,
+          };
+        });
+
+        setDisciplineOptions(disciplineRows);
+        setNewTaskDiscipline((current) => current || disciplineRows[0]?.id || "");
+        setTasks(taskRows);
+        setFocusHours(Number((totalMinutes / 60).toFixed(1)));
+        setStreakDays(calculateStreak(completedSessions.map((sessao) => String(sessao.data_inicio))));
+        setStudyDistribution(buildDistribution(distributionRows));
+      } catch {
+        localStorage.removeItem("studyflow_session");
+        router.push("/");
+      }
     }
+
+    void loadDashboard();
   }, [router]);
 
   /**
@@ -197,7 +242,7 @@ export default function DashboardPage() {
    */
   const saveTasks = (updatedTasks: Task[]) => {
     setTasks(updatedTasks);
-    if (user) {
+    if (user && !supabaseUserId) {
       localStorage.setItem(`studyflow_tasks_${user.email}`, JSON.stringify(updatedTasks));
     }
   };
@@ -207,14 +252,48 @@ export default function DashboardPage() {
    *
    * @param e - Evento de envio de formulário do React
    */
-  const handleAddTask = (e: React.FormEvent) => {
+  const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim() || !newTaskDueDate) return;
+
+    if (supabaseUserId) {
+      const selectedDiscipline = disciplineOptions.find((discipline) => discipline.id === newTaskDiscipline);
+      const { data } = await supabase
+        .from("itens_cronograma")
+        .insert({
+          completed: false,
+          data_fim: `${newTaskDueDate}T23:59:00`,
+          disciplina_id: selectedDiscipline?.id || null,
+          nome: newTaskTitle.trim(),
+          tipo: "entrega",
+          user_id: supabaseUserId,
+        })
+        .select("id")
+        .single();
+
+      if (!data) return;
+
+      saveTasks([
+        ...tasks,
+        {
+          completed: false,
+          discipline: selectedDiscipline?.name || "Sem disciplina",
+          disciplineId: selectedDiscipline?.id || null,
+          dueDate: newTaskDueDate,
+          id: data.id,
+          title: newTaskTitle.trim(),
+        },
+      ]);
+      setNewTaskTitle("");
+      setNewTaskDueDate("");
+      return;
+    }
 
     const newTask: Task = {
       id: Date.now().toString(),
       title: newTaskTitle.trim(),
-      discipline: newTaskDiscipline,
+      discipline: disciplineOptions.find((discipline) => discipline.id === newTaskDiscipline)?.name || "Sem disciplina",
+      disciplineId: newTaskDiscipline || null,
       dueDate: newTaskDueDate,
       completed: false
     };
@@ -230,10 +309,20 @@ export default function DashboardPage() {
    *
    * @param id - Identificador único da tarefa a ser alterada
    */
-  const handleToggleTask = (id: string) => {
+  const handleToggleTask = async (id: string) => {
     const updatedTasks = tasks.map((task) =>
       task.id === id ? { ...task, completed: !task.completed } : task
     );
+    const changedTask = updatedTasks.find((task) => task.id === id);
+
+    if (supabaseUserId && changedTask) {
+      await supabase
+        .from("itens_cronograma")
+        .update({ completed: changedTask.completed })
+        .eq("id", id)
+        .eq("user_id", supabaseUserId);
+    }
+
     saveTasks(updatedTasks);
   };
 
@@ -242,7 +331,11 @@ export default function DashboardPage() {
    *
    * @param id - Identificador único da tarefa a ser removida
    */
-  const handleDeleteTask = (id: string) => {
+  const handleDeleteTask = async (id: string) => {
+    if (supabaseUserId) {
+      await supabase.from("itens_cronograma").delete().eq("id", id).eq("user_id", supabaseUserId);
+    }
+
     const updatedTasks = tasks.filter((task) => task.id !== id);
     saveTasks(updatedTasks);
   };
@@ -510,18 +603,19 @@ export default function DashboardPage() {
                   placeholder="Descrição da entrega..."
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
-                  className="min-w-0 rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-[#29645e] md:col-span-2"
+                  className="min-w-0 rounded-xl border border-[#9fb8b4] bg-[#fbfefe] px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-600 outline-none transition focus:border-[#29645e] focus:ring-2 focus:ring-[#d7ebe7] md:col-span-2"
                   required
                 />
                 
                 <select
                   value={newTaskDiscipline}
                   onChange={(e) => setNewTaskDiscipline(e.target.value)}
-                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 outline-none transition focus:border-[#29645e] cursor-pointer"
+                  className="min-w-0 w-full rounded-xl border border-[#9fb8b4] bg-[#fbfefe] px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-[#29645e] focus:ring-2 focus:ring-[#d7ebe7] cursor-pointer"
                 >
-                  {disciplinesList.map((disc) => (
-                    <option key={disc} value={disc}>
-                      {disc}
+                  <option value="">Sem disciplina</option>
+                  {disciplineOptions.map((disc) => (
+                    <option key={disc.id} value={disc.id}>
+                      {disc.name}
                     </option>
                   ))}
                 </select>
@@ -530,7 +624,7 @@ export default function DashboardPage() {
                   type="date"
                   value={newTaskDueDate}
                   onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className="min-w-0 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-500 outline-none transition focus:border-[#29645e]"
+                  className="min-w-0 w-full rounded-xl border border-[#9fb8b4] bg-[#fbfefe] px-4 py-2.5 text-sm text-gray-800 outline-none transition focus:border-[#29645e] focus:ring-2 focus:ring-[#d7ebe7]"
                   required
                 />
 
@@ -553,13 +647,11 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-col gap-5">
-              {[
-                { name: "Banco de Dados", hours: 5.5, max: 12, color: "bg-[#29645e]" },
-                { name: "Algoritmos", hours: 4.0, max: 10, color: "bg-[#348e83]" },
-                { name: "Engenharia de Software", hours: 2.0, max: 8, color: "bg-[#e5a93b]" },
-                { name: "Redes de Computadores", hours: 1.0, max: 6, color: "bg-red-400" },
-                { name: "Sistemas Operacionais", hours: 0, max: 6, color: "bg-gray-300" }
-              ].map((item) => {
+              {studyDistribution.length === 0 ? (
+                <p className="rounded-2xl bg-[#f7fbfa] px-4 py-6 text-center text-sm text-gray-500">
+                  Nenhuma sessão concluída ainda.
+                </p>
+              ) : studyDistribution.map((item) => {
                 const percentage = item.max > 0 ? (item.hours / item.max) * 100 : 0;
                 return (
                   <div key={item.name} className="flex flex-col gap-1.5">
@@ -585,7 +677,9 @@ export default function DashboardPage() {
               <div>
                 <p className="text-xs font-bold text-[#29645e] uppercase tracking-wide">Foco Sugerido</p>
                 <p className="text-xs text-[#3d7a72] leading-relaxed mt-1">
-                  Você está bem adiantado em Banco de Dados! Dedique seus próximos blocos de Pomodoro para Engenharia de Software para equilibrar suas metas.
+                  {studyDistribution.length > 0
+                    ? "Continue registrando sessões para equilibrar suas horas entre as disciplinas."
+                    : "Conclua uma sessão no Timer para gerar sugestões reais de estudo."}
                 </p>
               </div>
             </div>

@@ -2,7 +2,7 @@
 
 import type { NextPage } from "next";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Calendar,
@@ -21,12 +21,17 @@ import {
   ClipboardList,
   Gift
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 interface UserSession {
+  demoMode?: boolean;
   email: string;
   nome: string;
   username: string;
 }
+
+type DisciplineOption = { id: string; name: string };
 
 const TimerDashboard: NextPage = () => {
   const router = useRouter();
@@ -48,27 +53,43 @@ const TimerDashboard: NextPage = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Disciplinas & Notas
-  const [disciplines] = useState<string[]>([
-    "Banco de Dados",
-    "Algoritmos",
-    "Engenharia de Software",
-    "Redes de Computadores",
-    "Sistemas Operacionais"
-  ]);
-  const [selectedDiscipline, setSelectedDiscipline] = useState<string>("Banco de Dados");
+  const [disciplines, setDisciplines] = useState<DisciplineOption[]>([]);
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>("");
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
 
   // Redirecionamento caso não autenticado e carregamento de sessão
   useEffect(() => {
-    const session = localStorage.getItem("studyflow_session");
-    if (!session) {
-      router.push("/");
-    } else {
-      const parsed = JSON.parse(session);
-      setTimeout(() => {
-        setUser(parsed);
-      }, 0);
+    async function loadTimer() {
+      const parsed = getStoredSession();
+
+      if (!parsed) {
+        router.push("/");
+        return;
+      }
+
+      setUser(parsed);
+
+      const currentUserId = await getCurrentSupabaseUserId(parsed);
+      setSupabaseUserId(currentUserId);
+
+      if (!currentUserId) {
+        const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
+        const localDisciplines = saved
+          ? (JSON.parse(saved) as Array<{ id: string; name: string }>).map((subject) => ({ id: subject.id, name: subject.name }))
+          : [];
+        setDisciplines(localDisciplines);
+        setSelectedDiscipline(localDisciplines[0]?.id ?? "");
+        return;
+      }
+
+      const { data } = await supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at");
+      const remoteDisciplines = (data ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
+      setDisciplines(remoteDisciplines);
+      setSelectedDiscipline(remoteDisciplines[0]?.id ?? "");
     }
+
+    void loadTimer();
   }, [router]);
 
   // Sincroniza anotações ao mudar de disciplina ou usuário
@@ -88,6 +109,43 @@ const TimerDashboard: NextPage = () => {
       localStorage.setItem(`studyflow_notes_${user.email}_${selectedDiscipline}`, text);
     }
   };
+
+  const getSelectedDisciplineName = useCallback(() => {
+    return disciplines.find((discipline) => discipline.id === selectedDiscipline)?.name ?? "Sem disciplina";
+  }, [disciplines, selectedDiscipline]);
+
+  const recordStudySession = useCallback(async () => {
+    if (!user || timerType !== "foco") return;
+
+    const durationMinutes = Math.round(totalDuration / 60);
+    const finishedAt = new Date();
+    const startedAt = new Date(finishedAt.getTime() - totalDuration * 1000);
+
+    if (supabaseUserId) {
+      await supabase.from("sessoes_estudo").insert({
+        data_fim: finishedAt.toISOString(),
+        data_inicio: startedAt.toISOString(),
+        disciplina_id: selectedDiscipline || null,
+        duracao_efetiva_min: durationMinutes,
+        exp: durationMinutes,
+        notas: notes,
+        status: "concluida",
+        user_id: supabaseUserId,
+      });
+      return;
+    }
+
+    const key = `studyflow_activity_${user.email}`;
+    const current = localStorage.getItem(key);
+    const activity = current ? JSON.parse(current) : [];
+    activity.push({
+      createdAt: finishedAt.toISOString(),
+      discipline: getSelectedDisciplineName(),
+      minutes: durationMinutes,
+      type: "foco",
+    });
+    localStorage.setItem(key, JSON.stringify(activity));
+  }, [getSelectedDisciplineName, notes, selectedDiscipline, supabaseUserId, timerType, totalDuration, user]);
 
   // Ajusta o tempo inicial com base no tipo de timer selecionado
   const getInitialTime = (type: "foco" | "pausa_curta" | "pausa_longa") => {
@@ -135,8 +193,10 @@ const TimerDashboard: NextPage = () => {
             if (timerRef.current) clearInterval(timerRef.current);
             
             // Adiciona notificação de término
+            void recordStudySession();
+
             const notificationMsg = timerType === "foco" 
-              ? `Sessão de foco em "${selectedDiscipline}" finalizada! Hora de uma pausa.` 
+              ? `Sessão de foco em "${getSelectedDisciplineName()}" finalizada! Hora de uma pausa.` 
               : "Sua pausa acabou! Pronto para voltar ao foco?";
             
             setNotifications(prevNotif => [notificationMsg, ...prevNotif]);
@@ -154,7 +214,7 @@ const TimerDashboard: NextPage = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isRunning, timerType, selectedDiscipline]);
+  }, [getSelectedDisciplineName, isRunning, recordStudySession, timerType]);
 
   // Função de logout
   const handleLogout = () => {
@@ -394,9 +454,10 @@ const TimerDashboard: NextPage = () => {
                       onChange={(e) => setSelectedDiscipline(e.target.value)}
                       className="w-full bg-[#eaf6f4] border-none outline-none rounded-xl text-base text-gray-700 py-3 px-4 appearance-none cursor-pointer focus:ring-2 focus:ring-[#29645e] transition"
                     >
+                      <option value="">Sem disciplina</option>
                       {disciplines.map((discipline) => (
-                        <option key={discipline} value={discipline}>
-                          {discipline}
+                        <option key={discipline.id} value={discipline.id}>
+                          {discipline.name}
                         </option>
                       ))}
                     </select>
@@ -415,7 +476,7 @@ const TimerDashboard: NextPage = () => {
                   <textarea
                     value={notes}
                     onChange={(e) => handleNotesChange(e.target.value)}
-                    placeholder={`Escreva suas notas e anotações aqui para "${selectedDiscipline}"... Suas anotações serão salvas automaticamente.`}
+                    placeholder={`Escreva suas notas e anotações aqui para "${getSelectedDisciplineName()}"... Suas anotações serão salvas automaticamente.`}
                     className="flex-1 w-full bg-[#fcfdfd] border border-gray-200 focus:border-[#29645e] rounded-2xl outline-none p-4 text-sm text-gray-700 resize-none leading-relaxed transition"
                   />
                   <div className="text-right text-[10px] text-gray-400 font-medium italic">

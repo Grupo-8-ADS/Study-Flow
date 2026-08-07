@@ -139,6 +139,10 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     );
   }
 
+  const isPresentationAccount =
+    user.email.trim().toLowerCase() === "teste@teste.com" ||
+    user.username.trim().toLowerCase() === "teste";
+
   return (
     <div className="flex min-h-screen flex-col bg-[#f7fdfd] font-[Roboto] lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col justify-between bg-[#29645e] px-4 py-6 text-white shadow-lg lg:min-h-screen lg:w-[260px]">
@@ -345,16 +349,25 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-500">Zona de risco</p>
               <h3 className="mt-1 text-xl font-bold text-gray-800">Excluir conta</h3>
               <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">
-                Remove seu cadastro e encerra a sessão. Essa ação não poderá ser desfeita.
+                {isPresentationAccount
+                  ? "Esta é a conta de demonstração da apresentação. A exclusão foi bloqueada para manter os dados de exemplo disponíveis."
+                  : "Remove seu cadastro e encerra a sessão. Essa ação não poderá ser desfeita."}
               </p>
             </div>
             <button
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-5 py-3 font-semibold text-red-600 transition hover:border-red-400 hover:bg-red-50 sm:w-auto"
-              onClick={() => setShowDeleteModal(true)}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-5 py-3 font-semibold transition sm:w-auto ${
+                isPresentationAccount
+                  ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+                  : "cursor-pointer border-red-200 bg-white text-red-600 hover:border-red-400 hover:bg-red-50"
+              }`}
+              disabled={isPresentationAccount}
+              onClick={() => {
+                if (!isPresentationAccount) setShowDeleteModal(true);
+              }}
               type="button"
             >
               <Trash2 size={18} />
-              Excluir minha conta
+              {isPresentationAccount ? "Conta demo protegida" : "Excluir minha conta"}
             </button>
           </section>
         </div>

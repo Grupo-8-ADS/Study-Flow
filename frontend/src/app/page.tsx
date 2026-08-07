@@ -12,6 +12,9 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useEffect } from "react";
 import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
  * Interface que representa a estrutura de um usuário registrado.
@@ -48,7 +51,58 @@ const Login: NextPage = () => {
   const [rememberMe, setRememberMe] = useState(false);
 
   /** Estado indicador de erro de autenticação (credenciais inválidas ou campos vazios) */
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
+
+  /** Estado de envio do formulário para evitar logins duplicados */
+  const [isLoading, setIsLoading] = useState(false);
+
+  const signInDemoUser = useCallback(() => {
+    const usersJson = localStorage.getItem("studyflow_users");
+    const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
+    const login = email.trim().toLowerCase();
+    const user = users.find(
+      (registeredUser) =>
+        (registeredUser.email.toLowerCase() === login ||
+          registeredUser.username.toLowerCase() === login) &&
+        registeredUser.senha === senha
+    );
+
+    if (!user) {
+      return false;
+    }
+
+    localStorage.setItem(
+      "studyflow_session",
+      JSON.stringify({
+        email: user.email,
+        nome: user.nome,
+        username: user.username,
+        loginTime: new Date().getTime(),
+        rememberMe,
+        demoMode: true,
+      })
+    );
+    router.push("/timer");
+    return true;
+  }, [email, rememberMe, router, senha]);
+
+  const resolveLoginEmail = useCallback(async () => {
+    const login = email.trim();
+
+    if (login.includes("@")) {
+      return login;
+    }
+
+    const { data } = await supabase.rpc("get_email_by_username", {
+      login_username: login,
+    });
+
+    if (typeof data === "string" && data.includes("@")) {
+      return data;
+    }
+
+    return login;
+  }, [email]);
 
   /**
    * Efeito de inicialização para verificar se o usuário já possui uma sessão ativa.
@@ -69,54 +123,68 @@ const Login: NextPage = () => {
    *
    * @param e - Evento de envio do formulário React
    */
-  const handleLogin = useCallback((e: React.FormEvent) => {
+  const handleLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(false);
+    setError("");
 
     if (!email || !senha) {
-      setError(true);
+      setError("Preencha e-mail/usuário e senha.");
       return;
     }
 
-    // Busca usuários cadastrados no localStorage
-    const usersJson = localStorage.getItem("studyflow_users");
-    const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
+    setIsLoading(true);
 
-    // Seed padrão caso não existam usuários
-    if (users.length === 0) {
-      const seedUser = {
-        nome: "Admin Study Flow",
-        username: "admin",
-        email: "admin@studyflow.com",
-        senha: "123456"
+    try {
+      const loginEmail = await resolveLoginEmail();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: senha,
+      });
+
+      if (signInError || !data.user) {
+        if (signInDemoUser()) {
+          return;
+        }
+
+        setError("Email e/ou senha informados são inválidos.");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("nome, username, email")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      const sessionUser: RegisteredUser = {
+        nome:
+          profile?.nome ||
+          data.user.user_metadata?.full_name ||
+          data.user.email?.split("@")[0] ||
+          "Usuário Study Flow",
+        username:
+          profile?.username ||
+          data.user.user_metadata?.username ||
+          data.user.email?.split("@")[0] ||
+          "usuario",
+        email: profile?.email || data.user.email || loginEmail,
       };
-      users.push(seedUser);
-      localStorage.setItem("studyflow_users", JSON.stringify(users));
-    }
 
-    // Procura o usuário correspondente
-    const user = users.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.senha === senha
-    );
-
-    if (user) {
-      // Salva sessão mockada
       localStorage.setItem(
         "studyflow_session",
         JSON.stringify({
-          email: user.email,
-          nome: user.nome,
-          username: user.username,
+          email: sessionUser.email,
+          nome: sessionUser.nome,
+          username: sessionUser.username,
           loginTime: new Date().getTime(),
           rememberMe
         })
       );
       router.push("/timer");
-    } else {
-      // Exibe erro do figma
-      setError(true);
+    } finally {
+      setIsLoading(false);
     }
-  }, [email, senha, rememberMe, router]);
+  }, [email, senha, rememberMe, resolveLoginEmail, router, signInDemoUser]);
 
   /**
    * Navega para a página de cadastro de novas contas.
@@ -140,7 +208,7 @@ const Login: NextPage = () => {
             width={190}
             height={255}
             alt="Study Flow Logo"
-            src="/Picsart-25-06-23-14-17-57-475-1@2x.png"
+            src={`${basePath}/Picsart-25-06-23-14-17-57-475-1@2x.png`}
           />
         </div>
       </section>
@@ -163,7 +231,7 @@ const Login: NextPage = () => {
             {error && (
               <div className="w-full border border-red-500 rounded-[10px] bg-red-50 text-red-600 px-4 py-2 text-sm flex items-center justify-center gap-2 animate-fade-in font-medium">
                 <AlertCircle size={16} className="shrink-0" />
-                <span>Email e/ou senha informados são inválidos</span>
+                <span>{error}</span>
               </div>
             )}
 
@@ -171,8 +239,8 @@ const Login: NextPage = () => {
             <div className="relative w-full shadow-[0px_4px_10px_rgba(0,0,0,0.1)] rounded-[20px] bg-white border border-gray-100 focus-within:border-[#29645e] focus-within:ring-1 focus-within:ring-[#29645e] transition duration-200">
               <input
                 className="w-full bg-transparent border-none outline-none text-lg lg:text-xl py-4 px-6 text-center text-gray-800 placeholder-gray-400"
-                placeholder="Email"
-                type="email"
+                placeholder="Email ou usuário"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -216,9 +284,10 @@ const Login: NextPage = () => {
               {/* Botão Entrar */}
               <button
                 type="submit"
+                disabled={isLoading}
                 className="cursor-pointer border-none bg-[#29645e] text-white hover:bg-[#1e4b47] transition duration-300 font-medium text-xl py-4 px-8 rounded-[20px] flex-1 shadow-[0px_4px_10px_rgba(0,0,0,0.15)] flex justify-center items-center active:scale-95"
               >
-                Entrar
+                {isLoading ? "Entrando..." : "Entrar"}
               </button>
 
               {/* Botão Criar Cadastro */}

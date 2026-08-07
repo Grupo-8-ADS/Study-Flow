@@ -30,3 +30,26 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+input,
+select,
+textarea {
+  color: #1f2937;
+  background-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280;
+  opacity: 1;
+}
+
+input[type="date"],
+input[type="time"] {
+  color: #1f2937;
+}
+
+input[type="date"]:invalid,
+input[type="time"]:invalid {
+  color: #6b7280;
+}

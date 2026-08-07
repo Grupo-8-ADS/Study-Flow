@@ -29,6 +29,8 @@ import {
   Info,
   Gift
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 /**
  * Representa a sessão ativa do usuário autenticado no sistema.
@@ -54,8 +56,14 @@ type CalendarEvent = {
   date: string;
   /** Nome da disciplina acadêmica relacionada ao evento */
   discipline: string;
+  disciplineId?: string | null;
   /** Tipo do evento para categorização e estilo visual */
   type: "Prova" | "Trabalho" | "Estudo";
+};
+
+type DisciplineOption = {
+  id: string;
+  name: string;
 };
 
 /**
@@ -102,6 +110,10 @@ export default function CalendarioPage() {
   /** Lista completa de eventos carregados do usuário atual */
   const [events, setEvents] = useState<CalendarEvent[]>([]);
 
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+
+  const [disciplineOptions, setDisciplineOptions] = useState<DisciplineOption[]>([]);
+
   /** Data atualmente selecionada no calendário (padrão '2026-06-19') */
   const [selectedDate, setSelectedDate] = useState<string>("2026-06-19");
 
@@ -109,7 +121,7 @@ export default function CalendarioPage() {
   const [newEventTitle, setNewEventTitle] = useState("");
 
   /** Disciplina selecionada para o novo evento no formulário */
-  const [newEventDiscipline, setNewEventDiscipline] = useState(disciplinesList[0]);
+  const [newEventDiscipline, setNewEventDiscipline] = useState("");
 
   /** Tipo do novo evento selecionado no formulário */
   const [newEventType, setNewEventType] = useState<"Prova" | "Trabalho" | "Estudo">("Prova");
@@ -124,61 +136,65 @@ export default function CalendarioPage() {
    * Caso contrário, redireciona para a página de login.
    */
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadCalendar() {
+      const parsedSession = getStoredSession();
 
-    if (!storedSession) {
-      router.push("/");
-      return;
-    }
-
-    try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => setUser(parsedSession), 0);
-
-      // Carregar Eventos
-      const storedEvents = localStorage.getItem(`studyflow_events_${parsedSession.email}`);
-      if (storedEvents) {
-        const loadedEvents = JSON.parse(storedEvents);
-        setTimeout(() => setEvents(loadedEvents), 0);
-      } else {
-        // Eventos padrão de exemplo
-        const defaultEvents: CalendarEvent[] = [
-          {
-            id: "e1",
-            title: "Prova de Banco de Dados I",
-            date: "2026-06-22",
-            discipline: "Banco de Dados",
-            type: "Prova"
-          },
-          {
-            id: "e2",
-            title: "Entrega do Relatório de UML",
-            date: "2026-06-25",
-            discipline: "Engenharia de Software",
-            type: "Trabalho"
-          },
-          {
-            id: "e3",
-            title: "Grupo de Estudos Dijkstra",
-            date: "2026-06-18",
-            discipline: "Algoritmos",
-            type: "Estudo"
-          },
-          {
-            id: "e4",
-            title: "Estudar Protocolo TCP/IP",
-            date: "2026-06-19",
-            discipline: "Redes de Computadores",
-            type: "Estudo"
-          }
-        ];
-        setTimeout(() => setEvents(defaultEvents), 0);
-        localStorage.setItem(`studyflow_events_${parsedSession.email}`, JSON.stringify(defaultEvents));
+      if (!parsedSession) {
+        router.push("/");
+        return;
       }
-    } catch {
-      localStorage.removeItem("studyflow_session");
-      router.push("/");
+
+      try {
+        setUser(parsedSession);
+        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+        setSupabaseUserId(currentUserId);
+
+        if (!currentUserId) {
+          const storedEvents = localStorage.getItem(`studyflow_events_${parsedSession.email}`);
+          const storedSubjects = localStorage.getItem(`studyflow_subjects_${parsedSession.email}`);
+          const localSubjects = storedSubjects
+            ? (JSON.parse(storedSubjects) as Array<{ id: string; name: string }>).map((subject) => ({
+                id: subject.id,
+                name: subject.name,
+              }))
+            : disciplinesList.map((name) => ({ id: name, name }));
+          setDisciplineOptions(localSubjects);
+          setNewEventDiscipline(localSubjects[0]?.id || "");
+          setEvents(storedEvents ? JSON.parse(storedEvents) : []);
+          return;
+        }
+
+        const [{ data: disciplinas }, { data: itens }] = await Promise.all([
+          supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at"),
+          supabase
+            .from("itens_cronograma")
+            .select("id,nome,tipo,data_inicio,data_fim,disciplina_id,disciplinas(nome)")
+            .eq("user_id", currentUserId)
+            .in("tipo", ["Prova", "Trabalho", "Estudo"])
+            .order("data_inicio", { ascending: true }),
+        ]);
+
+        const remoteSubjects = (disciplinas ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
+        setDisciplineOptions(remoteSubjects);
+        setNewEventDiscipline((current) => current || remoteSubjects[0]?.id || "");
+        setEvents((itens ?? []).map((item) => {
+          const disciplina = Array.isArray(item.disciplinas) ? item.disciplinas[0] : item.disciplinas;
+          return {
+            date: item.data_inicio ? String(item.data_inicio).slice(0, 10) : item.data_fim ? String(item.data_fim).slice(0, 10) : selectedDate,
+            discipline: disciplina?.nome ?? "Sem disciplina",
+            disciplineId: item.disciplina_id,
+            id: item.id,
+            title: item.nome,
+            type: item.tipo as "Prova" | "Trabalho" | "Estudo",
+          };
+        }));
+      } catch {
+        localStorage.removeItem("studyflow_session");
+        router.push("/");
+      }
     }
+
+    void loadCalendar();
   }, [router]);
 
   /**
@@ -188,7 +204,7 @@ export default function CalendarioPage() {
    */
   const saveEvents = (updatedEvents: CalendarEvent[]) => {
     setEvents(updatedEvents);
-    if (user) {
+    if (user && !supabaseUserId) {
       localStorage.setItem(`studyflow_events_${user.email}`, JSON.stringify(updatedEvents));
     }
   };
@@ -199,15 +215,49 @@ export default function CalendarioPage() {
    *
    * @param e - Evento de envio do formulário React
    */
-  const handleAddEvent = (e: React.FormEvent) => {
+  const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventTitle.trim()) return;
+
+    if (supabaseUserId) {
+      const selectedDiscipline = disciplineOptions.find((discipline) => discipline.id === newEventDiscipline);
+      const { data } = await supabase
+        .from("itens_cronograma")
+        .insert({
+          data_fim: `${selectedDate}T10:00:00`,
+          data_inicio: `${selectedDate}T09:00:00`,
+          disciplina_id: selectedDiscipline?.id || null,
+          nome: newEventTitle.trim(),
+          tipo: newEventType,
+          user_id: supabaseUserId,
+        })
+        .select("id")
+        .single();
+
+      if (!data) return;
+
+      saveEvents([
+        ...events,
+        {
+          date: selectedDate,
+          discipline: selectedDiscipline?.name || "Sem disciplina",
+          disciplineId: selectedDiscipline?.id || null,
+          id: data.id,
+          title: newEventTitle.trim(),
+          type: newEventType,
+        },
+      ]);
+      setNewEventTitle("");
+      setShowAddModal(false);
+      return;
+    }
 
     const newEvent: CalendarEvent = {
       id: Date.now().toString(),
       title: newEventTitle.trim(),
       date: selectedDate,
-      discipline: newEventDiscipline,
+      discipline: disciplineOptions.find((discipline) => discipline.id === newEventDiscipline)?.name || "Sem disciplina",
+      disciplineId: newEventDiscipline || null,
       type: newEventType
     };
 
@@ -223,7 +273,11 @@ export default function CalendarioPage() {
    *
    * @param id - Identificador único do evento a ser deletado
    */
-  const handleDeleteEvent = (id: string) => {
+  const handleDeleteEvent = async (id: string) => {
+    if (supabaseUserId) {
+      await supabase.from("itens_cronograma").delete().eq("id", id).eq("user_id", supabaseUserId);
+    }
+
     const updatedEvents = events.filter((e) => e.id !== id);
     saveEvents(updatedEvents);
   };
@@ -554,9 +608,10 @@ export default function CalendarioPage() {
                     onChange={(e) => setNewEventDiscipline(e.target.value)}
                     className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 outline-none focus:border-[#29645e] cursor-pointer transition bg-white"
                   >
-                    {disciplinesList.map((disc) => (
-                      <option key={disc} value={disc}>
-                        {disc}
+                    <option value="">Sem disciplina</option>
+                    {disciplineOptions.map((disc) => (
+                      <option key={disc.id} value={disc.id}>
+                        {disc.name}
                       </option>
                     ))}
                   </select>

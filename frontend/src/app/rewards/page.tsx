@@ -20,6 +20,8 @@ import {
   Timer,
   User,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 type UserSession = {
   email: string;
@@ -38,33 +40,33 @@ const menuItems = [
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-const rewardCollections = [
+const baseRewardCollections = [
   {
     title: "Ícones de perfil",
     description: "Personalize seu avatar com símbolos conquistados durante seus estudos.",
-    unlocked: 2,
-    total: 5,
+    unlocked: 0,
+    total: 0,
     icon: User,
     colors: ["#29645e", "#65bfaa"],
-    items: ["Foco inicial", "Estudante dedicado"],
+    items: [] as string[],
   },
   {
     title: "Bordas de perfil",
     description: "Destaque seu perfil com molduras especiais de nível e conquistas.",
-    unlocked: 1,
+    unlocked: 0,
     total: 5,
     icon: Palette,
     colors: ["#705c9d", "#b09cda"],
-    items: ["Borda esmeralda"],
+    items: [] as string[],
   },
   {
     title: "Banners de fundo",
     description: "Desbloqueie cenários para deixar seu perfil com a sua cara.",
-    unlocked: 1,
+    unlocked: 0,
     total: 5,
     icon: ImageIcon,
     colors: ["#c08032", "#e6bd72"],
-    items: ["Amanhecer produtivo"],
+    items: [] as string[],
   },
 ];
 
@@ -74,22 +76,49 @@ export default function RewardsPage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState(0);
+  const [rewardCollections, setRewardCollections] = useState(baseRewardCollections);
 
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadRewards() {
+      const parsedSession = getStoredSession();
 
-    if (!storedSession) {
-      router.push("/");
-      return;
+      if (!parsedSession) {
+        router.push("/");
+        return;
+      }
+
+      try {
+        setUser(parsedSession);
+        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+
+        if (!currentUserId) return;
+
+        const [{ data: unlocked }, { data: total }] = await Promise.all([
+          supabase.from("user_conquistas").select("conquistas(nome)").eq("user_id", currentUserId),
+          supabase.from("conquistas").select("nome"),
+        ]);
+        const unlockedNames = (unlocked ?? []).map((item) => {
+          const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
+          return conquista?.nome ?? "Conquista";
+        });
+
+        setRewardCollections([
+          {
+            ...baseRewardCollections[0],
+            items: unlockedNames,
+            total: total?.length ?? 0,
+            unlocked: unlockedNames.length,
+          },
+          baseRewardCollections[1],
+          baseRewardCollections[2],
+        ]);
+      } catch {
+        localStorage.removeItem("studyflow_session");
+        router.push("/");
+      }
     }
 
-    try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => setUser(parsedSession), 0);
-    } catch {
-      localStorage.removeItem("studyflow_session");
-      router.push("/");
-    }
+    void loadRewards();
   }, [router]);
 
   const logout = () => {
@@ -106,6 +135,9 @@ export default function RewardsPage() {
   }
 
   const selected = rewardCollections[selectedCollection];
+  const totalRewards = rewardCollections.reduce((sum, collection) => sum + collection.total, 0);
+  const unlockedRewards = rewardCollections.reduce((sum, collection) => sum + collection.unlocked, 0);
+  const generalProgress = totalRewards > 0 ? Math.round((unlockedRewards / totalRewards) * 100) : 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7fdfd] font-[Roboto] lg:flex-row">
@@ -175,7 +207,7 @@ export default function RewardsPage() {
                 <div className="absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
                   <p className="font-semibold text-gray-700">Nova recompensa</p>
                   <p className="mt-2 text-sm leading-6 text-gray-500">
-                    Você desbloqueou a recompensa “Estudante dedicado”.
+                    Suas recompensas serão liberadas conforme você completa sessões e metas.
                   </p>
                 </div>
               ) : null}
@@ -225,11 +257,11 @@ export default function RewardsPage() {
 
               <div className="min-w-[210px] rounded-[24px] border border-white/15 bg-white/10 p-5 backdrop-blur-sm">
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#bfe5dc]">Progresso geral</p>
-                <p className="mt-2 text-3xl font-bold">4 de 15</p>
+                <p className="mt-2 text-3xl font-bold">{unlockedRewards} de {totalRewards}</p>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
-                  <div className="h-full w-[27%] rounded-full bg-[#75d1bd]" />
+                  <div className="h-full rounded-full bg-[#75d1bd]" style={{ width: `${generalProgress}%` }} />
                 </div>
-                <p className="mt-2 text-xs text-[#cfe8e3]">27% da coleção desbloqueada</p>
+                <p className="mt-2 text-xs text-[#cfe8e3]">{generalProgress}% da coleção desbloqueada</p>
               </div>
             </div>
           </section>
@@ -294,7 +326,11 @@ export default function RewardsPage() {
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {selected.items.map((item) => (
+                {selected.items.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-[#d8e2e0] bg-[#fafbfb] p-5 text-sm text-gray-500">
+                    Nenhuma recompensa desbloqueada ainda.
+                  </p>
+                ) : selected.items.map((item) => (
                   <article className="flex items-center gap-3 rounded-2xl border border-[#dce9e6] bg-[#f9fcfb] p-4" key={item}>
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4f4ee] text-[#2e795d]">
                       <Check size={18} />

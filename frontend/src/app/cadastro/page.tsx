@@ -12,6 +12,9 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { Eye, EyeOff, AlertCircle, Check } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
  * Interface que representa a estrutura de um usuário registrado no sistema.
@@ -62,6 +65,55 @@ const Cadastro: NextPage = () => {
   /** Estado para armazenar mensagens de sucesso após cadastro bem-sucedido */
   const [successMsg, setSuccessMsg] = useState("");
 
+  /** Estado de envio do formulário para evitar cadastros duplicados */
+  const [isLoading, setIsLoading] = useState(false);
+
+  const createDemoAccount = useCallback(() => {
+    const usersJson = localStorage.getItem("studyflow_users");
+    const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim().toLowerCase();
+
+    const emailExists = users.some((user) => user.email.toLowerCase() === normalizedEmail);
+    const usernameExists = users.some((user) => user.username.toLowerCase() === normalizedUsername);
+
+    if (emailExists) {
+      setErrorMsg("Este e-mail já está cadastrado neste dispositivo.");
+      return false;
+    }
+
+    if (usernameExists) {
+      setErrorMsg("Este nome de usuário já está em uso neste dispositivo.");
+      return false;
+    }
+
+    users.push({
+      nome,
+      username,
+      email,
+      senha,
+    });
+
+    localStorage.setItem("studyflow_users", JSON.stringify(users));
+    localStorage.setItem(
+      "studyflow_session",
+      JSON.stringify({
+        email,
+        nome,
+        username,
+        loginTime: new Date().getTime(),
+        rememberMe: true,
+        demoMode: true,
+      })
+    );
+
+    setSuccessMsg("Cadastro demo criado com sucesso! Entrando...");
+    setTimeout(() => {
+      router.push("/timer");
+    }, 1000);
+    return true;
+  }, [email, nome, router, senha, username]);
+
   /**
    * Executa o fluxo de registro do usuário.
    * Valida se todos os campos estão preenchidos, se as senhas coincidem, se possuem tamanho mínimo,
@@ -71,7 +123,7 @@ const Cadastro: NextPage = () => {
    * @param e - Evento de envio do formulário React
    */
   const handleRegister = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       setErrorMsg("");
       setSuccessMsg("");
@@ -91,43 +143,69 @@ const Cadastro: NextPage = () => {
         return;
       }
 
-      // Buscar usuários atuais no localStorage
-      const usersJson = localStorage.getItem("studyflow_users");
-      const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
+      setIsLoading(true);
 
-      // Validar se o e-mail ou username já existe
-      const emailExists = users.some(
-        (u) => u.email.toLowerCase() === email.toLowerCase()
-      );
-      const usernameExists = users.some(
-        (u) => u.username.toLowerCase() === username.toLowerCase()
-      );
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: senha,
+          options: {
+            data: {
+              full_name: nome,
+              username,
+            },
+          },
+        });
 
-      if (emailExists) {
-        setErrorMsg("Este e-mail já está cadastrado.");
-        return;
+        if (error) {
+          const authMessage = error.message.toLowerCase();
+
+          if (authMessage.includes("already registered")) {
+            createDemoAccount();
+            return;
+          }
+
+          createDemoAccount();
+          return;
+        }
+
+        if (data.session) {
+          localStorage.setItem(
+            "studyflow_session",
+            JSON.stringify({
+              email,
+              nome,
+              username,
+              loginTime: new Date().getTime(),
+              rememberMe: true,
+            })
+          );
+          setSuccessMsg("Cadastro realizado com sucesso! Entrando...");
+          setTimeout(() => {
+            router.push("/timer");
+          }, 1000);
+          return;
+        }
+
+        localStorage.setItem(
+          "studyflow_session",
+          JSON.stringify({
+            email,
+            nome,
+            username,
+            loginTime: new Date().getTime(),
+            rememberMe: true,
+            pendingEmailConfirmation: true,
+          })
+        );
+
+        setSuccessMsg("Cadastro realizado com sucesso! Entrando...");
+        setTimeout(() => {
+          router.push("/timer");
+        }, 1000);
+      } finally {
+        setIsLoading(false);
       }
-
-      if (usernameExists) {
-        setErrorMsg("Este nome de usuário já está em uso.");
-        return;
-      }
-
-      // Adicionar novo usuário
-      const newUser = {
-        nome,
-        username,
-        email,
-        senha,
-      };
-
-      users.push(newUser);
-      localStorage.setItem("studyflow_users", JSON.stringify(users));
-
-      setSuccessMsg("Cadastro realizado com sucesso! Redirecionando...");
-      setTimeout(() => {
-        router.push("/");
-      }, 1500);
     },
     [nome, username, email, senha, confirmarSenha, router]
   );
@@ -146,7 +224,7 @@ const Cadastro: NextPage = () => {
             width={190}
             height={255}
             alt="Study Flow Logo"
-            src="/Picsart-25-06-23-14-17-57-475-1@2x.png"
+            src={`${basePath}/Picsart-25-06-23-14-17-57-475-1@2x.png`}
           />
         </div>
       </section>
@@ -256,9 +334,10 @@ const Cadastro: NextPage = () => {
             <div className="flex flex-col gap-3 w-full mt-4">
               <button
                 type="submit"
+                disabled={isLoading}
                 className="w-full cursor-pointer bg-[#29645e] text-white hover:bg-[#1e4b47] active:scale-95 transition duration-300 font-medium text-lg py-3 rounded-[20px] text-center shadow-[0px_4px_10px_rgba(0,0,0,0.15)]"
               >
-                Cadastrar
+                {isLoading ? "Cadastrando..." : "Cadastrar"}
               </button>
 
               <button

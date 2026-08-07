@@ -1,0 +1,266 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[brazilian]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{microtype}
+
+\geometry{
+    a4paper,
+    left=3cm,
+    right=2cm,
+    top=3cm,
+    bottom=2cm
+}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{teal}{rgb}{0.16,0.39,0.37}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{teal}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=teal,
+    filecolor=magenta,      
+    urlcolor=teal,
+    pdftitle={Relatorio Final - Study Flow},
+    pdfpagemode=FullScreen,
+}
+
+\begin{document}
+
+% --- CAPA ---
+\begin{titlepage}
+    \begin{center}
+        \large\textbf{UNIVERSIDADE FEDERAL DE ITAJUBÁ}\\
+        \large\textbf{CAMPUS ITABIRA}\\
+        \large\textbf{INSTITUTO DE CIÊNCIAS TECNOLÓGICAS}\\
+        \large\textbf{ENGENHARIA DE COMPUTAÇÃO}\\
+        \vspace{3.5cm}
+        \Large\textbf{STUDY FLOW: SISTEMA DE GERENCIAMENTO DE ESTUDOS E PRODUTIVIDADE}\\
+        \vspace{1.5cm}
+        \Large\textbf{Relatório Técnico Final da Disciplina}\\
+        \large{ECOi2215 -- Análise e Desenvolvimento de Software III}\\
+        \vspace{2.5cm}
+        \large\textbf{INTEGRANTES DO GRUPO 8:}\\
+        \vspace{0.5cm}
+        \large{Beatriz Coelho Pereira (Matrícula: d2022010992)}\\
+        \large{Breno Vítor de Paula (Matrícula: d2022012012)}\\
+        \large{Carlos Eduardo Abreu da Silva (Matrícula: d2022004556)}\\
+        \large{Lucas Luz Souza Pires (Matrícula: d2022003076)}\\
+        \large{Vítor Hugo Rodrigues Basílio (Matrícula: d2023011321)}\\
+        \vspace{3cm}
+        \large\textbf{PROFESSORES COORDENADORES:}\\
+        \large{Eduardo Ribeiro Felipe}\\
+        \large{Fabiana Costa Guedes}\\
+        \large{Rossana de Paula Junqueira Almeida}\\
+        \large{Wendell Fioravante da Silva Diniz}\\
+        \vfill
+        \large\textbf{ITABIRA - MG}\\
+        \large\textbf{2026}
+    \end{center}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% --- INTRODUÇÃO ---
+\section{Introdução}
+O projeto \textbf{Study Flow} consiste em uma aplicação voltada para a produtividade de estudantes, com foco na organização acadêmica, automação de rotinas de planejamento e gerenciamento do tempo de estudo. A proposta principal do sistema busca integrar compromissos recebidos por e-mail de plataformas acadêmicas de forma a automatizar a geração e distribuição de atividades no cronograma. Com isso, busca-se mitigar a sobrecarga mental dos alunos no planejamento diário, permitindo que dediquem mais foco ao aprendizado efetivo.
+
+Ao final do Módulo II da disciplina de Análise e Desenvolvimento de Software III, o projeto contava com os seguintes artefatos desenvolvidos:
+\begin{itemize}
+    \item \textbf{Protótipo de Média/Alta Fidelidade no Figma}: Definição completa do fluxo do usuário e do design system, englobando telas de Login, Cadastro, Dashboard, Calendário, Atividades, Disciplinas, Temporizador, Estatísticas, Conquistas/Recompensas e Configurações.
+    \item \textbf{Interface Frontend Inicial em Next.js}: Implementação inicial das rotas do frontend do aplicativo.
+    \item \textbf{Simulação de Estado via Armazenamento Local (localStorage)}: Devido à ausência de um backend real na fase anterior, as lógicas de autenticação, cadastro de contas, tarefas do dashboard, adição de disciplinas e notas eram simuladas no lado do cliente através de persistência em \texttt{localStorage} no navegador.
+\end{itemize}
+
+O objetivo principal deste Módulo III foi substituir a simulação local por uma integração real com uma infraestrutura de backend e persistência de dados em nuvem, garantindo a integridade dos dados e a segurança das credenciais.
+
+% --- DESENVOLVIMENTO DE FRONTEND ---
+\section{Desenvolvimento de Frontend}
+A interface gráfica do Study Flow foi construída seguindo padrões modernos de desenvolvimento web baseados em componentes reaproveitáveis, com forte atenção à responsividade e experiência do usuário (UX).
+
+\subsection{Frameworks e Tecnologias}
+O ecossistema do frontend do Study Flow compreende as seguintes tecnologias:
+\begin{itemize}
+    \item \textbf{Next.js (v16.2.x)}: Framework React focado em desempenho, utilizando roteamento dinâmico baseado em arquivos na estrutura \texttt{src/app/}. O compilador Turbopack foi utilizado no ambiente de desenvolvimento para carregamento ágil das alterações de estilo e estrutura.
+    \item \textbf{React (v19.x)}: Biblioteca base para construção das interfaces com o uso extensivo de Hooks (\texttt{useState}, \texttt{useEffect}, \texttt{useCallback}, \texttt{useRef}) para controle de estado local e ciclos de vida.
+    \item \textbf{Tailwind CSS (v4)}: Framework utilitário de CSS que otimiza a estilização através de classes declarativas diretamente nos arquivos TypeScript XML (TSX), assegurando layouts responsivos rápidos e estilização consistente sem acúmulo de CSS redundante.
+    \item \textbf{Lucide React}: Conjunto de ícones vetoriais modernos e leves utilizados para representar as ações da barra lateral (\emph{sidebar}), botões e cabeçalhos.
+    \item \textbf{TypeScript}: Superset do JavaScript que adiciona tipagem estática ao código, aumentando a manutenibilidade, autocomplete do editor e prevenindo erros de tipo em tempo de desenvolvimento.
+\end{itemize}
+
+\subsection{Linguagem de Design}
+A identidade visual e a linguagem de design adotadas foram projetadas para induzir a sensação de foco, calma e organização:
+\begin{itemize}
+    \item \textbf{Paleta de Cores}: Composta por tons pastéis baseados em verde-oliva escuro (\texttt{\#29645e}), verde-menta claro (\texttt{\#f7fdfd}), cinza neutro e detalhes em dourado/amarelo para elementos de gamificação (representando conquistas e pontuações).
+    \item \textbf{Tipografia}: Utilização de fontes modernas do Google Fonts, especificamente a família de fontes sem serifa \emph{Roboto} para textos comuns de leitura e \emph{Rubik Bubbles} para logotipos e cabeçalhos decorativos.
+    \item \textbf{Responsividade e Animações}: A barra lateral é fixa à esquerda em telas grandes e adaptável/ocultável em dispositivos móveis. Foram criadas micro-animações como o anel de progresso SVG dinâmico na tela do Temporizador Pomodoro, que exibe visualmente o tempo restante e altera o preenchimento de forma circular suave.
+\end{itemize}
+
+\subsection{Evolução do Frontend no Módulo III}
+A principal alteração aplicada no frontend foi a substituição de funções puras do \texttt{localStorage} por chamadas de API assíncronas assinaladas ao SDK do Supabase (\texttt{@supabase/supabase-js}). 
+O fluxo de login e cadastro foi reestruturado para verificar primeiro a autenticação junto à nuvem e, em caso de sucesso, persistir os dados da sessão localmente para evitar acessos não autorizados.
+
+Para estender a flexibilidade da ferramenta e atender à especificação de autenticação ágil, foi criada uma função \texttt{RPC} (Remote Procedure Call) no banco de dados chamada \texttt{get\_email\_by\_username}. Essa função foi integrada ao fluxo de login do frontend para permitir que o usuário faça login inserindo tanto seu e-mail de cadastro quanto seu nome de usuário único (\emph{username}), como pode ser observado no método \texttt{resolveLoginEmail} no código-fonte principal de login:
+
+\begin{lstlisting}[caption=Resolução de login por usuário ou e-mail no frontend]
+const resolveLoginEmail = useCallback(async () => {
+  const login = email.trim();
+  if (login.includes("@")) {
+    return login;
+  }
+  const { data } = await supabase.rpc("get_email_by_username", {
+    login_username: login,
+  });
+  if (typeof data === "string" && data.includes("@")) {
+    return data;
+  }
+  return login;
+}, [email]);
+\end{lstlisting}
+
+Se a conexão com a nuvem falhar ou não existirem chaves de configuração declaradas nas variáveis de ambiente (\texttt{.env}), o sistema executa um fluxo de contingência (\emph{fallback}) para o modo demonstração (\emph{Demo Mode}), que lê os usuários cadastrados e sessões de estudo armazenadas no \texttt{localStorage}, garantindo que a aplicação possa ser demonstrada mesmo offline.
+
+% --- DESENVOLVIMENTO DE BACKEND ---
+\section{Desenvolvimento de Backend}
+O Study Flow adotou um modelo arquitetural baseado em \textbf{Backend-as-a-Service (BaaS)}, utilizando o ecossistema \textbf{Supabase}. Essa decisão permitiu acelerar o desenvolvimento ao fornecer de forma integrada serviços essenciais de infraestrutura.
+
+\subsection{Arquitetura e Serviços Utilizados}
+O backend em nuvem é composto por três blocos principais de serviços:
+\begin{enumerate}
+    \item \textbf{Supabase Auth}: Serviço de gerenciamento de identidades e acessos. Gerencia a criação de contas, redefinição de senhas e a emissão de tokens de sessão seguros baseados em JSON Web Tokens (JWT) passados no cabeçalho das requisições.
+    \item \textbf{Banco de Dados Relacional (PostgreSQL)}: SGBD robusto utilizado para armazenamento de dados estruturados. O Supabase fornece suporte nativo a extensões espaciais e criptográficas (\texttt{pgcrypto}).
+    \item \textbf{Row Level Security (RLS)}: Camada de segurança interna do banco que filtra e valida acessos diretamente em nível de linha com base no ID do usuário logado na sessão ativa.
+\end{enumerate}
+
+\subsection{Padrões de Projeto Aplicados}
+\begin{itemize}
+    \item \textbf{BaaS / Serverless}: Elimina a necessidade de gerenciar servidores de aplicação dedicados, utilizando requisições diretas do cliente para os endpoints do banco e autenticação.
+    \item \textbf{Observer Pattern via Database Triggers}: Padrão utilizado para propagar alterações automáticas. Um gatilho foi configurado para observar a tabela de credenciais nativas do Supabase (\texttt{auth.users}). Quando um novo usuário se cadastra, o trigger é disparado automaticamente para sincronizar os dados básicos e criar um registro na tabela pública de perfis (\texttt{public.profiles}).
+    \item \textbf{Stored Procedures / RPC}: Lógicas encapsuladas no banco de dados para evitar exposição de queries complexas no frontend, como a resolução de e-mails via nome de usuário.
+\end{itemize}
+
+% --- CAMADA DE PERSISTÊNCIA ---
+\section{Desenvolvimento da Camada de Persistência}
+A camada de persistência de dados foi totalmente redesenhada a partir do modelo físico do banco de dados definido na disciplina anterior (ADS II). O banco de dados relacional foi hospedado no PostgreSQL do Supabase, contendo tabelas bem estruturadas, regras de integridade referencial por chaves estrangeiras e gatilhos automatizados em PL/pgSQL.
+
+\subsection{Esquema de Tabelas (Dicionário do Banco)}
+A estrutura física de dados é definida pelas seguintes tabelas do esquema \texttt{public}:
+\begin{itemize}
+    \item \textbf{profiles}: Extensão da tabela interna do Supabase (\texttt{auth.users}). Armazena as informações públicas de perfil do usuário. Chave primária: \texttt{id} (UUID, chave estrangeira de \texttt{auth.users}). Atributos adicionais: \texttt{nome}, \texttt{username}, \texttt{email}, \texttt{avatar\_url}, \texttt{horas\_diarias}, \texttt{nivel\_atual}, \texttt{xp}.
+    \item \textbf{disciplinas}: Guarda as matérias acadêmicas criadas pelos estudantes. Atributos: \texttt{id} (UUID), \texttt{user\_id} (referência a \texttt{profiles}), \texttt{nome}, \texttt{professor}, \texttt{data\_inicio}, \texttt{data\_fim}, \texttt{anotacoes} (tipo \texttt{jsonb} para flexibilidade no editor de texto de notas).
+    \item \textbf{avaliacoes}: Provas, trabalhos ou outras atividades pontuadas de uma disciplina. Atributos: \texttt{id}, \texttt{disciplina\_id} (chave estrangeira), \texttt{nome}, \texttt{tipo} (enum: prova, trabalho, outro), \texttt{data\_entrega}.
+    \item \textbf{topicos}: Conteúdos específicos e unidades de estudo atrelados a uma disciplina.
+    \item \textbf{metas}: Objetivos de estudos definidos pelo usuário (ex: estudar 5 horas de Algoritmos). Contém campo de controle de status (\texttt{pendente}, \texttt{em\_andamento}, \texttt{feito}, \texttt{atrasado}).
+    \item \textbf{itens\_cronograma}: Atividades gerais que aparecem no calendário e na lista de afazeres. Referencia opcionalmente uma \texttt{disciplina\_id} ou um \texttt{topico\_id}.
+    \item \textbf{sessoes\_estudo}: Registros das execuções do temporizador Pomodoro. Salva as datas exatas de início, fim, duração em minutos, número de pausas durante a sessão e a pontuação obtida em XP.
+    \item \textbf{conquistas} e \textbf{user\_conquistas}: Tabelas responsáveis pelo motor de gamificação. A tabela \texttt{conquistas} armazena a definição (ex: ``Mestre do Tempo''), o critério técnico em formato JSON e o XP de recompensa. A tabela associativa \texttt{user\_conquistas} registra quais usuários desbloquearam quais conquistas e em que data.
+    \item \textbf{palavras\_chave} e \textbf{sinc\_gmail}: Configurações do usuário e palavras-chave de triagem para a sincronização automatizada com e-mails acadêmicos.
+\end{itemize}
+
+\subsection{Gatilhos de Criação Automática de Perfil}
+Para garantir que cada usuário autenticado possua um registro correspondente na tabela \texttt{profiles}, foi desenvolvida uma trigger na tabela interna \texttt{auth.users} que dispara uma função em PL/pgSQL no momento em que a conta é criada no Supabase Auth:
+
+\begin{lstlisting}[language=SQL, caption=Trigger de criação de perfil de usuário na base de dados]
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, nome, username, email)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data ->> 'nome', new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1)),
+    COALESCE(new.raw_user_meta_data ->> 'username', split_part(new.email, '@', 1)),
+    new.email
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+\end{lstlisting}
+
+\subsection{Políticas de Segurança em Nível de Linha (RLS)}
+Seguindo os princípios de privacidade do usuário e em conformidade com a LGPD (Lei Geral de Proteção de Dados), todas as tabelas foram configuradas com \textbf{Row Level Security (RLS)}. Por padrão, nenhum usuário consegue visualizar ou alterar dados que pertencem a outra pessoa. 
+
+As políticas criadas utilizam a função interna do Supabase \texttt{auth.uid()} para comparar o ID do token de autenticação ativo com a coluna de relacionamento da tabela correspondente:
+
+\begin{lstlisting}[language=SQL, caption=Exemplo de políticas RLS aplicadas à tabela de disciplinas]
+-- Habilita RLS para a tabela disciplinas
+ALTER TABLE public.disciplinas ENABLE ROW LEVEL SECURITY;
+
+-- Politica que permite selecao, insercao e atualizacao apenas dos dados pertencentes ao proprio usuario
+CREATE POLICY "disciplinas_all_own" ON public.disciplinas
+FOR ALL USING (auth.uid() = disciplinas.user_id) 
+WITH CHECK (auth.uid() = disciplinas.user_id);
+\end{lstlisting}
+
+\subsection{Otimização e Índices}
+Para acelerar o tempo de carregamento de páginas críticas (como calendário e estatísticas), foram criados índices de árvore-B sobre as colunas mais utilizadas em cláusulas de junção (\texttt{JOIN}) e filtragem (\texttt{WHERE}):
+\begin{itemize}
+    \item \texttt{idx\_disciplinas\_user} na coluna \texttt{user\_id} da tabela \texttt{disciplinas}.
+    \item \texttt{idx\_itens\_user} na coluna \texttt{user\_id} da tabela \texttt{itens\_cronograma}.
+    \item \texttt{idx\_sessoes\_user} na coluna \texttt{user\_id} da tabela \texttt{sessoes\_estudo}.
+    \item \texttt{idx\_disciplinas\_anotacoes\_gin}: Índice do tipo GIN (Generalized Inverted Index) aplicado à coluna \texttt{anotacoes} (\texttt{jsonb}) da tabela \texttt{disciplinas}, otimizando buscas por termos textuais dentro do editor de notas.
+\end{itemize}
+
+% --- CONCLUSÃO ---
+\section{Conclusão e Próximos Passos}
+A transição do Study Flow de um sistema puramente estático simulado em memória local para uma aplicação web conectada a um serviço de banco de dados e autenticação escalável em nuvem representou um salto de maturidade no projeto.
+
+\subsection{O que funcionou}
+\begin{itemize}
+    \item \textbf{Consistência da Stack BaaS}: O Supabase forneceu um fluxo extremamente estável de autenticação e comunicação com o banco através de consultas assíncronas simples em JavaScript.
+    \item \textbf{Segurança Automatizada}: As políticas RLS e os gatilhos em nível de banco de dados se mostraram excelentes para garantir que o frontend não precise se preocupar em programar verificações complexas de permissão, uma vez que o próprio banco de dados bloqueia ou sincroniza os dados automaticamente.
+    \item \textbf{Resiliência Offline}: A arquitetura híbrida permitiu manter o \texttt{localStorage} como mecanismo de contingência, permitindo o uso imediato das ferramentas em modo offline de demonstração.
+\end{itemize}
+
+\subsection{Limitações e Backlog Técnico}
+Apesar dos avanços, algumas funcionalidades do escopo inicial da aplicação permanecem em nível de planejamento ou modelagem lógica de dados no banco, necessitando de refinamento nas próximas etapas de desenvolvimento:
+\begin{itemize}
+    \item \textbf{Integração de Sincronização de E-mail (Gmail API)}: Embora a estrutura de persistência com tabelas para \texttt{palavras\_chave} e status de sincronização esteja concluída no PostgreSQL, a implementação do fluxo OAuth e leitura da caixa de e-mails em tempo real no frontend foi deixada para o próximo módulo.
+    \item \textbf{Edição Direta do Perfil no Banco}: A tela de perfil está funcional localmente para personalizações cosméticas, mas o espelhamento das modificações nos registros em nuvem do Supabase precisa de ajustes na integração das APIs.
+    \item \textbf{Estatísticas e Gráficos de Longo Prazo}: A exibição de dados está vinculada à duração em minutos das sessões do Pomodoro. O motor de cálculo estatístico semanal e mensal precisará ser expandido para agregar tarefas concluídas fora do temporizador de foco.
+\end{itemize}
+
+O desenvolvimento atual consolida uma base sólida de engenharia de software, aderindo às boas práticas de arquitetura web, segurança de dados e separação de preocupações entre interface e lógica de persistência.
+
+\end{document}

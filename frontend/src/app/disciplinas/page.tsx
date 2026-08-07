@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, BarChart3, Bell, BookOpen, Calendar, Edit2, Gift, LayoutDashboard, LogOut, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 type Subject = { date: string; endTime: string; examDate: string; id: string; name: string; notes: string; startTime: string; workDate: string };
 type UserSession = { email: string; nome: string; username: string };
@@ -24,20 +26,54 @@ export default function DisciplinasPage() {
   const [viewing, setViewing] = useState<Subject | null>(null);
   const [deleting, setDeleting] = useState<Subject | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const session = localStorage.getItem("studyflow_session");
-    if (!session) { router.push("/"); return; }
-    try {
-      const parsed = JSON.parse(session) as UserSession;
-      const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
-      setTimeout(() => { setUser(parsed); setSubjects(saved ? JSON.parse(saved) : []); }, 0);
-    } catch { router.push("/"); }
+    async function loadSubjects() {
+      const parsed = getStoredSession();
+      if (!parsed) { router.push("/"); return; }
+
+      try {
+        setUser(parsed);
+        const currentUserId = await getCurrentSupabaseUserId(parsed);
+        setSupabaseUserId(currentUserId);
+
+        if (!currentUserId) {
+          const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
+          setSubjects(saved ? JSON.parse(saved) : []);
+          return;
+        }
+
+        const { data } = await supabase
+          .from("disciplinas")
+          .select("id,nome,data_inicio,data_fim,anotacoes")
+          .eq("user_id", currentUserId)
+          .order("created_at", { ascending: false });
+
+        setSubjects((data ?? []).map((item) => {
+          const notes = (item.anotacoes ?? {}) as Record<string, string>;
+          return {
+            date: item.data_inicio ?? "",
+            endTime: notes.endTime ?? "",
+            examDate: notes.examDate ?? "",
+            id: item.id,
+            name: item.nome,
+            notes: notes.notes ?? "",
+            startTime: notes.startTime ?? "",
+            workDate: notes.workDate ?? "",
+          };
+        }));
+      } catch {
+        router.push("/");
+      }
+    }
+
+    void loadSubjects();
   }, [router]);
 
   const save = (next: Subject[]) => {
     setSubjects(next);
-    if (user) localStorage.setItem(`studyflow_subjects_${user.email}`, JSON.stringify(next));
+    if (user && !supabaseUserId) localStorage.setItem(`studyflow_subjects_${user.email}`, JSON.stringify(next));
   };
   const openNew = () => { setEditingId(null); setForm(emptySubject); setShowForm(true); };
   const openEdit = (subject: Subject) => {
@@ -45,13 +81,44 @@ export default function DisciplinasPage() {
     setForm({ date: subject.date, endTime: subject.endTime, examDate: subject.examDate, name: subject.name, notes: subject.notes, startTime: subject.startTime, workDate: subject.workDate });
     setViewing(null); setShowForm(true);
   };
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.name.trim()) return;
-    save(editingId ? subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item) : [...subjects, { ...form, id: crypto.randomUUID() }]);
+
+    if (supabaseUserId) {
+      const payload = {
+        anotacoes: {
+          endTime: form.endTime,
+          examDate: form.examDate,
+          notes: form.notes,
+          startTime: form.startTime,
+          workDate: form.workDate,
+        },
+        data_fim: form.date || null,
+        data_inicio: form.date || null,
+        nome: form.name.trim(),
+        user_id: supabaseUserId,
+      };
+
+      if (editingId) {
+        await supabase.from("disciplinas").update(payload).eq("id", editingId).eq("user_id", supabaseUserId);
+        save(subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item));
+      } else {
+        const { data } = await supabase.from("disciplinas").insert(payload).select("id").single();
+        if (data) save([{ ...form, id: data.id }, ...subjects]);
+      }
+    } else {
+      save(editingId ? subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item) : [...subjects, { ...form, id: crypto.randomUUID() }]);
+    }
+
     setShowForm(false); setEditingId(null); setForm(emptySubject);
   };
-  const remove = () => { if (deleting) save(subjects.filter((item) => item.id !== deleting.id)); setDeleting(null); };
+  const remove = async () => {
+    if (!deleting) return;
+    if (supabaseUserId) await supabase.from("disciplinas").delete().eq("id", deleting.id).eq("user_id", supabaseUserId);
+    save(subjects.filter((item) => item.id !== deleting.id));
+    setDeleting(null);
+  };
 
   if (!user) return <div className="flex min-h-screen items-center justify-center bg-[#f7fdfd] text-[#29645e]">Carregando disciplinas...</div>;
 

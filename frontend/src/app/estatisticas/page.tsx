@@ -20,6 +20,13 @@ import {
   User,
   X,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import {
+  buildDistribution,
+  getCurrentSupabaseUserId,
+  getLocalStudyMinutes,
+  getStoredSession,
+} from "@/lib/studyflow-data";
 
 type Period = "semana" | "mes" | "acumulado";
 
@@ -40,70 +47,70 @@ const menuItems = [
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-const periodData = {
+type PeriodStats = Record<Period, { chart: Array<{ label: string; value: number }>; label: string; topic: string; topicHours: string }>;
+
+const emptyPeriodData: PeriodStats = {
   semana: {
     label: "Semana",
-    topic: "História",
-    topicHours: "8H",
-    chart: [
-      { label: "História", value: 8 },
-      { label: "Matemática", value: 6 },
-      { label: "Banco de Dados", value: 5 },
-      { label: "Algoritmos", value: 4 },
-      { label: "Redes", value: 2 },
-    ],
+    topic: "Sem dados",
+    topicHours: "0H",
+    chart: [],
   },
   mes: {
     label: "Mês",
-    topic: "Matemática",
-    topicHours: "22H",
-    chart: [
-      { label: "Matemática", value: 22 },
-      { label: "História", value: 18 },
-      { label: "Algoritmos", value: 15 },
-      { label: "Banco de Dados", value: 12 },
-      { label: "Redes", value: 8 },
-    ],
+    topic: "Sem dados",
+    topicHours: "0H",
+    chart: [],
   },
   acumulado: {
     label: "Acumulado",
-    topic: "História",
-    topicHours: "110H",
-    chart: [
-      { label: "História", value: 110 },
-      { label: "Matemática", value: 92 },
-      { label: "Banco de Dados", value: 76 },
-      { label: "Algoritmos", value: 61 },
-      { label: "Redes", value: 45 },
-    ],
+    topic: "Sem dados",
+    topicHours: "0H",
+    chart: [],
   },
-} satisfies Record<Period, { chart: Array<{ label: string; value: number }>; label: string; topic: string; topicHours: string }>;
-
-const featuredAchievements = [
-  { name: "Especialista em História I", detail: "10 horas estudadas em História" },
-  { name: "Iniciante em Ciências", detail: "Primeira sessão concluída" },
-  { name: "Especialista em Geografia", detail: "Meta semanal alcançada" },
-  { name: "Sequência de Foco", detail: "5 dias consecutivos estudando" },
-];
-
-const allAchievements = {
-  completed: [
-    { name: "Especialista em História I", detail: "10 horas estudadas em História" },
-    { name: "Iniciante em Ciências", detail: "Primeira sessão concluída" },
-    { name: "Especialista em Geografia", detail: "Meta semanal alcançada" },
-    { name: "Sequência de Foco", detail: "5 dias consecutivos estudando" },
-  ],
-  available: [
-    { name: "Mestre de Matemática", detail: "Estude Matemática por 20 horas" },
-    { name: "Explorador de Disciplinas", detail: "Estude cinco disciplinas diferentes" },
-    { name: "Madrugador", detail: "Conclua uma sessão antes das 8h" },
-  ],
-  inProgress: [
-    { name: "Especialista Multidisciplinar", detail: "Complete 10 horas em três disciplinas", progress: 70 },
-    { name: "Mestre de Hábitos", detail: "Estude durante 15 dias consecutivos", progress: 53 },
-    { name: "Iniciante em Compartilhamento", detail: "Compartilhe três resultados", progress: 33 },
-  ],
 };
+
+const emptyAchievements = { available: [], completed: [], inProgress: [] } as {
+  available: AchievementItem[];
+  completed: AchievementItem[];
+  inProgress: AchievementItem[];
+};
+
+function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: number | null; disciplinas: { nome?: string | null } | Array<{ nome?: string | null }> | null }>): PeriodStats {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const makePeriod = (label: string, predicate: (date: Date) => boolean) => {
+    const rows = sessoes
+      .filter((sessao) => predicate(new Date(sessao.data_inicio)))
+      .map((sessao) => {
+        const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+
+        return {
+          disciplina: disciplina?.nome ?? "Sem disciplina",
+          minutes: sessao.duracao_efetiva_min ?? 0,
+        };
+      });
+    const distribution = buildDistribution(rows);
+    const top = distribution[0];
+
+    return {
+      chart: distribution.map((item) => ({ label: item.name, value: item.hours })),
+      label,
+      topic: top?.name ?? "Sem dados",
+      topicHours: `${top?.hours ?? 0}H`,
+    };
+  };
+
+  return {
+    acumulado: makePeriod("Acumulado", () => true),
+    mes: makePeriod("Mês", (date) => date >= startOfMonth),
+    semana: makePeriod("Semana", (date) => date >= startOfWeek),
+  };
+}
 
 export default function EstatisticasPage() {
   const router = useRouter();
@@ -113,22 +120,74 @@ export default function EstatisticasPage() {
   const [showProfile, setShowProfile] = useState(false);
   const [shared, setShared] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
+  const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
+  const [allAchievements, setAllAchievements] = useState(emptyAchievements);
 
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadStats() {
+      const parsedSession = getStoredSession();
 
-    if (!storedSession) {
-      router.push("/");
-      return;
+      if (!parsedSession) {
+        router.push("/");
+        return;
+      }
+
+      try {
+        setUser(parsedSession);
+        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+
+        if (!currentUserId) {
+          const localMinutes = getLocalStudyMinutes(parsedSession.email);
+          const localHours = Number((localMinutes / 60).toFixed(1));
+          setStatsData({
+            acumulado: { chart: localHours ? [{ label: "Sessões locais", value: localHours }] : [], label: "Acumulado", topic: localHours ? "Sessões locais" : "Sem dados", topicHours: `${localHours}H` },
+            mes: { chart: [], label: "Mês", topic: "Sem dados", topicHours: "0H" },
+            semana: { chart: [], label: "Semana", topic: "Sem dados", topicHours: "0H" },
+          });
+          return;
+        }
+
+        const [{ data: sessoes }, { data: conquistas }, { data: todasConquistas }] = await Promise.all([
+          supabase
+            .from("sessoes_estudo")
+            .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
+            .eq("user_id", currentUserId),
+          supabase
+            .from("user_conquistas")
+            .select("conquistas(nome,descricao)")
+            .eq("user_id", currentUserId)
+            .order("data_conquista", { ascending: false }),
+          supabase.from("conquistas").select("nome,descricao"),
+        ]);
+
+        const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
+        const periodStats = buildStats(completedSessions);
+        const completedAchievements = (conquistas ?? []).map((item) => {
+          const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
+          return {
+            detail: conquista?.descricao ?? "Conquista desbloqueada",
+            name: conquista?.nome ?? "Conquista",
+          };
+        });
+        const completedNames = new Set(completedAchievements.map((achievement) => achievement.name));
+        const availableAchievements = (todasConquistas ?? [])
+          .filter((achievement) => !completedNames.has(achievement.nome))
+          .map((achievement) => ({
+            detail: achievement.descricao ?? "Continue estudando para desbloquear",
+            name: achievement.nome,
+          }));
+
+        setStatsData(periodStats);
+        setFeaturedAchievements(completedAchievements.slice(0, 4));
+        setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: [] });
+      } catch {
+        localStorage.removeItem("studyflow_session");
+        router.push("/");
+      }
     }
 
-    try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => setUser(parsedSession), 0);
-    } catch {
-      localStorage.removeItem("studyflow_session");
-      router.push("/");
-    }
+    void loadStats();
   }, [router]);
 
   const logout = () => {
@@ -137,7 +196,7 @@ export default function EstatisticasPage() {
   };
 
   const shareStats = async () => {
-    const current = periodData[period];
+    const current = statsData[period];
     const text = `Estou no nível 12 no Study Flow! Meu tópico mais estudado em ${current.label.toLowerCase()} foi ${current.topic}, com ${current.topicHours}.`;
 
     try {
@@ -158,8 +217,13 @@ export default function EstatisticasPage() {
     );
   }
 
-  const current = periodData[period];
-  const maxValue = Math.max(...current.chart.map((item) => item.value));
+  const current = statsData[period];
+  const maxValue = Math.max(1, ...current.chart.map((item) => item.value));
+  const weeklyHours = statsData.semana.chart.reduce((sum, item) => sum + item.value, 0);
+  const monthlyHours = statsData.mes.chart.reduce((sum, item) => sum + item.value, 0);
+  const totalHours = statsData.acumulado.chart.reduce((sum, item) => sum + item.value, 0);
+  const weeklyGoal = 28;
+  const weeklyProgress = Math.min(100, Math.round((weeklyHours / weeklyGoal) * 100));
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7fdfd] font-[Roboto] lg:flex-row">
@@ -270,9 +334,9 @@ export default function EstatisticasPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
-              <SummaryRing label="Semana" progress={54} value="15H" />
-              <SummaryRing label="Meta semanal" progress={100} value="28H" />
-              <SummaryRing label="Hoje" progress={72} value="5H" />
+              <SummaryRing label="Semana" progress={weeklyProgress} value={`${weeklyHours.toFixed(1)}H`} />
+              <SummaryRing label="Meta semanal" progress={weeklyProgress} value={`${weeklyGoal}H`} />
+              <SummaryRing label="Mês" progress={Math.min(100, Math.round((monthlyHours / 80) * 100))} value={`${monthlyHours.toFixed(1)}H`} />
             </div>
           </section>
 
@@ -286,7 +350,7 @@ export default function EstatisticasPage() {
                   </div>
 
                   <div className="flex rounded-2xl bg-[#eef6f4] p-1">
-                    {(Object.keys(periodData) as Period[]).map((item) => (
+                    {(Object.keys(statsData) as Period[]).map((item) => (
                       <button
                         className={`cursor-pointer rounded-xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
                           period === item ? "bg-[#29645e] text-white shadow-sm" : "text-[#4f716c] hover:bg-white/70"
@@ -295,7 +359,7 @@ export default function EstatisticasPage() {
                         onClick={() => setPeriod(item)}
                         type="button"
                       >
-                        {periodData[item].label}
+                        {statsData[item].label}
                       </button>
                     ))}
                   </div>
@@ -309,7 +373,11 @@ export default function EstatisticasPage() {
                   </div>
 
                   <div className="relative z-10 flex h-full items-end justify-around gap-3">
-                    {current.chart.map((item, index) => {
+                    {current.chart.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-center text-sm text-gray-400">
+                        Conclua sessões no Timer para gerar estatísticas reais.
+                      </div>
+                    ) : current.chart.map((item, index) => {
                       const height = Math.max(18, Math.round((item.value / maxValue) * 88));
 
                       return (
@@ -333,7 +401,7 @@ export default function EstatisticasPage() {
             <aside className="flex flex-col gap-6">
               <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgba(41,100,94,0.05)]">
                 <div className="flex flex-col items-center text-center">
-                  <LevelRing level={12} progress={76} />
+                  <LevelRing level={Math.max(1, Math.floor(totalHours / 10) + 1)} progress={Math.min(100, Math.round((totalHours % 10) * 10))} />
                   <div className="mt-5 grid w-full grid-cols-2 gap-3 text-left">
                     <div className="rounded-2xl bg-[#f7fbfa] p-4">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Tópico mais estudado</p>
