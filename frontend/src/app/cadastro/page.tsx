@@ -207,7 +207,7 @@ const Cadastro: NextPage = () => {
         setIsLoading(false);
       }
     },
-    [nome, username, email, senha, confirmarSenha, router]
+    [createDemoAccount, nome, username, email, senha, confirmarSenha, router]
   );
 
   return (

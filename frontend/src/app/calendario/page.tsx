@@ -180,7 +180,7 @@ export default function CalendarioPage() {
         setEvents((itens ?? []).map((item) => {
           const disciplina = Array.isArray(item.disciplinas) ? item.disciplinas[0] : item.disciplinas;
           return {
-            date: item.data_inicio ? String(item.data_inicio).slice(0, 10) : item.data_fim ? String(item.data_fim).slice(0, 10) : selectedDate,
+            date: item.data_inicio ? String(item.data_inicio).slice(0, 10) : item.data_fim ? String(item.data_fim).slice(0, 10) : new Date().toISOString().slice(0, 10),
             discipline: disciplina?.nome ?? "Sem disciplina",
             disciplineId: item.disciplina_id,
             id: item.id,
