@@ -23,7 +23,11 @@ import {
   X,
 } from "lucide-react";
 
+import { supabase } from "@/lib/supabase";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+
 type UserSession = {
+  demoMode?: boolean;
   email: string;
   nome: string;
   username: string;
@@ -69,9 +73,9 @@ const defaultProfile: ProfileData = {
   username: fallbackUser.username,
   email: fallbackUser.email,
   bgColor: "#0F1C1D",
-  level: "42",
-  xp: "12.450",
-  lastAchievement: "Mestre do Tempo",
+  level: "1",
+  xp: "0",
+  lastAchievement: "Foco inicial",
 };
 
 export default function PerfilPage() {
@@ -87,31 +91,80 @@ export default function PerfilPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const profilePicRef = useRef<HTMLInputElement>(null);
   const bannerPicRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadProfile() {
+      const parsedSession = getStoredSession();
 
-    if (!storedSession) return;
+      if (!parsedSession) {
+        router.push("/");
+        return;
+      }
 
-    try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => {
-        setProfile((current) => ({
-          ...current,
-          email: parsedSession.email,
-          name: parsedSession.nome,
-          username: parsedSession.username,
-        }));
-      }, 0);
-    } catch {
-      localStorage.removeItem("studyflow_session");
+      try {
+        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+        setSupabaseUserId(currentUserId);
+
+        if (!currentUserId) {
+          const localProfile = localStorage.getItem(`studyflow_profile_${parsedSession.email}`);
+          if (localProfile) {
+            setProfile(JSON.parse(localProfile));
+          } else {
+            setProfile((current) => ({
+              ...current,
+              email: parsedSession.email,
+              name: parsedSession.nome,
+              username: parsedSession.username,
+            }));
+          }
+          return;
+        }
+
+        const { data: dbProfile, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", currentUserId)
+          .maybeSingle();
+
+        if (dbProfile && !error) {
+          setProfile({
+            name: dbProfile.nome || parsedSession.nome || "Usuário",
+            username: dbProfile.username || parsedSession.username || "usuario",
+            email: dbProfile.email || parsedSession.email,
+            bgColor: dbProfile.bg_color || "#0F1C1D",
+            level: String(dbProfile.nivel_atual ?? 1),
+            xp: String(dbProfile.xp ?? 0),
+            lastAchievement: dbProfile.last_achievement || "Foco inicial",
+          });
+          if (dbProfile.avatar_url) setProfilePic(dbProfile.avatar_url);
+          if (dbProfile.banner_url) setBannerPic(dbProfile.banner_url);
+        } else {
+          setProfile((current) => ({
+            ...current,
+            email: parsedSession.email,
+            name: parsedSession.nome,
+            username: parsedSession.username,
+          }));
+        }
+      } catch {
+        // Fallback gracioso
+      }
     }
-  }, []);
 
-  const logout = () => {
+    loadProfile();
+  }, [router]);
+
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignora erro se estiver offline
+    }
     localStorage.removeItem("studyflow_session");
     router.push("/");
   };
@@ -152,14 +205,14 @@ export default function PerfilPage() {
   const validate = () => {
     const nextErrors: Record<string, string> = {};
 
+    if (!profile.name.trim()) nextErrors.name = "Nome não pode estar vazio.";
     if (!profile.username.trim()) nextErrors.username = "Nome de usuário não pode estar vazio.";
     if (!profile.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) nextErrors.email = "Formato de email inválido.";
-    if (!currentPassword) nextErrors.currentPassword = "Senha atual é obrigatória para salvar.";
 
     return nextErrors;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextErrors = validate();
 
     if (Object.keys(nextErrors).length > 0) {
@@ -168,8 +221,70 @@ export default function PerfilPage() {
     }
 
     setErrors({});
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setIsSaving(true);
+
+    try {
+      const session = getStoredSession();
+
+      if (supabaseUserId && session && !session.demoMode) {
+        if (currentPassword) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: session.email,
+            password: currentPassword,
+          });
+
+          if (signInError) {
+            setErrors({ currentPassword: "Senha atual incorreta." });
+            setIsSaving(false);
+            return;
+          }
+        }
+
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({
+            nome: profile.name,
+            username: profile.username,
+            email: profile.email,
+            bg_color: profile.bgColor,
+            avatar_url: profilePic,
+            banner_url: bannerPic,
+          })
+          .eq("id", supabaseUserId);
+
+        if (updateError) {
+          setErrors({ global: "Erro ao salvar perfil no banco de dados." });
+          setIsSaving(false);
+          return;
+        }
+
+        if (profile.email !== session.email) {
+          await supabase.auth.updateUser({ email: profile.email });
+        }
+      }
+
+      // Atualiza localStorage
+      if (session) {
+        localStorage.setItem(
+          "studyflow_session",
+          JSON.stringify({
+            ...session,
+            email: profile.email,
+            nome: profile.name,
+            username: profile.username,
+          })
+        );
+        localStorage.setItem(`studyflow_profile_${profile.email}`, JSON.stringify(profile));
+      }
+
+      setSaveSuccess(true);
+      setCurrentPassword("");
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch {
+      setErrors({ global: "Ocorreu um erro ao processar as alterações." });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderField = (
@@ -230,6 +345,26 @@ export default function PerfilPage() {
         ) : null}
       </div>
     );
+  };
+
+  const handlePasswordChange = async (data: PasswordData) => {
+    try {
+      if (supabaseUserId) {
+        const { error } = await supabase.auth.updateUser({
+          password: data.newPassword,
+        });
+
+        if (error) {
+          setErrors({ global: `Erro ao alterar senha: ${error.message}` });
+          return;
+        }
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch {
+      setErrors({ global: "Erro ao atualizar senha." });
+    }
   };
 
   return (
@@ -340,7 +475,7 @@ export default function PerfilPage() {
 
             <div className="p-5 sm:p-8">
               <section className="rounded-[24px] border border-[#e1ecea] bg-[#f8fbfa] p-5 sm:p-6">
-                {renderField("Nome", "name", "text", false)}
+                {renderField("Nome", "name", "text")}
                 {renderField("Nome de usuário", "username")}
                 {renderField("Email", "email", "email")}
 
@@ -417,14 +552,16 @@ export default function PerfilPage() {
                     </button>
                   </div>
                   {errors.currentPassword ? <p className="text-xs font-medium text-red-500">{errors.currentPassword}</p> : null}
+                  {errors.global ? <p className="text-xs font-medium text-red-500">{errors.global}</p> : null}
 
                   <div className="flex flex-col items-center gap-4 pt-2">
                     <button
-                      className="w-full cursor-pointer rounded-[22px] bg-[#29645e] px-8 py-3 text-lg font-semibold text-white shadow-md shadow-[#29645e]/15 transition hover:bg-[#1f514c] sm:w-auto"
+                      className="w-full cursor-pointer rounded-[22px] bg-[#29645e] px-8 py-3 text-lg font-semibold text-white shadow-md shadow-[#29645e]/15 transition hover:bg-[#1f514c] sm:w-auto disabled:opacity-50"
+                      disabled={isSaving}
                       onClick={handleSave}
                       type="button"
                     >
-                      Salvar Alterações
+                      {isSaving ? "Salvando..." : "Salvar Alterações"}
                     </button>
 
                     {saveSuccess ? (
@@ -446,7 +583,7 @@ export default function PerfilPage() {
       <PasswordModal
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
-        onSave={() => undefined}
+        onSave={handlePasswordChange}
       />
     </div>
   );

@@ -67,3 +67,10 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Supabase CLI temp files
+supabase/.temp/
+.temp/
+
+# Skills and Assistant configs
+skills/
