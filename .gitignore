@@ -74,3 +74,12 @@ supabase/.temp/
 
 # Skills and Assistant configs
 skills/
+
+# Expo
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
