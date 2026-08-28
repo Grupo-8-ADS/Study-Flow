@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@studyflow/shared": ["../packages/shared/src"],
+      "@studyflow/shared/*": ["../packages/shared/src/*"]
     }
   },
   "include": [
