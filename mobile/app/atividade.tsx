@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Plus,
@@ -15,77 +16,34 @@ import {
   Edit2,
   Trash2,
   FileText,
-  CheckCircle2,
 } from 'lucide-react-native';
-import { COLORS, ItemCronograma } from '@studyflow/shared';
+import {
+  COLORS,
+  ItemCronograma,
+  isValidDateString,
+  isValidTimeString,
+  isTimeIntervalValid,
+  applyDateMask,
+  applyTimeMask,
+} from '@studyflow/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Storage } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-
-const DEFAULT_ATIVIDADES: ItemCronograma[] = [
-  {
-    id: '1',
-    user_id: 'user-1',
-    nome: 'Academia & Exercícios',
-    tipo: 'atividade',
-    prioridade: 1,
-    data_inicio: '2026-08-21T09:00:00',
-    data_fim: '2026-08-21T10:00:00',
-    descricao: 'Levar garrafa de água e toalha.',
-    completed: false,
-  },
-  {
-    id: '2',
-    user_id: 'user-1',
-    nome: 'Consulta Médica de Rotina',
-    tipo: 'atividade',
-    prioridade: 2,
-    data_inicio: '2026-08-21T14:00:00',
-    data_fim: '2026-08-21T15:00:00',
-    descricao: 'Clínica São Lucas - Rua 2, Bairro 3. Levar exames anteriores.',
-    completed: false,
-  },
-  {
-    id: '3',
-    user_id: 'user-1',
-    nome: 'Evento Acadêmico / Palestra',
-    tipo: 'atividade',
-    prioridade: 0,
-    data_inicio: '2026-08-21T21:00:00',
-    data_fim: '2026-08-21T23:00:00',
-    descricao: 'Auditório Principal do Bloco Central.',
-    completed: false,
-  },
-];
 
 export default function AtividadeScreen() {
   const { session } = useAuth();
-  const [atividades, setAtividades] = useState<ItemCronograma[]>(DEFAULT_ATIVIDADES);
-
-  const storageKey = `${Storage.keys.ACTIVITY_PREFIX}${session?.email || 'default'}_itens`;
-
-  useEffect(() => {
-    async function loadData() {
-      const saved = await Storage.getItem<ItemCronograma[]>(storageKey, DEFAULT_ATIVIDADES);
-      setAtividades(saved);
-    }
-    loadData();
-  }, [session]);
-
-  const persistAtividades = async (updated: ItemCronograma[]) => {
-    setAtividades(updated);
-    await Storage.setItem(storageKey, updated);
-  };
+  const [atividades, setAtividades] = useState<ItemCronograma[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Modal Create/Edit State
   const [modalVisible, setModalVisible] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nome, setNome] = useState('');
-  const [dataAtividade, setDataAtividade] = useState('2026-08-21');
+  const [dataAtividade, setDataAtividade] = useState(new Date().toISOString().slice(0, 10));
   const [horarioInicio, setHorarioInicio] = useState('09:00');
   const [horarioFim, setHorarioFim] = useState('10:00');
   const [anotacoes, setAnotacoes] = useState('');
@@ -93,10 +51,42 @@ export default function AtividadeScreen() {
   // View Details Modal State
   const [selectedAtividade, setSelectedAtividade] = useState<ItemCronograma | null>(null);
 
+  const loadAtividades = async () => {
+    setLoading(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        setAtividades([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('itens_cronograma')
+        .select('*')
+        .eq('user_id', userRes.user.id)
+        .eq('tipo', 'atividade')
+        .order('data_inicio', { ascending: true });
+
+      if (error) {
+        console.error('Error loading atividades:', error);
+      } else {
+        setAtividades(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to load atividades:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAtividades();
+  }, [session]);
+
   const openCreateModal = () => {
     setEditingId(null);
     setNome('');
-    setDataAtividade('2026-08-21');
+    setDataAtividade(new Date().toISOString().slice(0, 10));
     setHorarioInicio('09:00');
     setHorarioFim('10:00');
     setAnotacoes('');
@@ -106,7 +96,7 @@ export default function AtividadeScreen() {
   const openEditModal = (a: ItemCronograma) => {
     setEditingId(a.id);
     setNome(a.nome);
-    setDataAtividade(a.data_inicio?.slice(0, 10) || '2026-08-21');
+    setDataAtividade(a.data_inicio?.slice(0, 10) || new Date().toISOString().slice(0, 10));
     setHorarioInicio(a.data_inicio?.slice(11, 16) || '09:00');
     setHorarioFim(a.data_fim?.slice(11, 16) || '10:00');
     setAnotacoes(a.descricao || '');
@@ -114,41 +104,102 @@ export default function AtividadeScreen() {
     setModalVisible(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!nome.trim()) {
       Alert.alert('Atenção', 'Informe o nome da atividade.');
       return;
     }
 
-    if (editingId) {
-      const updated = atividades.map((item) =>
-        item.id === editingId
-          ? {
-              ...item,
-              nome: nome.trim(),
-              data_inicio: `${dataAtividade}T${horarioInicio}:00`,
-              data_fim: `${dataAtividade}T${horarioFim}:00`,
-              descricao: anotacoes.trim(),
-            }
-          : item
-      );
-      persistAtividades(updated);
-    } else {
-      const newA: ItemCronograma = {
-        id: Date.now().toString(),
-        user_id: session?.email || 'user-1',
+    if (dataAtividade.trim() && !isValidDateString(dataAtividade.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-08-21).');
+      return;
+    }
+
+    if (horarioInicio.trim() && !isValidTimeString(horarioInicio.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de início válido no formato HH:MM (ex: 09:00).');
+      return;
+    }
+
+    if (horarioFim.trim() && !isValidTimeString(horarioFim.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de término válido no formato HH:MM (ex: 10:00).');
+      return;
+    }
+
+    if (
+      horarioInicio.trim() &&
+      horarioFim.trim() &&
+      !isTimeIntervalValid(horarioInicio.trim(), horarioFim.trim())
+    ) {
+      Alert.alert('Horário Inconsistente', 'O horário de término deve ser posterior ao horário de início.');
+      return;
+    }
+
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        Alert.alert('Sessão expirada', 'Faça login novamente.');
+        return;
+      }
+
+      const cleanDate = dataAtividade.trim() || new Date().toISOString().slice(0, 10);
+      const cleanStart = horarioInicio.trim() || '09:00';
+      const cleanEnd = horarioFim.trim() || '10:00';
+
+      const payload = {
         nome: nome.trim(),
         tipo: 'atividade',
         prioridade: 1,
-        data_inicio: `${dataAtividade}T${horarioInicio}:00`,
-        data_fim: `${dataAtividade}T${horarioFim}:00`,
-        descricao: anotacoes.trim(),
-        completed: false,
+        data_inicio: `${cleanDate}T${cleanStart}:00`,
+        data_fim: `${cleanDate}T${cleanEnd}:00`,
+        descricao: anotacoes.trim() || null,
       };
-      persistAtividades([...atividades, newA]);
-    }
 
-    setModalVisible(false);
+      if (editingId) {
+        const { error } = await supabase
+          .from('itens_cronograma')
+          .update(payload)
+          .eq('id', editingId)
+          .eq('user_id', userRes.user.id);
+
+        if (error) {
+          Alert.alert('Erro', 'Não foi possível atualizar a atividade.');
+          return;
+        }
+
+        setAtividades((prev) =>
+          prev.map((item) =>
+            item.id === editingId
+              ? {
+                  ...item,
+                  ...payload,
+                }
+              : item
+          )
+        );
+      } else {
+        const { data, error } = await supabase
+          .from('itens_cronograma')
+          .insert({
+            user_id: userRes.user.id,
+            completed: false,
+            ...payload,
+          })
+          .select()
+          .single();
+
+        if (error || !data) {
+          Alert.alert('Erro', 'Não foi possível criar a atividade.');
+          return;
+        }
+
+        setAtividades((prev) => [data, ...prev]);
+      }
+
+      setModalVisible(false);
+    } catch (e) {
+      console.error('Error saving activity:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao salvar a atividade.');
+    }
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -160,11 +211,19 @@ export default function AtividadeScreen() {
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => {
-            const updated = atividades.filter((a) => a.id !== id);
-            persistAtividades(updated);
-            if (selectedAtividade?.id === id) {
-              setSelectedAtividade(null);
+          onPress: async () => {
+            try {
+              const { error } = await supabase.from('itens_cronograma').delete().eq('id', id);
+              if (error) {
+                Alert.alert('Erro', 'Não foi possível excluir a atividade.');
+                return;
+              }
+              setAtividades((prev) => prev.filter((a) => a.id !== id));
+              if (selectedAtividade?.id === id) {
+                setSelectedAtividade(null);
+              }
+            } catch (e) {
+              console.error('Error deleting activity:', e);
             }
           },
         },
@@ -194,7 +253,12 @@ export default function AtividadeScreen() {
           />
         </View>
 
-        {atividades.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Carregando atividades...</Text>
+          </View>
+        ) : atividades.length === 0 ? (
           <EmptyState
             title="Nenhuma atividade registrada"
             description="Cadastre seus compromissos diários e rotinas para manter o dia organizado."
@@ -270,7 +334,7 @@ export default function AtividadeScreen() {
           label="Data (AAAA-MM-DD)"
           placeholder="2026-08-21"
           value={dataAtividade}
-          onChangeText={setDataAtividade}
+          onChangeText={(val) => setDataAtividade(applyDateMask(val))}
         />
 
         <View style={styles.inputsRow}>
@@ -279,7 +343,7 @@ export default function AtividadeScreen() {
               label="Horário Início"
               placeholder="09:00"
               value={horarioInicio}
-              onChangeText={setHorarioInicio}
+              onChangeText={(val) => setHorarioInicio(applyTimeMask(val))}
             />
           </View>
           <View style={{ flex: 1, marginLeft: 8 }}>
@@ -287,7 +351,7 @@ export default function AtividadeScreen() {
               label="Horário Fim"
               placeholder="10:00"
               value={horarioFim}
-              onChangeText={setHorarioFim}
+              onChangeText={(val) => setHorarioFim(applyTimeMask(val))}
             />
           </View>
         </View>
@@ -373,6 +437,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 36,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
   headerRow: {
     flexDirection: 'row',

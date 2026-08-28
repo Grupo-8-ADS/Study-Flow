@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,14 +22,15 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 export default function PerfilScreen() {
   const router = useRouter();
-  const { session, updateSession, signOut } = useAuth();
+  const { session, updateSession, signOut, refreshProfile } = useAuth();
 
-  const [nome, setNome] = useState(session?.nome || 'Carlos Eduardo');
-  const [username, setUsername] = useState(session?.username || 'carlosedu');
-  const [email, setEmail] = useState(session?.email || 'admin@studyflow.com');
+  const [nome, setNome] = useState(session?.nome || '');
+  const [username, setUsername] = useState(session?.username || '');
+  const [email, setEmail] = useState(session?.email || '');
   const [bgColor, setBgColor] = useState(session?.bg_color || COLORS.primary);
   const [saving, setSaving] = useState(false);
 
@@ -37,7 +38,16 @@ export default function PerfilScreen() {
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  useEffect(() => {
+    if (session) {
+      setNome(session.nome || '');
+      setUsername(session.username || '');
+      setEmail(session.email || '');
+      setBgColor(session.bg_color || COLORS.primary);
+    }
+  }, [session]);
 
   const colorPalette = [
     '#29645e', // Verde Study Flow
@@ -49,18 +59,50 @@ export default function PerfilScreen() {
   ];
 
   const handleSaveProfile = async () => {
+    if (!nome.trim()) {
+      Alert.alert('Atenção', 'O nome não pode ficar em branco.');
+      return;
+    }
+
     setSaving(true);
-    await updateSession({
-      nome: nome.trim(),
-      username: username.trim(),
-      email: email.trim(),
-      bg_color: bgColor,
-    });
-    setSaving(false);
-    Alert.alert('Perfil Atualizado!', 'Suas alterações foram salvas com sucesso.');
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        Alert.alert('Sessão expirada', 'Faça login novamente.');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          nome: nome.trim(),
+          username: username.trim(),
+          bg_color: bgColor,
+        })
+        .eq('id', userRes.user.id);
+
+      if (error) {
+        Alert.alert('Erro', 'Não foi possível atualizar o perfil: ' + error.message);
+        return;
+      }
+
+      await updateSession({
+        nome: nome.trim(),
+        username: username.trim(),
+        bg_color: bgColor,
+      });
+
+      await refreshProfile();
+      Alert.alert('Perfil Atualizado! 🎉', 'Suas alterações foram salvas com sucesso no banco de dados.');
+    } catch (e) {
+      console.error('Error updating profile:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao salvar o perfil.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
       Alert.alert('Erro', 'A nova senha deve ter no mínimo 6 caracteres.');
       return;
@@ -69,11 +111,28 @@ export default function PerfilScreen() {
       Alert.alert('Erro', 'As senhas não coincidem.');
       return;
     }
-    setPasswordModalVisible(false);
-    setNewPassword('');
-    setConfirmPassword('');
-    setVerificationCode('');
-    Alert.alert('Senha Alterada!', 'Sua senha foi redefinida com sucesso.');
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        Alert.alert('Erro', 'Não foi possível alterar a senha: ' + error.message);
+        return;
+      }
+
+      setPasswordModalVisible(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Senha Alterada! 🔐', 'Sua senha foi redefinida com sucesso.');
+    } catch (e) {
+      console.error('Error changing password:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao alterar a senha.');
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -106,7 +165,7 @@ export default function PerfilScreen() {
             <Avatar
               name={nome}
               size={84}
-              level={session?.nivel_atual || 12}
+              level={session?.nivel_atual || 1}
               showLevel
             />
             <TouchableOpacity
@@ -124,26 +183,26 @@ export default function PerfilScreen() {
           </View>
 
           <View style={styles.profileHeaderInfo}>
-            <Text style={styles.profileName}>{nome}</Text>
-            <Text style={styles.profileUsername}>@{username}</Text>
+            <Text style={styles.profileName}>{nome || 'Estudante'}</Text>
+            <Text style={styles.profileUsername}>@{username || 'usuario'}</Text>
 
             <View style={styles.statsPillRow}>
               <View style={styles.statPill}>
                 <Text style={styles.statPillLabel}>Nível</Text>
                 <Text style={styles.statPillValue}>
-                  {session?.nivel_atual || 12}
+                  {session?.nivel_atual || 1}
                 </Text>
               </View>
               <View style={styles.statPill}>
                 <Text style={styles.statPillLabel}>XP Total</Text>
                 <Text style={styles.statPillValue}>
-                  {session?.xp || 2840}
+                  {session?.xp || 0}
                 </Text>
               </View>
               <View style={styles.statPill}>
-                <Text style={styles.statPillLabel}>Horas/Dia</Text>
+                <Text style={styles.statPillLabel}>Meta Horas</Text>
                 <Text style={styles.statPillValue}>
-                  {session?.horas_diarias || 4}h
+                  {session?.horas_diarias || 2}h
                 </Text>
               </View>
             </View>
@@ -170,7 +229,7 @@ export default function PerfilScreen() {
           <Input
             label="Email Cadastrado"
             value={email}
-            onChangeText={setEmail}
+            editable={false}
             autoCapitalize="none"
             keyboardType="email-address"
           />
@@ -246,16 +305,10 @@ export default function PerfilScreen() {
           isPassword
         />
 
-        <Input
-          label="Código do Email (opcional)"
-          placeholder="Código de verificação"
-          value={verificationCode}
-          onChangeText={setVerificationCode}
-        />
-
         <Button
           title="Confirmar e Salvar Nova Senha"
           onPress={handleChangePassword}
+          loading={passwordLoading}
           size="lg"
           style={{ marginTop: 10 }}
         />

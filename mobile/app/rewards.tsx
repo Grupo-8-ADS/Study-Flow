@@ -5,11 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import {
   Gift,
-  CheckCircle2,
   Lock,
   Sparkles,
   HelpCircle,
@@ -17,44 +15,68 @@ import {
 import { COLORS } from '@studyflow/shared';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
+import { useAuth } from '../context/AuthContext';
 
 export default function RewardsScreen() {
+  const { session } = useAuth();
   const [activeCategory, setActiveCategory] = useState<'icones' | 'bordas' | 'banners'>('icones');
 
-  const categories = [
-    { id: 'icones', label: 'Ícones', color: COLORS.primary, unlocked: 3, total: 6 },
-    { id: 'bordas', label: 'Bordas', color: COLORS.purple, unlocked: 2, total: 4 },
-    { id: 'banners', label: 'Banners', color: COLORS.gold, unlocked: 1, total: 5 },
-  ];
+  const currentLevel = session?.nivel_atual || 1;
+  const currentXp = session?.xp || 0;
 
   const rewardItems = {
     icones: [
       { id: '1', title: 'Raposa Acadêmica', desc: 'Avatar padrão de formatura', unlocked: true },
-      { id: '2', title: 'Coruja Sábia', desc: 'Desbloqueado ao atingir Nível 5', unlocked: true },
-      { id: '3', title: 'Gato Focado', desc: 'Desbloqueado com 10h de foco', unlocked: true },
-      { id: '4', title: 'Lobo Solitário', desc: 'Alcance 50 horas de foco', unlocked: false },
-      { id: '5', title: 'Dragão Místico', desc: 'Alcance o Nível 25', unlocked: false },
-      { id: '6', title: 'Fênix Renascida', desc: 'Sequência de 30 dias de foco', unlocked: false },
+      { id: '2', title: 'Coruja Sábia', desc: 'Desbloqueado ao atingir Nível 3', unlocked: currentLevel >= 3 },
+      { id: '3', title: 'Gato Focado', desc: 'Desbloqueado com 100 XP de foco', unlocked: currentXp >= 100 },
+      { id: '4', title: 'Lobo Solitário', desc: 'Alcance 500 XP de foco total', unlocked: currentXp >= 500 },
+      { id: '5', title: 'Dragão Místico', desc: 'Alcance o Nível 10', unlocked: currentLevel >= 10 },
+      { id: '6', title: 'Fênix Renascida', desc: 'Alcance o Nível 25', unlocked: currentLevel >= 25 },
     ],
     bordas: [
       { id: '1', title: 'Borda Esmeralda', desc: 'Borda padrão Study Flow', unlocked: true },
-      { id: '2', title: 'Borda Dourada Estelar', desc: 'Conclua 20 sessões de foco', unlocked: true },
-      { id: '3', title: 'Borda Diamante Neon', desc: 'Alcance 100 horas de foco', unlocked: false },
-      { id: '4', title: 'Borda Campeão Semestral', desc: 'Complete todas as matérias', unlocked: false },
+      { id: '2', title: 'Borda Dourada Estelar', desc: 'Desbloqueada com 250 XP', unlocked: currentXp >= 250 },
+      { id: '3', title: 'Borda Diamante Neon', desc: 'Alcance o Nível 5', unlocked: currentLevel >= 5 },
+      { id: '4', title: 'Borda Campeão Semestral', desc: 'Alcance o Nível 15', unlocked: currentLevel >= 15 },
     ],
     banners: [
       { id: '1', title: 'Fórmulas Matemáticas', desc: 'Banner escuro com fórmulas', unlocked: true },
-      { id: '2', title: 'Biblioteca Noturna', desc: 'Acumule 30 horas de estudo', unlocked: false },
-      { id: '3', title: 'Galáxia do Foco', desc: 'Alcance o Nível 20', unlocked: false },
-      { id: '4', title: 'Montanhas do Saber', desc: 'Sequência de 14 dias', unlocked: false },
-      { id: '5', title: 'Aurora Boreal', desc: 'Desbloqueio especial de fim de ano', unlocked: false },
+      { id: '2', title: 'Biblioteca Noturna', desc: 'Acumule 150 XP de estudo', unlocked: currentXp >= 150 },
+      { id: '3', title: 'Galáxia do Foco', desc: 'Alcance o Nível 8', unlocked: currentLevel >= 8 },
+      { id: '4', title: 'Montanhas do Saber', desc: 'Alcance o Nível 12', unlocked: currentLevel >= 12 },
+      { id: '5', title: 'Aurora Boreal', desc: 'Alcance o Nível 20', unlocked: currentLevel >= 20 },
     ],
   };
 
   const currentItems = rewardItems[activeCategory];
-  const totalUnlocked = 6;
-  const totalItems = 15;
+  const allList = [...rewardItems.icones, ...rewardItems.bordas, ...rewardItems.banners];
+  const totalUnlocked = allList.filter((i) => i.unlocked).length;
+  const totalItems = allList.length;
   const progressPercent = Math.round((totalUnlocked / totalItems) * 100);
+
+  const categories = [
+    {
+      id: 'icones',
+      label: 'Ícones',
+      color: COLORS.primary,
+      unlocked: rewardItems.icones.filter((i) => i.unlocked).length,
+      total: rewardItems.icones.length,
+    },
+    {
+      id: 'bordas',
+      label: 'Bordas',
+      color: COLORS.purple,
+      unlocked: rewardItems.bordas.filter((i) => i.unlocked).length,
+      total: rewardItems.bordas.length,
+    },
+    {
+      id: 'banners',
+      label: 'Banners',
+      color: COLORS.gold,
+      unlocked: rewardItems.banners.filter((i) => i.unlocked).length,
+      total: rewardItems.banners.length,
+    },
+  ];
 
   return (
     <View style={styles.container}>
@@ -69,7 +91,7 @@ export default function RewardsScreen() {
           </View>
           <Text style={styles.heroTitle}>Sua dedicação vira coleção! ✨</Text>
           <Text style={styles.heroSubtitle}>
-            Estude, acumule horas e suba de nível para desbloquear cosméticos exclusivos para o seu perfil.
+            Estude no Pomodoro, acumule XP e suba de nível para desbloquear cosméticos exclusivos para o seu perfil.
           </Text>
 
           <View style={styles.progressContainer}>
@@ -154,13 +176,13 @@ export default function RewardsScreen() {
             <Text style={styles.guideTitle}>Como Desbloquear Mais Recompensas?</Text>
           </View>
           <Text style={styles.guideTip}>
-            • <Text style={{ fontWeight: '700' }}>Pomodoro diário:</Text> Cada sessão concluída rende XP e avança metas de tempo.
+            • <Text style={{ fontWeight: '700' }}>Pomodoro diário:</Text> Cada sessão de foco concluída concede +25 XP.
           </Text>
           <Text style={styles.guideTip}>
-            • <Text style={{ fontWeight: '700' }}>Mantenha a constância:</Text> Sequências consecutivas de estudo desbloqueiam bordas raras.
+            • <Text style={{ fontWeight: '700' }}>Suba de nível:</Text> A cada 100 XP você avança de nível e desbloqueia novos avatares e bordas.
           </Text>
           <Text style={styles.guideTip}>
-            • <Text style={{ fontWeight: '700' }}>Cadastre suas matérias:</Text> Organizar disciplinas e avaliações concede conquistas especiais.
+            • <Text style={{ fontWeight: '700' }}>Organize sua rotina:</Text> Cadastrar matérias e cumprir prazos acelera seu progresso acadêmico.
           </Text>
         </Card>
       </ScrollView>
@@ -183,11 +205,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginBottom: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
   },
   heroIconCircle: {
     width: 48,
@@ -247,11 +264,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 4,
     marginBottom: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
   },
   categoryTab: {
     flex: 1,

@@ -6,73 +6,38 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Plus,
   BookOpen,
   Edit2,
   Trash2,
-  Calendar,
   Clock,
   FileText,
+  Calendar,
 } from 'lucide-react-native';
-import { COLORS, Disciplina } from '@studyflow/shared';
+import {
+  COLORS,
+  Disciplina,
+  isValidDateString,
+  isValidTimeString,
+  isTimeIntervalValid,
+  applyDateMask,
+  applyTimeMask,
+} from '@studyflow/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Storage } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-
-const DEFAULT_DISCIPLINAS: Disciplina[] = [
-  {
-    id: '1',
-    user_id: 'user-1',
-    nome: 'História Geral e do Brasil',
-    professor: 'Prof. Marcos Souza',
-    data_inicio: '08:00',
-    data_fim: '10:00',
-    anotacoes: 'Foco na leitura dos textos da aula 3 sobre República Velha.',
-  },
-  {
-    id: '2',
-    user_id: 'user-1',
-    nome: 'Banco de Dados II',
-    professor: 'Profª. Juliana Alves',
-    data_inicio: '10:00',
-    data_fim: '12:00',
-    anotacoes: 'Trabalho prático de PostgreSQL com triggers e RLS.',
-  },
-  {
-    id: '3',
-    user_id: 'user-1',
-    nome: 'Engenharia de Software',
-    professor: 'Prof. Carlos Santos',
-    data_inicio: '14:00',
-    data_fim: '16:00',
-    anotacoes: 'Seminário sobre Arquitetura Monorepo e React Native.',
-  },
-];
 
 export default function DisciplinasScreen() {
   const { session } = useAuth();
-  const [disciplinas, setDisciplinas] = useState<Disciplina[]>(DEFAULT_DISCIPLINAS);
-
-  const storageKey = `${Storage.keys.DISCIPLINAS_PREFIX}${session?.email || 'default'}`;
-
-  useEffect(() => {
-    async function loadData() {
-      const saved = await Storage.getItem<Disciplina[]>(storageKey, DEFAULT_DISCIPLINAS);
-      setDisciplinas(saved);
-    }
-    loadData();
-  }, [session]);
-
-  const persistDisciplinas = async (updated: Disciplina[]) => {
-    setDisciplinas(updated);
-    await Storage.setItem(storageKey, updated);
-  };
+  const [disciplinas, setDisciplinas] = useState<Disciplina[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Modal State
   const [modalVisible, setModalVisible] = useState(false);
@@ -84,6 +49,37 @@ export default function DisciplinasScreen() {
   const [dataProva, setDataProva] = useState('');
   const [dataTrabalho, setDataTrabalho] = useState('');
   const [anotacoes, setAnotacoes] = useState('');
+
+  const loadDisciplinas = async () => {
+    setLoading(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        setDisciplinas([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('disciplinas')
+        .select('*')
+        .eq('user_id', userRes.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching disciplinas:', error);
+      } else {
+        setDisciplinas(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to load disciplinas:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDisciplinas();
+  }, [session]);
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -101,48 +97,125 @@ export default function DisciplinasScreen() {
     setEditingId(d.id);
     setNome(d.nome);
     setProfessor(d.professor || '');
-    setHorarioInicio(d.data_inicio || '08:00');
-    setHorarioFim(d.data_fim || '10:00');
-    setDataProva('');
-    setDataTrabalho('');
-    setAnotacoes(typeof d.anotacoes === 'string' ? d.anotacoes : '');
+
+    const notesObj = typeof d.anotacoes === 'object' && d.anotacoes !== null ? (d.anotacoes as any) : {};
+    setHorarioInicio(notesObj.startTime || d.data_inicio || '08:00');
+    setHorarioFim(notesObj.endTime || d.data_fim || '10:00');
+    setDataProva(notesObj.examDate || '');
+    setDataTrabalho(notesObj.workDate || '');
+    setAnotacoes(typeof d.anotacoes === 'string' ? d.anotacoes : notesObj.notes || '');
     setModalVisible(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!nome.trim()) {
       Alert.alert('Atenção', 'Informe o nome da disciplina.');
       return;
     }
 
-    if (editingId) {
-      const updated = disciplinas.map((item) =>
-        item.id === editingId
-          ? {
-              ...item,
-              nome: nome.trim(),
-              professor: professor.trim(),
-              data_inicio: horarioInicio,
-              data_fim: horarioFim,
-              anotacoes: anotacoes.trim(),
-            }
-          : item
-      );
-      persistDisciplinas(updated);
-    } else {
-      const newD: Disciplina = {
-        id: Date.now().toString(),
-        user_id: session?.email || 'user-1',
-        nome: nome.trim(),
-        professor: professor.trim(),
-        data_inicio: horarioInicio,
-        data_fim: horarioFim,
-        anotacoes: anotacoes.trim(),
-      };
-      persistDisciplinas([...disciplinas, newD]);
+    if (horarioInicio.trim() && !isValidTimeString(horarioInicio.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de início válido no formato HH:MM (ex: 08:00).');
+      return;
     }
 
-    setModalVisible(false);
+    if (horarioFim.trim() && !isValidTimeString(horarioFim.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de término válido no formato HH:MM (ex: 10:00).');
+      return;
+    }
+
+    if (
+      horarioInicio.trim() &&
+      horarioFim.trim() &&
+      !isTimeIntervalValid(horarioInicio.trim(), horarioFim.trim())
+    ) {
+      Alert.alert('Horário Inconsistente', 'O horário de término deve ser posterior ao horário de início.');
+      return;
+    }
+
+    if (dataProva.trim() && !isValidDateString(dataProva.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data de prova válida no formato AAAA-MM-DD (ex: 2026-09-15).');
+      return;
+    }
+
+    if (dataTrabalho.trim() && !isValidDateString(dataTrabalho.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data de trabalho válida no formato AAAA-MM-DD (ex: 2026-09-22).');
+      return;
+    }
+
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        Alert.alert('Sessão expirada', 'Por favor, faça login novamente.');
+        return;
+      }
+
+      const notesPayload = {
+        notes: anotacoes.trim(),
+        examDate: dataProva.trim() || null,
+        workDate: dataTrabalho.trim() || null,
+        startTime: horarioInicio.trim() || '08:00',
+        endTime: horarioFim.trim() || '10:00',
+      };
+
+      if (editingId) {
+        const { error } = await supabase
+          .from('disciplinas')
+          .update({
+            nome: nome.trim(),
+            professor: professor.trim() || null,
+            data_inicio: horarioInicio.trim() || null,
+            data_fim: horarioFim.trim() || null,
+            anotacoes: notesPayload,
+          })
+          .eq('id', editingId)
+          .eq('user_id', userRes.user.id);
+
+        if (error) {
+          Alert.alert('Erro', 'Não foi possível atualizar a disciplina.');
+          return;
+        }
+
+        setDisciplinas((prev) =>
+          prev.map((item) =>
+            item.id === editingId
+              ? {
+                  ...item,
+                  nome: nome.trim(),
+                  professor: professor.trim(),
+                  data_inicio: horarioInicio.trim() || '08:00',
+                  data_fim: horarioFim.trim() || '10:00',
+                  anotacoes: notesPayload,
+                }
+              : item
+          )
+        );
+      } else {
+        const { data, error } = await supabase
+          .from('disciplinas')
+          .insert({
+            user_id: userRes.user.id,
+            nome: nome.trim(),
+            professor: professor.trim() || null,
+            data_inicio: horarioInicio.trim() || null,
+            data_fim: horarioFim.trim() || null,
+            anotacoes: notesPayload,
+          })
+          .select()
+          .single();
+
+        if (error || !data) {
+          Alert.alert('Erro', 'Não foi possível cadastrar a disciplina.');
+          return;
+        }
+
+        setDisciplinas((prev) => [data, ...prev]);
+      }
+
+      setModalVisible(false);
+    } catch (e) {
+      console.error('Error saving subject:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao salvar a disciplina.');
+    }
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -154,9 +227,17 @@ export default function DisciplinasScreen() {
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => {
-            const updated = disciplinas.filter((d) => d.id !== id);
-            persistDisciplinas(updated);
+          onPress: async () => {
+            try {
+              const { error } = await supabase.from('disciplinas').delete().eq('id', id);
+              if (error) {
+                Alert.alert('Erro', 'Não foi possível excluir a disciplina.');
+                return;
+              }
+              setDisciplinas((prev) => prev.filter((d) => d.id !== id));
+            } catch (e) {
+              console.error('Error deleting subject:', e);
+            }
           },
         },
       ]
@@ -185,7 +266,12 @@ export default function DisciplinasScreen() {
           />
         </View>
 
-        {disciplinas.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Carregando disciplinas...</Text>
+          </View>
+        ) : disciplinas.length === 0 ? (
           <EmptyState
             title="Nenhuma disciplina cadastrada"
             description="Cadastre suas matérias da faculdade ou colégio para organizar seus estudos."
@@ -194,57 +280,71 @@ export default function DisciplinasScreen() {
             onAction={openCreateModal}
           />
         ) : (
-          disciplinas.map((d) => (
-            <Card key={d.id} style={styles.subjectCard}>
-              <View style={styles.cardTopRow}>
-                <View style={styles.iconCircle}>
-                  <BookOpen size={20} color={COLORS.primary} />
+          disciplinas.map((d) => {
+            const notesObj = typeof d.anotacoes === 'object' && d.anotacoes !== null ? (d.anotacoes as any) : {};
+            const displayNotes = typeof d.anotacoes === 'string' ? d.anotacoes : notesObj.notes || '';
+
+            return (
+              <Card key={d.id} style={styles.subjectCard}>
+                <View style={styles.cardTopRow}>
+                  <View style={styles.iconCircle}>
+                    <BookOpen size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.titleInfo}>
+                    <Text style={styles.subjectName}>{d.nome}</Text>
+                    {Boolean(d.professor) && (
+                      <Text style={styles.professorName}>👨‍🏫 {d.professor}</Text>
+                    )}
+                  </View>
+
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openEditModal(d)}
+                      style={styles.actionIconBtn}
+                    >
+                      <Edit2 size={16} color={COLORS.primary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => handleDelete(d.id, d.nome)}
+                      style={styles.actionIconBtn}
+                    >
+                      <Trash2 size={16} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.titleInfo}>
-                  <Text style={styles.subjectName}>{d.nome}</Text>
-                  {Boolean(d.professor) && (
-                    <Text style={styles.professorName}>👨‍🏫 {d.professor}</Text>
+
+                <View style={styles.metaRow}>
+                  <View style={styles.metaItem}>
+                    <Clock size={14} color={COLORS.textSecondary} />
+                    <Text style={styles.metaText}>
+                      {d.data_inicio || notesObj.startTime || '--:--'} às {d.data_fim || notesObj.endTime || '--:--'}
+                    </Text>
+                  </View>
+
+                  {Boolean(notesObj.examDate) && (
+                    <View style={styles.metaItem}>
+                      <Calendar size={14} color={COLORS.danger} />
+                      <Text style={[styles.metaText, { color: COLORS.danger }]}>
+                        Prova: {notesObj.examDate}
+                      </Text>
+                    </View>
                   )}
                 </View>
 
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => openEditModal(d)}
-                    style={styles.actionIconBtn}
-                  >
-                    <Edit2 size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => handleDelete(d.id, d.nome)}
-                    style={styles.actionIconBtn}
-                  >
-                    <Trash2 size={16} color={COLORS.danger} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.metaRow}>
-                <View style={styles.metaItem}>
-                  <Clock size={14} color={COLORS.textSecondary} />
-                  <Text style={styles.metaText}>
-                    {d.data_inicio} às {d.data_fim}
-                  </Text>
-                </View>
-              </View>
-
-              {Boolean(d.anotacoes) && (
-                <View style={styles.notesContainer}>
-                  <FileText size={14} color={COLORS.primaryLight} style={{ marginTop: 2 }} />
-                  <Text style={styles.notesText} numberOfLines={2}>
-                    {typeof d.anotacoes === 'string' ? d.anotacoes : ''}
-                  </Text>
-                </View>
-              )}
-            </Card>
-          ))
+                {Boolean(displayNotes) && (
+                  <View style={styles.notesContainer}>
+                    <FileText size={14} color={COLORS.primaryLight} style={{ marginTop: 2 }} />
+                    <Text style={styles.notesText} numberOfLines={2}>
+                      {displayNotes}
+                    </Text>
+                  </View>
+                )}
+              </Card>
+            );
+          })
         )}
       </ScrollView>
 
@@ -275,7 +375,7 @@ export default function DisciplinasScreen() {
               label="Horário Início"
               placeholder="08:00"
               value={horarioInicio}
-              onChangeText={setHorarioInicio}
+              onChangeText={(val) => setHorarioInicio(applyTimeMask(val))}
             />
           </View>
           <View style={{ flex: 1, marginLeft: 8 }}>
@@ -283,7 +383,7 @@ export default function DisciplinasScreen() {
               label="Horário Fim"
               placeholder="10:00"
               value={horarioFim}
-              onChangeText={setHorarioFim}
+              onChangeText={(val) => setHorarioFim(applyTimeMask(val))}
             />
           </View>
         </View>
@@ -292,14 +392,14 @@ export default function DisciplinasScreen() {
           label="Data da Prova 1 (opcional)"
           placeholder="ex: 2026-09-15"
           value={dataProva}
-          onChangeText={setDataProva}
+          onChangeText={(val) => setDataProva(applyDateMask(val))}
         />
 
         <Input
           label="Data do Trabalho 1 (opcional)"
           placeholder="ex: 2026-09-22"
           value={dataTrabalho}
-          onChangeText={setDataTrabalho}
+          onChangeText={(val) => setDataTrabalho(applyDateMask(val))}
         />
 
         <Input
@@ -330,6 +430,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 36,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
   headerRow: {
     flexDirection: 'row',
@@ -390,6 +500,7 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 8,
   },

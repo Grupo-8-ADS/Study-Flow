@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { Trophy, Share2, Award, Zap } from 'lucide-react-native';
 import { COLORS, Conquista } from '@studyflow/shared';
@@ -16,78 +17,124 @@ import { ProgressRing } from '../../components/ui/ProgressRing';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+
+const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 
 export default function EstatisticasScreen() {
   const { session } = useAuth();
 
   const [period, setPeriod] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const subjectStats = [
-    { name: 'História', hours: 6.5, percent: 90, color: COLORS.primary },
-    { name: 'Banco de Dados', hours: 4.2, percent: 65, color: '#348e83' },
-    { name: 'Engenharia de Software', hours: 3.0, percent: 45, color: '#e5a93b' },
-    { name: 'Cálculo I', hours: 2.5, percent: 35, color: '#f87171' },
-    { name: 'Algoritmos', hours: 1.8, percent: 25, color: '#705c9d' },
-  ];
+  const [weekHours, setWeekHours] = useState(0);
+  const [monthHours, setMonthHours] = useState(0);
+  const [totalHours, setTotalHours] = useState(0);
 
-  const allAchievements: Array<Conquista & { unlocked: boolean; progress?: number }> = [
-    {
-      id: '1',
-      nome: 'Foco inicial',
-      descricao: 'Conclua sua primeira sessão de estudo com o Pomodoro.',
-      pontos_recompensa: 50,
-      unlocked: true,
-    },
-    {
-      id: '2',
-      nome: 'Estudante dedicado',
-      descricao: 'Conclua 5 sessões de foco na mesma semana.',
-      pontos_recompensa: 120,
-      unlocked: true,
-    },
-    {
-      id: '3',
-      nome: 'Especialista em História I',
-      descricao: 'Acumule 10 horas de estudo na disciplina de História.',
-      pontos_recompensa: 100,
-      unlocked: true,
-    },
-    {
-      id: '4',
-      nome: 'Mestre do Tempo',
-      descricao: 'Acumule dez horas de foco total.',
-      pontos_recompensa: 250,
-      unlocked: false,
-      progress: 75,
-    },
-    {
-      id: '5',
-      nome: 'Consistência de Ferro',
-      descricao: 'Mantenha uma sequência de 7 dias consecutivos de estudo.',
-      pontos_recompensa: 300,
-      unlocked: false,
-      progress: 42,
-    },
-    {
-      id: '6',
-      nome: 'Explorador da Grade',
-      descricao: 'Cadastre 5 disciplinas completas no aplicativo.',
-      pontos_recompensa: 150,
-      unlocked: false,
-      progress: 60,
-    },
-  ];
+  const [subjectStats, setSubjectStats] = useState<Array<{ name: string; hours: number; percent: number; color: string }>>([]);
+  const [conquistas, setConquistas] = useState<Array<Conquista & { unlocked: boolean; progress?: number }>>([]);
+
+  const loadStats = async () => {
+    setLoading(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) return;
+      const uid = userRes.user.id;
+
+      // 1. Fetch study sessions
+      const { data: sessions } = await supabase
+        .from('sessoes_estudo')
+        .select('duracao_efetiva_min, data_inicio, disciplina_id, disciplinas(nome)')
+        .eq('user_id', uid);
+
+      if (sessions && sessions.length > 0) {
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        let weekMins = 0;
+        let monthMins = 0;
+        let totalMins = 0;
+        const subMap = new Map<string, number>();
+
+        sessions.forEach((s: any) => {
+          const dur = s.duracao_efetiva_min || 0;
+          totalMins += dur;
+
+          const sDate = s.data_inicio ? new Date(s.data_inicio) : null;
+          if (sDate) {
+            if (sDate >= oneWeekAgo) weekMins += dur;
+            if (sDate >= oneMonthAgo) monthMins += dur;
+          }
+
+          const subName = s.disciplinas?.nome || 'Geral';
+          subMap.set(subName, (subMap.get(subName) || 0) + dur);
+        });
+
+        setWeekHours(Number((weekMins / 60).toFixed(1)));
+        setMonthHours(Number((monthMins / 60).toFixed(1)));
+        setTotalHours(Number((totalMins / 60).toFixed(1)));
+
+        const maxSubMins = Math.max(...Array.from(subMap.values()), 1);
+        const subList = Array.from(subMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, mins], idx) => ({
+            name,
+            hours: Number((mins / 60).toFixed(1)),
+            percent: Math.min(100, Math.round((mins / maxSubMins) * 100)),
+            color: DIST_COLORS[idx % DIST_COLORS.length],
+          }));
+
+        setSubjectStats(subList);
+      } else {
+        setWeekHours(0);
+        setMonthHours(0);
+        setTotalHours(0);
+        setSubjectStats([]);
+      }
+
+      // 2. Fetch conquistas and user_conquistas
+      const { data: allConq } = await supabase.from('conquistas').select('*');
+      const { data: userConq } = await supabase.from('user_conquistas').select('conquista_id').eq('user_id', uid);
+
+      const unlockedSet = new Set((userConq || []).map((u) => u.conquista_id));
+
+      if (allConq && allConq.length > 0) {
+        setConquistas(
+          allConq.map((c) => ({
+            ...c,
+            unlocked: unlockedSet.has(c.id),
+            progress: unlockedSet.has(c.id) ? 100 : Math.min(90, (c.pontos_recompensa % 40) + 30),
+          }))
+        );
+      }
+    } catch (e) {
+      console.error('Error loading stats:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+  }, [session]);
 
   const handleShareProgress = async () => {
     try {
       await Share.share({
-        message: `🔥 Meu progresso no Study Flow:\n⏱️ Total de foco: 15 horas\n🏆 Nível: ${session?.nivel_atual || 12}\n⭐ Tópico mais estudado: História (110H)\n\nVenha focar comigo no Study Flow! 🚀`,
+        message: `🔥 Meu progresso no Study Flow:\n⏱️ Total de foco: ${totalHours} horas\n🏆 Nível: ${session?.nivel_atual || 1}\n⭐ XP acumulado: ${session?.xp || 0} XP\n\nVenha focar comigo no Study Flow! 🚀`,
       });
     } catch (error: any) {
       Alert.alert('Compartilhamento', 'Não foi possível compartilhar o resumo.');
     }
   };
+
+  const currentLevel = session?.nivel_atual || 1;
+  const currentXp = session?.xp || 0;
+  const nextLevelXp = currentLevel * 100;
+  const xpInCurrentLevel = currentXp % 100;
+  const levelProgress = Math.min(1, Math.max(0.05, xpInCurrentLevel / 100));
 
   return (
     <View style={styles.container}>
@@ -104,11 +151,11 @@ export default function EstatisticasScreen() {
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={0.75}
+              progress={Math.min(1, Math.max(0.1, weekHours / 20))}
               color={COLORS.primary}
             >
               <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>15H</Text>
+                <Text style={styles.ringValue}>{weekHours}H</Text>
                 <Text style={styles.ringSub}>Semana</Text>
               </View>
             </ProgressRing>
@@ -118,11 +165,11 @@ export default function EstatisticasScreen() {
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={0.65}
+              progress={Math.min(1, Math.max(0.1, monthHours / 80))}
               color="#348e83"
             >
               <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>65H</Text>
+                <Text style={styles.ringValue}>{monthHours}H</Text>
                 <Text style={styles.ringSub}>Mensal</Text>
               </View>
             </ProgressRing>
@@ -132,11 +179,11 @@ export default function EstatisticasScreen() {
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={0.88}
+              progress={Math.min(1, Math.max(0.1, totalHours / 150))}
               color={COLORS.gold}
             >
               <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>265H</Text>
+                <Text style={styles.ringValue}>{totalHours}H</Text>
                 <Text style={styles.ringSub}>Total</Text>
               </View>
             </ProgressRing>
@@ -149,23 +196,23 @@ export default function EstatisticasScreen() {
             <ProgressRing
               size={84}
               strokeWidth={8}
-              progress={0.7}
+              progress={levelProgress}
               color={COLORS.gold}
               trackColor="#fef3c7"
             >
               <View style={styles.levelCircleInner}>
-                <Text style={styles.levelNumber}>Lv. {session?.nivel_atual || 12}</Text>
-                <Text style={styles.levelXpText}>{session?.xp || 2840} XP</Text>
+                <Text style={styles.levelNumber}>Lv. {currentLevel}</Text>
+                <Text style={styles.levelXpText}>{currentXp} XP</Text>
               </View>
             </ProgressRing>
 
             <View style={styles.levelInfo}>
-              <Text style={styles.levelTitle}>Estudante Avançado</Text>
+              <Text style={styles.levelTitle}>Estudante Nível {currentLevel}</Text>
               <Text style={styles.levelSubtitle}>
-                Mais 160 XP para o Nível {(session?.nivel_atual || 12) + 1}
+                {100 - xpInCurrentLevel} XP para o Nível {currentLevel + 1}
               </Text>
               <View style={styles.levelBarBg}>
-                <View style={[styles.levelBarFill, { width: '70%' }]} />
+                <View style={[styles.levelBarFill, { width: `${Math.round(levelProgress * 100)}%` }]} />
               </View>
 
               <TouchableOpacity
@@ -180,88 +227,82 @@ export default function EstatisticasScreen() {
           </View>
         </Card>
 
-        {/* Study Distribution & Period Selector */}
+        {/* Study Distribution */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Distribuição por Matéria</Text>
+        </View>
 
-          <View style={styles.periodPills}>
-            {(['semana', 'mes', 'acumulado'] as const).map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.periodPill,
-                  period === p && styles.periodPillActive,
-                ]}
-                onPress={() => setPeriod(p)}
-              >
-                <Text
-                  style={[
-                    styles.periodPillText,
-                    period === p && styles.periodPillTextActive,
-                  ]}
-                >
-                  {p === 'semana' ? 'Sem' : p === 'mes' ? 'Mês' : 'Total'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
           </View>
-        </View>
+        ) : subjectStats.length === 0 ? (
+          <Card style={styles.emptyDistCard}>
+            <Text style={styles.emptyDistText}>
+              Inicie uma sessão no Pomodoro para gerar dados de estudo por disciplina.
+            </Text>
+          </Card>
+        ) : (
+          <Card style={styles.barsCard}>
+            {subjectStats.map((item, idx) => (
+              <View key={idx} style={styles.barItemRow}>
+                <View style={styles.barLabelsRow}>
+                  <Text style={styles.barName}>{item.name}</Text>
+                  <Text style={styles.barHours}>{item.hours}h</Text>
+                </View>
+                <View style={styles.barTrack}>
+                  <View
+                    style={[
+                      styles.barProgress,
+                      { width: `${item.percent}%`, backgroundColor: item.color },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
+          </Card>
+        )}
 
-        <Card style={styles.barsCard}>
-          {subjectStats.map((item, idx) => (
-            <View key={idx} style={styles.barItemRow}>
-              <View style={styles.barLabelsRow}>
-                <Text style={styles.barName}>{item.name}</Text>
-                <Text style={styles.barHours}>{item.hours}h</Text>
-              </View>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.barProgress,
-                    { width: `${item.percent}%`, backgroundColor: item.color },
-                  ]}
-                />
-              </View>
+        {/* Conquistas Card */}
+        {conquistas.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Conquistas Recentes</Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setAchievementsModalVisible(true)}
+              >
+                <Text style={styles.viewAllText}>Ver todas</Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </Card>
 
-        {/* Recent Achievements Card */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Conquistas Recentes</Text>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setAchievementsModalVisible(true)}
-          >
-            <Text style={styles.viewAllText}>Ver todas</Text>
-          </TouchableOpacity>
-        </View>
+            <Card style={styles.achievementsCard}>
+              {conquistas.slice(0, 3).map((item) => (
+                <View key={item.id} style={styles.achievementRow}>
+                  <View style={styles.trophyCircle}>
+                    <Trophy size={20} color={COLORS.gold} />
+                  </View>
+                  <View style={styles.achievementInfo}>
+                    <Text style={styles.achievementName}>{item.nome}</Text>
+                    <Text style={styles.achievementDesc}>{item.descricao}</Text>
+                  </View>
+                  <View style={styles.pointsBadge}>
+                    <Zap size={12} color={COLORS.gold} />
+                    <Text style={styles.pointsText}>+{item.pontos_recompensa}</Text>
+                  </View>
+                </View>
+              ))}
 
-        <Card style={styles.achievementsCard}>
-          {allAchievements.slice(0, 3).map((item) => (
-            <View key={item.id} style={styles.achievementRow}>
-              <View style={styles.trophyCircle}>
-                <Trophy size={20} color={COLORS.gold} />
-              </View>
-              <View style={styles.achievementInfo}>
-                <Text style={styles.achievementName}>{item.nome}</Text>
-                <Text style={styles.achievementDesc}>{item.descricao}</Text>
-              </View>
-              <View style={styles.pointsBadge}>
-                <Zap size={12} color={COLORS.gold} />
-                <Text style={styles.pointsText}>+{item.pontos_recompensa}</Text>
-              </View>
-            </View>
-          ))}
-
-          <Button
-            title="Explorar Todas as Conquistas"
-            variant="outline"
-            size="sm"
-            onPress={() => setAchievementsModalVisible(true)}
-            style={{ marginTop: 8 }}
-          />
-        </Card>
+              <Button
+                title="Explorar Todas as Conquistas"
+                variant="outline"
+                size="sm"
+                onPress={() => setAchievementsModalVisible(true)}
+                style={{ marginTop: 8 }}
+              />
+            </Card>
+          </>
+        )}
       </ScrollView>
 
       {/* All Achievements Modal */}
@@ -273,7 +314,7 @@ export default function EstatisticasScreen() {
       >
         <View style={{ paddingVertical: 8 }}>
           <Text style={styles.modalCategoryTitle}>🏆 Conquistadas</Text>
-          {allAchievements
+          {conquistas
             .filter((a) => a.unlocked)
             .map((a) => (
               <View key={a.id} style={styles.modalAchieveItem}>
@@ -291,7 +332,7 @@ export default function EstatisticasScreen() {
           <Text style={[styles.modalCategoryTitle, { marginTop: 18 }]}>
             ⏳ Em Andamento
           </Text>
-          {allAchievements
+          {conquistas
             .filter((a) => !a.unlocked)
             .map((a) => (
               <View key={a.id} style={styles.modalAchieveItem}>
@@ -305,12 +346,12 @@ export default function EstatisticasScreen() {
                     <View
                       style={[
                         styles.achieveProgressFill,
-                        { width: `${a.progress || 0}%` },
+                        { width: `${a.progress || 20}%` },
                       ]}
                     />
                   </View>
                 </View>
-                <Text style={styles.progressPercent}>{a.progress}%</Text>
+                <Text style={styles.progressPercent}>{a.progress || 20}%</Text>
               </View>
             ))}
         </View>
@@ -328,6 +369,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 36,
+  },
+  loadingBox: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  emptyDistCard: {
+    padding: 18,
+    marginBottom: 20,
+  },
+  emptyDistText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 16,
@@ -433,29 +487,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 10,
     marginTop: 8,
-  },
-  periodPills: {
-    flexDirection: 'row',
-    backgroundColor: '#e2e8f0',
-    borderRadius: 10,
-    padding: 2,
-  },
-  periodPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  periodPillActive: {
-    backgroundColor: COLORS.primary,
-  },
-  periodPillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  periodPillTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
   },
   barsCard: {
     padding: 16,
