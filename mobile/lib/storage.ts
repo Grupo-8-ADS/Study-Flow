@@ -6,12 +6,6 @@ const isServer = typeof window === 'undefined' && Platform.OS === 'web';
 
 const STORAGE_KEYS = {
   SESSION: 'studyflow_session',
-  USERS: 'studyflow_users',
-  ACTIVITY_PREFIX: 'studyflow_activity_',
-  NOTES_PREFIX: 'studyflow_notes_',
-  PRIVACY_PREFIX: 'studyflow_privacy_',
-  DISCIPLINAS_PREFIX: 'studyflow_disciplinas_',
-  ITENS_PREFIX: 'studyflow_itens_',
 };
 
 export const Storage = {
