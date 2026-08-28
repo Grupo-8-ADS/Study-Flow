@@ -5,6 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -13,7 +15,15 @@ import {
   Calendar as CalendarIcon,
   Trash2,
 } from 'lucide-react-native';
-import { COLORS, ItemCronograma } from '@studyflow/shared';
+import {
+  COLORS,
+  ItemCronograma,
+  isValidDateString,
+  isValidTimeString,
+  isTimeIntervalValid,
+  applyDateMask,
+  applyTimeMask,
+} from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -21,71 +31,24 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Storage } from '../../lib/storage';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-
-const DEFAULT_EVENTS: ItemCronograma[] = [
-  {
-    id: '1',
-    user_id: 'user-1',
-    nome: 'Prova de Banco de Dados II',
-    tipo: 'Prova',
-    prioridade: 2,
-    data_inicio: '2026-08-21T09:00:00',
-    data_fim: '2026-08-21T11:00:00',
-    descricao: 'Sala 302 - Bloco Central. Trazer calculadora e documento.',
-    completed: false,
-  },
-  {
-    id: '2',
-    user_id: 'user-1',
-    nome: 'Sessão de Revisão de História',
-    tipo: 'Estudo',
-    prioridade: 0,
-    data_inicio: '2026-08-21T14:00:00',
-    data_fim: '2026-08-21T16:00:00',
-    descricao: 'Foco no capítulo da Revolução Industrial.',
-    completed: false,
-  },
-  {
-    id: '3',
-    user_id: 'user-1',
-    nome: 'Entrega do Artigo de IA',
-    tipo: 'Trabalho',
-    prioridade: 1,
-    data_inicio: '2026-08-25T23:59:00',
-    data_fim: '2026-08-25T23:59:00',
-    descricao: 'Submissão no portal da disciplina.',
-    completed: false,
-  },
-];
 
 export default function CalendarioScreen() {
   const { session } = useAuth();
-  const [currentMonthDate, setCurrentMonthDate] = useState(new Date(2026, 7, 1)); // Agosto 2026
-  const [selectedDay, setSelectedDay] = useState(21); // Dia selecionado
-
-  const [events, setEvents] = useState<ItemCronograma[]>(DEFAULT_EVENTS);
-  const eventsStorageKey = `${Storage.keys.ITENS_PREFIX}${session?.email || 'default'}_events`;
-
-  useEffect(() => {
-    async function loadData() {
-      const saved = await Storage.getItem<ItemCronograma[]>(eventsStorageKey, DEFAULT_EVENTS);
-      setEvents(saved);
-    }
-    loadData();
-  }, [session]);
-
-  const persistEvents = async (updated: ItemCronograma[]) => {
-    setEvents(updated);
-    await Storage.setItem(eventsStorageKey, updated);
-  };
+  const today = new Date();
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDay, setSelectedDay] = useState(today.getDate());
+  const [events, setEvents] = useState<ItemCronograma[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Modal new event state
   const [modalVisible, setModalVisible] = useState(false);
   const [eventName, setEventName] = useState('');
   const [eventType, setEventType] = useState('Prova');
-  const [eventDate, setEventDate] = useState(`2026-08-${selectedDay.toString().padStart(2, '0')}`);
+  const [eventDate, setEventDate] = useState(
+    `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`
+  );
   const [eventTimeStart, setEventTimeStart] = useState('09:00');
   const [eventTimeEnd, setEventTimeEnd] = useState('11:00');
   const [eventDesc, setEventDesc] = useState('');
@@ -95,6 +58,37 @@ export default function CalendarioScreen() {
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
   ];
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        setEvents([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('itens_cronograma')
+        .select('*')
+        .eq('user_id', userRes.user.id)
+        .order('data_inicio', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching calendar events:', error);
+      } else {
+        setEvents(data || []);
+      }
+    } catch (e) {
+      console.error('Failed to load events:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEvents();
+  }, [session]);
 
   const prevMonth = () => {
     setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1));
@@ -128,30 +122,97 @@ export default function CalendarioScreen() {
     (e) => e.data_inicio?.startsWith(selectedDateStr) || e.data_fim?.startsWith(selectedDateStr)
   );
 
-  const handleAddEvent = () => {
-    if (!eventName.trim()) return;
+  const handleAddEvent = async () => {
+    if (!eventName.trim()) {
+      Alert.alert('Atenção', 'Informe o nome do compromisso.');
+      return;
+    }
 
-    const newEv: ItemCronograma = {
-      id: Date.now().toString(),
-      user_id: session?.email || 'user-1',
-      nome: eventName.trim(),
-      tipo: eventType,
-      prioridade: 1,
-      data_inicio: `${eventDate}T${eventTimeStart}:00`,
-      data_fim: `${eventDate}T${eventTimeEnd}:00`,
-      descricao: eventDesc.trim(),
-      completed: false,
-    };
+    if (eventDate.trim() && !isValidDateString(eventDate.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-08-21).');
+      return;
+    }
 
-    persistEvents([...events, newEv]);
-    setEventName('');
-    setEventDesc('');
-    setModalVisible(false);
+    if (eventTimeStart.trim() && !isValidTimeString(eventTimeStart.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de início válido no formato HH:MM (ex: 09:00).');
+      return;
+    }
+
+    if (eventTimeEnd.trim() && !isValidTimeString(eventTimeEnd.trim())) {
+      Alert.alert('Horário Inválido', 'Informe um horário de término válido no formato HH:MM (ex: 11:00).');
+      return;
+    }
+
+    if (
+      eventTimeStart.trim() &&
+      eventTimeEnd.trim() &&
+      !isTimeIntervalValid(eventTimeStart.trim(), eventTimeEnd.trim())
+    ) {
+      Alert.alert('Horário Inconsistente', 'O horário de término deve ser posterior ao horário de início.');
+      return;
+    }
+
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        Alert.alert('Sessão expirada', 'Faça login novamente.');
+        return;
+      }
+
+      const cleanDate = eventDate.trim() || `${year}-${(month + 1).toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
+      const cleanStart = eventTimeStart.trim() || '09:00';
+      const cleanEnd = eventTimeEnd.trim() || '11:00';
+
+      const { data, error } = await supabase
+        .from('itens_cronograma')
+        .insert({
+          user_id: userRes.user.id,
+          nome: eventName.trim(),
+          tipo: eventType,
+          prioridade: eventType === 'Prova' ? 2 : eventType === 'Trabalho' ? 1 : 0,
+          data_inicio: `${cleanDate}T${cleanStart}:00`,
+          data_fim: `${cleanDate}T${cleanEnd}:00`,
+          descricao: eventDesc.trim() || null,
+          completed: false,
+        })
+        .select()
+        .single();
+
+      if (error || !data) {
+        Alert.alert('Erro', 'Não foi possível salvar o evento no calendário.');
+        return;
+      }
+
+      setEvents((prev) => [...prev, data]);
+      setEventName('');
+      setEventDesc('');
+      setModalVisible(false);
+    } catch (e) {
+      console.error('Error adding event:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao salvar o evento.');
+    }
   };
 
   const handleDeleteEvent = (id: string) => {
-    const updated = events.filter((e) => e.id !== id);
-    persistEvents(updated);
+    Alert.alert('Excluir Compromisso', 'Deseja realmente remover este compromisso do calendário?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { error } = await supabase.from('itens_cronograma').delete().eq('id', id);
+            if (error) {
+              Alert.alert('Erro', 'Não foi possível excluir o evento.');
+              return;
+            }
+            setEvents((prev) => prev.filter((e) => e.id !== id));
+          } catch (e) {
+            console.error('Error deleting calendar event:', e);
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -264,7 +325,11 @@ export default function CalendarioScreen() {
         </View>
 
         {/* Selected Day Events List */}
-        {selectedDayEvents.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          </View>
+        ) : selectedDayEvents.length === 0 ? (
           <EmptyState
             title="Nenhum evento neste dia"
             description="Aproveite o tempo livre para descansar ou adiantar matérias pendentes."
@@ -278,7 +343,19 @@ export default function CalendarioScreen() {
         ) : (
           selectedDayEvents.map((ev) => (
             <Card key={ev.id} style={styles.eventCard}>
-              <View style={styles.eventLeftBar} />
+              <View
+                style={[
+                  styles.eventLeftBar,
+                  {
+                    backgroundColor:
+                      ev.tipo === 'Prova'
+                        ? COLORS.danger
+                        : ev.tipo === 'Trabalho'
+                        ? COLORS.warning
+                        : COLORS.primary,
+                  },
+                ]}
+              />
               <View style={styles.eventContent}>
                 <View style={styles.eventHeader}>
                   <Text style={styles.eventTitle}>{ev.nome}</Text>
@@ -358,7 +435,7 @@ export default function CalendarioScreen() {
         <Input
           label="Data (AAAA-MM-DD)"
           value={eventDate}
-          onChangeText={setEventDate}
+          onChangeText={(val) => setEventDate(applyDateMask(val))}
         />
 
         <View style={styles.rowInputs}>
@@ -367,7 +444,7 @@ export default function CalendarioScreen() {
               label="Horário Início"
               placeholder="09:00"
               value={eventTimeStart}
-              onChangeText={setEventTimeStart}
+              onChangeText={(val) => setEventTimeStart(applyTimeMask(val))}
             />
           </View>
           <View style={{ flex: 1, marginLeft: 8 }}>
@@ -375,7 +452,7 @@ export default function CalendarioScreen() {
               label="Horário Fim"
               placeholder="11:00"
               value={eventTimeEnd}
-              onChangeText={setEventTimeEnd}
+              onChangeText={(val) => setEventTimeEnd(applyTimeMask(val))}
             />
           </View>
         </View>
@@ -408,6 +485,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 36,
+  },
+  loadingBox: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   calendarCard: {
     padding: 16,
@@ -512,7 +593,6 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: COLORS.primary,
   },
   eventContent: {
     flex: 1,

@@ -15,45 +15,55 @@ import { COLORS, TimerMode, POMODORO_TIMES } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
 import { ProgressRing } from '../../components/ui/ProgressRing';
-import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
-import { Storage } from '../../lib/storage';
+import { supabase } from '../../lib/supabase';
 
 export default function TimerScreen() {
-  const { session } = useAuth();
+  const { session, refreshProfile } = useAuth();
 
   const [mode, setMode] = useState<TimerMode>('foco');
   const [timeLeft, setTimeLeft] = useState<number>(POMODORO_TIMES.foco);
   const [isActive, setIsActive] = useState<boolean>(false);
-  const [selectedSubject, setSelectedSubject] = useState<string>('História');
+  const [selectedSubject, setSelectedSubject] = useState<{ id: string | null; nome: string }>({
+    id: null,
+    nome: 'Geral',
+  });
+  const [subjectsList, setSubjectsList] = useState<Array<{ id: string; nome: string }>>([]);
   const [notes, setNotes] = useState<string>('');
   const [subjectModalVisible, setSubjectModalVisible] = useState<boolean>(false);
-  const [completedSessionsCount, setCompletedSessionsCount] = useState<number>(3);
-
-  const subjects = ['História', 'Matemática', 'Banco de Dados', 'Engenharia de Software', 'Geral'];
 
   const totalDuration = POMODORO_TIMES[mode];
   const progress = (totalDuration - timeLeft) / totalDuration;
 
-  // Load notes for selected subject
+  // Load user disciplines for dropdown
   useEffect(() => {
-    async function loadNotes() {
-      if (!session) return;
-      const key = `${Storage.keys.NOTES_PREFIX}${session.email}_${selectedSubject}`;
-      const saved = await Storage.getItem<string>(key, '');
-      setNotes(saved);
-    }
-    loadNotes();
-  }, [selectedSubject, session]);
+    async function loadDisciplinas() {
+      try {
+        const { data: userRes } = await supabase.auth.getUser();
+        if (!userRes.user) return;
 
-  // Save notes with debounce
-  const handleNotesChange = async (text: string) => {
-    setNotes(text);
-    if (!session) return;
-    const key = `${Storage.keys.NOTES_PREFIX}${session.email}_${selectedSubject}`;
-    await Storage.setItem(key, text);
-  };
+        const { data } = await supabase
+          .from('disciplinas')
+          .select('id, nome')
+          .eq('user_id', userRes.user.id)
+          .order('nome', { ascending: true });
+
+        if (data && data.length > 0) {
+          setSubjectsList(data);
+          if (!selectedSubject.id) {
+            setSelectedSubject({ id: data[0].id, nome: data[0].nome });
+          }
+        } else {
+          setSubjectsList([]);
+        }
+      } catch (e) {
+        console.error('Failed to load timer disciplines:', e);
+      }
+    }
+
+    loadDisciplinas();
+  }, [session]);
 
   // Timer interval handling
   useEffect(() => {
@@ -80,12 +90,40 @@ export default function TimerScreen() {
     };
   }, [isActive, mode]);
 
-  const handleTimerCompleted = () => {
+  const handleTimerCompleted = async () => {
     if (mode === 'foco') {
-      setCompletedSessionsCount((c) => c + 1);
+      try {
+        const { data: userRes } = await supabase.auth.getUser();
+        if (userRes.user) {
+          // 1. Record study session in Supabase
+          await supabase.from('sessoes_estudo').insert({
+            user_id: userRes.user.id,
+            disciplina_id: selectedSubject.id,
+            duracao_efetiva_min: 25,
+            status: 'concluida',
+            exp: 25,
+            notas: notes.trim() || null,
+          });
+
+          // 2. Increment XP in profiles
+          const currentXp = session?.xp || 0;
+          const newXp = currentXp + 25;
+          const newNivel = Math.floor(newXp / 100) + 1;
+
+          await supabase
+            .from('profiles')
+            .update({ xp: newXp, nivel_atual: newNivel })
+            .eq('id', userRes.user.id);
+
+          await refreshProfile();
+        }
+      } catch (e) {
+        console.error('Error saving study session:', e);
+      }
+
       Alert.alert(
         'Sessão Concluída! 🎉',
-        `Parabéns! Você completou 25 minutos de foco em ${selectedSubject}. Que tal uma pausa curta de 5 minutos?`,
+        `Parabéns! Você completou 25 minutos de foco em ${selectedSubject.nome} e ganhou +25 XP! Que tal uma pausa curta de 5 minutos?`,
         [
           { text: 'Pausa Curta', onPress: () => changeMode('curta') },
           { text: 'OK', style: 'cancel' },
@@ -192,7 +230,7 @@ export default function TimerScreen() {
               </Text>
               <Text style={styles.timerDigits}>{formatTime(timeLeft)}</Text>
               <Text style={styles.timerSubjectLabel}>
-                {selectedSubject || 'Geral'}
+                {selectedSubject.nome}
               </Text>
             </View>
           </ProgressRing>
@@ -244,7 +282,7 @@ export default function TimerScreen() {
             style={styles.subjectSelectorBox}
             onPress={() => setSubjectModalVisible(true)}
           >
-            <Text style={styles.selectedSubjectName}>{selectedSubject}</Text>
+            <Text style={styles.selectedSubjectName}>{selectedSubject.nome}</Text>
             <Text style={styles.subjectHint}>Toque para alterar a matéria</Text>
           </TouchableOpacity>
         </Card>
@@ -254,7 +292,7 @@ export default function TimerScreen() {
           <View style={styles.iconTitleRow}>
             <FileText size={18} color={COLORS.primary} />
             <Text style={styles.cardSectionTitle}>
-              Anotações de Estudo — {selectedSubject}
+              Anotações de Estudo — {selectedSubject.nome}
             </Text>
           </View>
 
@@ -265,14 +303,14 @@ export default function TimerScreen() {
             placeholder="Anote dúvidas, fórmulas, tópicos importantes ou insights desta sessão..."
             placeholderTextColor={COLORS.textMuted}
             value={notes}
-            onChangeText={handleNotesChange}
+            onChangeText={setNotes}
             textAlignVertical="top"
           />
 
           <View style={styles.notesFooter}>
             <CheckCircle2 size={14} color={COLORS.success} />
             <Text style={styles.notesSavedText}>
-              Salvo automaticamente para esta disciplina
+              Anotações salvas ao concluir a sessão de foco
             </Text>
           </View>
         </Card>
@@ -286,27 +324,50 @@ export default function TimerScreen() {
         variant="bottom"
       >
         <View style={{ paddingVertical: 6 }}>
-          {subjects.map((sub) => (
+          <TouchableOpacity
+            style={[
+              styles.subjectModalItem,
+              !selectedSubject.id && styles.subjectModalItemActive,
+            ]}
+            onPress={() => {
+              setSelectedSubject({ id: null, nome: 'Geral' });
+              setSubjectModalVisible(false);
+            }}
+          >
+            <Text
+              style={[
+                styles.subjectModalText,
+                !selectedSubject.id && styles.subjectModalTextActive,
+              ]}
+            >
+              Geral (Sem disciplina)
+            </Text>
+            {!selectedSubject.id && (
+              <CheckCircle2 size={18} color={COLORS.primary} />
+            )}
+          </TouchableOpacity>
+
+          {subjectsList.map((sub) => (
             <TouchableOpacity
-              key={sub}
+              key={sub.id}
               style={[
                 styles.subjectModalItem,
-                selectedSubject === sub && styles.subjectModalItemActive,
+                selectedSubject.id === sub.id && styles.subjectModalItemActive,
               ]}
               onPress={() => {
-                setSelectedSubject(sub);
+                setSelectedSubject({ id: sub.id, nome: sub.nome });
                 setSubjectModalVisible(false);
               }}
             >
               <Text
                 style={[
                   styles.subjectModalText,
-                  selectedSubject === sub && styles.subjectModalTextActive,
+                  selectedSubject.id === sub.id && styles.subjectModalTextActive,
                 ]}
               >
-                {sub}
+                {sub.nome}
               </Text>
-              {selectedSubject === sub && (
+              {selectedSubject.id === sub.id && (
                 <CheckCircle2 size={18} color={COLORS.primary} />
               )}
             </TouchableOpacity>
@@ -333,11 +394,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 4,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
   modeTab: {
     flex: 1,
@@ -400,15 +456,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
   },
   pauseButton: {
     backgroundColor: COLORS.warning,
-    shadowColor: COLORS.warning,
   },
   resetButton: {
     width: 48,

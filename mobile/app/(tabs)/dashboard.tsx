@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -21,7 +23,13 @@ import {
   Trash2,
   Check,
 } from 'lucide-react-native';
-import { COLORS, ItemCronograma, StudyDistribution } from '@studyflow/shared';
+import {
+  COLORS,
+  ItemCronograma,
+  StudyDistribution,
+  isValidDateString,
+  applyDateMask,
+} from '@studyflow/shared';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
@@ -30,59 +38,20 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Storage } from '../../lib/storage';
+import { supabase } from '../../lib/supabase';
+
+const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#a855f7'];
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { session } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [streak, setStreak] = useState(3);
-  const [totalHours, setTotalHours] = useState(14.5);
-
-  const defaultTasks: ItemCronograma[] = [
-    {
-      id: '1',
-      user_id: 'user-1',
-      nome: 'Trabalho de Engenharia de Software',
-      tipo: 'Trabalho',
-      prioridade: 1,
-      data_fim: '2026-08-25',
-      completed: false,
-      descricao: 'Entrega da primeira versão do diagrama de casos de uso',
-    },
-    {
-      id: '2',
-      user_id: 'user-1',
-      nome: 'Prova de Banco de Dados II',
-      tipo: 'Prova',
-      prioridade: 2,
-      data_fim: '2026-08-28',
-      completed: false,
-      descricao: 'Conteúdo: Transações ACID e Otimização de Queries',
-    },
-    {
-      id: '3',
-      user_id: 'user-1',
-      nome: 'Leitura de Artigo sobre Algoritmos',
-      tipo: 'Estudo',
-      prioridade: 0,
-      data_fim: '2026-08-22',
-      completed: true,
-      descricao: 'Capítulo 4 do livro texto',
-    },
-  ];
-
-  const [tasks, setTasks] = useState<ItemCronograma[]>(defaultTasks);
-
-  const [distribution, setDistribution] = useState<StudyDistribution[]>([
-    { name: 'História', hours: 5.5, max: 8, color: '#29645e' },
-    { name: 'Banco de Dados', hours: 4.0, max: 8, color: '#348e83' },
-    { name: 'Engenharia de Software', hours: 3.0, max: 8, color: '#e5a93b' },
-    { name: 'Cálculo I', hours: 2.0, max: 8, color: '#f87171' },
-  ]);
-
-  const tasksStorageKey = `${Storage.keys.ITENS_PREFIX}${session?.email || 'default'}`;
+  const [loading, setLoading] = useState(true);
+  const [streak, setStreak] = useState(0);
+  const [totalHours, setTotalHours] = useState(0);
+  const [tasks, setTasks] = useState<ItemCronograma[]>([]);
+  const [distribution, setDistribution] = useState<StudyDistribution[]>([]);
 
   // Modal new task state
   const [modalVisible, setModalVisible] = useState(false);
@@ -90,49 +59,188 @@ export default function DashboardScreen() {
   const [taskType, setTaskType] = useState('Trabalho');
   const [taskDueDate, setTaskDueDate] = useState('');
 
+  const calculateStreakFromDates = (dates: string[]) => {
+    const uniqueDays = new Set(dates.filter(Boolean).map((d) => d.slice(0, 10)));
+    if (uniqueDays.size === 0) return 0;
+
+    let count = 0;
+    const cursor = new Date();
+
+    while (true) {
+      const key = cursor.toISOString().slice(0, 10);
+      if (!uniqueDays.has(key)) break;
+      count += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    return count;
+  };
+
   const loadData = async () => {
-    setRefreshing(true);
-    const saved = await Storage.getItem<ItemCronograma[]>(tasksStorageKey, defaultTasks);
-    setTasks(saved);
-    setRefreshing(false);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        setTasks([]);
+        setDistribution([]);
+        setTotalHours(0);
+        setStreak(0);
+        return;
+      }
+
+      const uid = userRes.user.id;
+
+      // 1. Fetch deadlines/tasks
+      const { data: tasksData } = await supabase
+        .from('itens_cronograma')
+        .select('*')
+        .eq('user_id', uid)
+        .neq('tipo', 'atividade')
+        .order('data_fim', { ascending: true });
+
+      setTasks(tasksData || []);
+
+      // 2. Fetch study sessions for metrics and distribution
+      const { data: sessionsData } = await supabase
+        .from('sessoes_estudo')
+        .select('duracao_efetiva_min, data_inicio, disciplina_id, disciplinas(nome)')
+        .eq('user_id', uid);
+
+      if (sessionsData && sessionsData.length > 0) {
+        const totalMinutes = sessionsData.reduce((acc, s) => acc + (s.duracao_efetiva_min || 0), 0);
+        setTotalHours(Number((totalMinutes / 60).toFixed(1)));
+
+        const sessionDates = sessionsData.map((s) => s.data_inicio).filter(Boolean) as string[];
+        setStreak(calculateStreakFromDates(sessionDates));
+
+        // Build subject distribution
+        const subjectMap = new Map<string, number>();
+        sessionsData.forEach((s: any) => {
+          const subName = s.disciplinas?.nome || 'Geral';
+          subjectMap.set(subName, (subjectMap.get(subName) || 0) + (s.duracao_efetiva_min || 0));
+        });
+
+        const distList: StudyDistribution[] = Array.from(subjectMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([name, mins], idx) => {
+            const hrs = Number((mins / 60).toFixed(1));
+            return {
+              name,
+              hours: hrs,
+              max: Math.max(2, Math.ceil(hrs / 2) * 2),
+              color: DIST_COLORS[idx % DIST_COLORS.length],
+            };
+          });
+
+        setDistribution(distList);
+      } else {
+        setTotalHours(0);
+        setStreak(0);
+        setDistribution([]);
+      }
+    } catch (e) {
+      console.error('Error fetching dashboard data:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
     loadData();
   }, [session]);
 
-  const persistTasks = async (updated: ItemCronograma[]) => {
-    setTasks(updated);
-    await Storage.setItem(tasksStorageKey, updated);
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
   };
 
-  const handleToggleTask = (id: string) => {
-    const updated = tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
-    persistTasks(updated);
+  const handleToggleTask = async (id: string, currentCompleted: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('itens_cronograma')
+        .update({ completed: !currentCompleted })
+        .eq('id', id);
+
+      if (error) {
+        Alert.alert('Erro', 'Não foi possível atualizar o status da tarefa.');
+        return;
+      }
+
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, completed: !currentCompleted } : t))
+      );
+    } catch (e) {
+      console.error('Error toggling task:', e);
+    }
   };
 
   const handleDeleteTask = (id: string) => {
-    const updated = tasks.filter((t) => t.id !== id);
-    persistTasks(updated);
+    Alert.alert('Excluir Tarefa', 'Deseja realmente remover esta tarefa?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { error } = await supabase.from('itens_cronograma').delete().eq('id', id);
+            if (error) {
+              Alert.alert('Erro', 'Não foi possível excluir a tarefa.');
+              return;
+            }
+            setTasks((prev) => prev.filter((t) => t.id !== id));
+          } catch (e) {
+            console.error('Error deleting task:', e);
+          }
+        },
+      },
+    ]);
   };
 
-  const handleAddTask = () => {
-    if (!taskName.trim()) return;
+  const handleAddTask = async () => {
+    if (!taskName.trim()) {
+      Alert.alert('Atenção', 'Informe o título da tarefa.');
+      return;
+    }
 
-    const newTask: ItemCronograma = {
-      id: Date.now().toString(),
-      user_id: session?.email || 'local',
-      nome: taskName.trim(),
-      tipo: taskType,
-      prioridade: 1,
-      data_fim: taskDueDate || new Date().toISOString().slice(0, 10),
-      completed: false,
-    };
+    if (taskDueDate.trim() && !isValidDateString(taskDueDate.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-09-10).');
+      return;
+    }
 
-    persistTasks([newTask, ...tasks]);
-    setTaskName('');
-    setTaskDueDate('');
-    setModalVisible(false);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) {
+        Alert.alert('Sessão expirada', 'Faça login novamente.');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('itens_cronograma')
+        .insert({
+          user_id: userRes.user.id,
+          nome: taskName.trim(),
+          tipo: taskType,
+          prioridade: taskType === 'Prova' ? 2 : taskType === 'Trabalho' ? 1 : 0,
+          data_fim: taskDueDate.trim() ? `${taskDueDate.trim()}T23:59:00` : new Date().toISOString(),
+          completed: false,
+        })
+        .select()
+        .single();
+
+      if (error || !data) {
+        Alert.alert('Erro', 'Não foi possível salvar a tarefa.');
+        return;
+      }
+
+      setTasks((prev) => [data, ...prev]);
+      setTaskName('');
+      setTaskDueDate('');
+      setModalVisible(false);
+    } catch (e) {
+      console.error('Error creating task:', e);
+      Alert.alert('Erro', 'Ocorreu um erro ao salvar a tarefa.');
+    }
   };
 
   const pendingCount = tasks.filter((t) => !t.completed).length;
@@ -147,7 +255,7 @@ export default function DashboardScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={loadData}
+            onRefresh={onRefresh}
             colors={[COLORS.primary]}
           />
         }
@@ -261,7 +369,11 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {tasks.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          </View>
+        ) : tasks.length === 0 ? (
           <EmptyState
             title="Nenhum prazo cadastrado"
             description="Adicione suas próximas provas e entregas para não perder as datas."
@@ -277,7 +389,7 @@ export default function DashboardScreen() {
                   styles.checkbox,
                   task.completed && styles.checkboxChecked,
                 ]}
-                onPress={() => handleToggleTask(task.id)}
+                onPress={() => handleToggleTask(task.id, task.completed)}
               >
                 {task.completed && <Check size={14} color="#ffffff" />}
               </TouchableOpacity>
@@ -291,7 +403,7 @@ export default function DashboardScreen() {
                 >
                   {task.nome}
                 </Text>
-                {task.descricao && (
+                {Boolean(task.descricao) && (
                   <Text style={styles.taskDesc} numberOfLines={2}>
                     {task.descricao}
                   </Text>
@@ -308,9 +420,9 @@ export default function DashboardScreen() {
                     }
                     size="sm"
                   />
-                  {task.data_fim && (
+                  {Boolean(task.data_fim) && (
                     <Text style={styles.taskDueDate}>
-                      📅 {task.data_fim}
+                      📅 {task.data_fim?.slice(0, 10)}
                     </Text>
                   )}
                 </View>
@@ -328,30 +440,34 @@ export default function DashboardScreen() {
         )}
 
         {/* Study Distribution Section */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
-          Tempo de Estudo por Disciplina
-        </Text>
-        <Card style={styles.distributionCard}>
-          {distribution.map((item, idx) => (
-            <View key={idx} style={styles.distributionRow}>
-              <View style={styles.distHeader}>
-                <Text style={styles.distName}>{item.name}</Text>
-                <Text style={styles.distHours}>{item.hours}h</Text>
-              </View>
-              <View style={styles.distProgressBarBg}>
-                <View
-                  style={[
-                    styles.distProgressBarFill,
-                    {
-                      backgroundColor: item.color,
-                      width: `${Math.min(100, (item.hours / item.max) * 100)}%`,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          ))}
-        </Card>
+        {distribution.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
+              Tempo de Estudo por Disciplina
+            </Text>
+            <Card style={styles.distributionCard}>
+              {distribution.map((item, idx) => (
+                <View key={idx} style={styles.distributionRow}>
+                  <View style={styles.distHeader}>
+                    <Text style={styles.distName}>{item.name}</Text>
+                    <Text style={styles.distHours}>{item.hours}h</Text>
+                  </View>
+                  <View style={styles.distProgressBarBg}>
+                    <View
+                      style={[
+                        styles.distProgressBarFill,
+                        {
+                          backgroundColor: item.color,
+                          width: `${Math.min(100, (item.hours / item.max) * 100)}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </>
+        )}
       </ScrollView>
 
       {/* Add Task Modal */}
@@ -395,7 +511,7 @@ export default function DashboardScreen() {
           label="Data Prevista (AAAA-MM-DD)"
           placeholder="ex: 2026-09-10"
           value={taskDueDate}
-          onChangeText={setTaskDueDate}
+          onChangeText={(val) => setTaskDueDate(applyDateMask(val))}
         />
 
         <Button
@@ -419,16 +535,15 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 36,
   },
+  loadingBox: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
   heroCard: {
     backgroundColor: COLORS.primary,
     borderRadius: 20,
     padding: 20,
     marginBottom: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
   },
   heroContent: {},
   greetingText: {
@@ -452,11 +567,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     alignSelf: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   pomodoroButtonText: {
     fontSize: 14,
@@ -538,11 +648,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
   },
   shortcutLabel: {
     fontSize: 11,
