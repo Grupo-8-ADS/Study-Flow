@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Activity, BarChart3, Bell, BookOpen, Calendar, Edit2, Gift, LayoutDashboard, LogOut, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
 
 type Subject = { date: string; endTime: string; examDate: string; id: string; name: string; notes: string; startTime: string; workDate: string };
 type UserSession = { email: string; nome: string; username: string };
@@ -22,6 +23,7 @@ export default function DisciplinasPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [form, setForm] = useState(emptySubject);
+  const [formError, setFormError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Subject | null>(null);
   const [deleting, setDeleting] = useState<Subject | null>(null);
@@ -75,15 +77,51 @@ export default function DisciplinasPage() {
     setSubjects(next);
     if (user && !supabaseUserId) localStorage.setItem(`studyflow_subjects_${user.email}`, JSON.stringify(next));
   };
-  const openNew = () => { setEditingId(null); setForm(emptySubject); setShowForm(true); };
+  const openNew = () => { setEditingId(null); setForm(emptySubject); setFormError(null); setShowForm(true); };
   const openEdit = (subject: Subject) => {
     setEditingId(subject.id);
     setForm({ date: subject.date, endTime: subject.endTime, examDate: subject.examDate, name: subject.name, notes: subject.notes, startTime: subject.startTime, workDate: subject.workDate });
+    setFormError(null);
     setViewing(null); setShowForm(true);
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!form.name.trim()) return;
+    setFormError(null);
+
+    if (!form.name.trim()) {
+      setFormError("Informe o nome da disciplina.");
+      return;
+    }
+
+    if (form.date && !isValidDateString(form.date)) {
+      setFormError("A data da disciplina é inválida.");
+      return;
+    }
+
+    if (form.examDate && !isValidDateString(form.examDate)) {
+      setFormError("A data da prova é inválida.");
+      return;
+    }
+
+    if (form.workDate && !isValidDateString(form.workDate)) {
+      setFormError("A data do trabalho é inválida.");
+      return;
+    }
+
+    if (form.startTime && !isValidTimeString(form.startTime)) {
+      setFormError("O horário de início é inválido.");
+      return;
+    }
+
+    if (form.endTime && !isValidTimeString(form.endTime)) {
+      setFormError("O horário de término é inválido.");
+      return;
+    }
+
+    if (form.startTime && form.endTime && !isTimeIntervalValid(form.startTime, form.endTime)) {
+      setFormError("O horário de término deve ser posterior ao horário de início.");
+      return;
+    }
 
     if (supabaseUserId) {
       const payload = {
@@ -111,7 +149,7 @@ export default function DisciplinasPage() {
       save(editingId ? subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item) : [...subjects, { ...form, id: crypto.randomUUID() }]);
     }
 
-    setShowForm(false); setEditingId(null); setForm(emptySubject);
+    setShowForm(false); setEditingId(null); setForm(emptySubject); setFormError(null);
   };
   const remove = async () => {
     if (!deleting) return;
@@ -158,15 +196,20 @@ export default function DisciplinasPage() {
         </div>
       </main>
 
-      {showForm ? <SubjectEditor form={form} onChange={setForm} onClose={() => setShowForm(false)} onSubmit={submit} /> : null}
+      {showForm ? <SubjectEditor error={formError} form={form} onChange={(f) => { setFormError(null); setForm(f); }} onClose={() => setShowForm(false)} onSubmit={submit} /> : null}
       {viewing ? <SubjectView item={viewing} onClose={() => setViewing(null)} onEdit={() => openEdit(viewing)} /> : null}
       {deleting ? <ConfirmDelete name={deleting.name} onCancel={() => setDeleting(null)} onConfirm={remove} /> : null}
     </div>
   );
 }
 
-function SubjectEditor({ form, onChange, onClose, onSubmit }: { form: typeof emptySubject; onChange: (form: typeof emptySubject) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) {
+function SubjectEditor({ error, form, onChange, onClose, onSubmit }: { error?: string | null; form: typeof emptySubject; onChange: (form: typeof emptySubject) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) {
   return <Modal title="Adicionar/editar disciplina" onClose={onClose}><form className="grid gap-4" onSubmit={onSubmit}>
+    {error && (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-600">
+        ⚠️ {error}
+      </div>
+    )}
     <input className="rounded-2xl border border-gray-200 px-4 py-3" placeholder="Nome da disciplina" required value={form.name} onChange={(e) => onChange({ ...form, name: e.target.value })} />
     <div className="grid gap-3 sm:grid-cols-3"><input className="rounded-2xl border border-gray-200 px-4 py-3" type="date" value={form.date} onChange={(e) => onChange({ ...form, date: e.target.value })} /><input className="rounded-2xl border border-gray-200 px-4 py-3" type="time" value={form.startTime} onChange={(e) => onChange({ ...form, startTime: e.target.value })} /><input className="rounded-2xl border border-gray-200 px-4 py-3" type="time" value={form.endTime} onChange={(e) => onChange({ ...form, endTime: e.target.value })} /></div>
     <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-xs font-bold uppercase text-gray-500">Data da prova<input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="date" value={form.examDate} onChange={(e) => onChange({ ...form, examDate: e.target.value })} /></label><label className="grid gap-2 text-xs font-bold uppercase text-gray-500">Data do trabalho<input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="date" value={form.workDate} onChange={(e) => onChange({ ...form, workDate: e.target.value })} /></label></div>
@@ -183,3 +226,4 @@ function ConfirmDelete({ name, onCancel, onConfirm }: { name: string; onCancel: 
 function Modal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#142421]/45 p-5 backdrop-blur-sm"><section className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl"><button aria-label="Fechar" className="absolute right-5 top-5 cursor-pointer rounded-full p-2 text-gray-400 hover:bg-gray-100" onClick={onClose} type="button"><X size={20} /></button><h3 className="mb-6 pr-10 text-2xl font-bold text-gray-800">{title}</h3>{children}</section></div>;
 }
+

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
 
 type StudyActivity = {
   date: string;
@@ -51,6 +52,7 @@ export default function AtividadePage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [activities, setActivities] = useState<StudyActivity[]>([]);
   const [form, setForm] = useState(emptyActivity);
+  const [formError, setFormError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<StudyActivity | null>(null);
   const [deleting, setDeleting] = useState<StudyActivity | null>(null);
@@ -112,6 +114,7 @@ export default function AtividadePage() {
   const openNew = () => {
     setEditingId(null);
     setForm(emptyActivity);
+    setFormError(null);
     setShowForm(true);
   };
 
@@ -124,13 +127,39 @@ export default function AtividadePage() {
       notes: activity.notes,
       startTime: activity.startTime,
     });
+    setFormError(null);
     setViewing(null);
     setShowForm(true);
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!form.name.trim()) return;
+    setFormError(null);
+
+    if (!form.name.trim()) {
+      setFormError("Informe o nome da atividade.");
+      return;
+    }
+
+    if (form.date && !isValidDateString(form.date)) {
+      setFormError("A data informada é inválida. Utilize o formato correto.");
+      return;
+    }
+
+    if (form.startTime && !isValidTimeString(form.startTime)) {
+      setFormError("O horário de início é inválido.");
+      return;
+    }
+
+    if (form.endTime && !isValidTimeString(form.endTime)) {
+      setFormError("O horário de término é inválido.");
+      return;
+    }
+
+    if (form.startTime && form.endTime && !isTimeIntervalValid(form.startTime, form.endTime)) {
+      setFormError("O horário de término deve ser posterior ao horário de início.");
+      return;
+    }
 
     if (supabaseUserId) {
       const dataInicio = form.date && form.startTime ? `${form.date}T${form.startTime}:00` : null;
@@ -155,6 +184,7 @@ export default function AtividadePage() {
       setShowForm(false);
       setEditingId(null);
       setForm(emptyActivity);
+      setFormError(null);
       return;
     }
 
@@ -166,6 +196,7 @@ export default function AtividadePage() {
     setShowForm(false);
     setEditingId(null);
     setForm(emptyActivity);
+    setFormError(null);
   };
 
   const remove = async () => {
@@ -201,7 +232,7 @@ export default function AtividadePage() {
       </div>
 
       {showForm ? (
-        <EditorModal form={form} kind="Atividade" onChange={setForm} onClose={() => setShowForm(false)} onSubmit={submit} />
+        <EditorModal error={formError} form={form} kind="Atividade" onChange={(f) => { setFormError(null); setForm(f); }} onClose={() => setShowForm(false)} onSubmit={submit} />
       ) : null}
       {viewing ? <ViewModal item={viewing} kind="Atividade" onClose={() => setViewing(null)} onEdit={() => openEdit(viewing)} /> : null}
       {deleting ? <DeleteModal name={deleting.name} onCancel={() => setDeleting(null)} onConfirm={remove} /> : null}
@@ -249,7 +280,8 @@ function StudyTable({ empty, onDelete, onEdit, onView, rows }: {
   );
 }
 
-function EditorModal({ form, kind, onChange, onClose, onSubmit }: {
+function EditorModal({ error, form, kind, onChange, onClose, onSubmit }: {
+  error?: string | null;
   form: typeof emptyActivity;
   kind: string;
   onChange: (form: typeof emptyActivity) => void;
@@ -259,6 +291,11 @@ function EditorModal({ form, kind, onChange, onClose, onSubmit }: {
   return (
     <Modal title={`Adicionar/editar ${kind.toLowerCase()}`} onClose={onClose}>
       <form className="grid gap-4" onSubmit={onSubmit}>
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-600">
+            ⚠️ {error}
+          </div>
+        )}
         <input className="rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-[#29645e]" placeholder={`Nome da ${kind.toLowerCase()}`} required value={form.name} onChange={(e) => onChange({ ...form, name: e.target.value })} />
         <div className="grid gap-3 sm:grid-cols-3">
           <input className="rounded-2xl border border-gray-200 px-4 py-3" type="date" value={form.date} onChange={(e) => onChange({ ...form, date: e.target.value })} />
