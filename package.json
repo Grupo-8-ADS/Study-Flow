@@ -1,4 +1,17 @@
 {
+  "name": "study-flow",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "mobile",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace=frontend run dev",
+    "dev:mobile": "npm --workspace=mobile run start",
+    "dev:mobile:tunnel": "npm --workspace=mobile run tunnel",
+    "build:web": "npm --workspace=frontend run build"
+  },
   "devDependencies": {
     "supabase": "^2.112.0"
   }
