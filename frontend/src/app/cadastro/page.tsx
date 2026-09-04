@@ -1,7 +1,6 @@
 /**
  * Página de Cadastro de novos usuários no aplicativo Study Flow.
- * Esta tela valida as informações fornecidas, verifica a unicidade do e-mail/username
- * no localStorage e persiste o novo cadastro.
+ * Esta tela valida as informações fornecidas e cadastra o novo usuário via Supabase Auth.
  * @packageDocumentation
  */
 
@@ -17,23 +16,9 @@ import { supabase } from "@/lib/supabase";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
- * Interface que representa a estrutura de um usuário registrado no sistema.
- */
-interface RegisteredUser {
-  /** Nome completo do usuário */
-  nome: string;
-  /** Nome de usuário/apelido único no sistema */
-  username: string;
-  /** Endereço de e-mail único do usuário */
-  email: string;
-  /** Senha criptografada/plana de acesso */
-  senha?: string;
-}
-
-/**
  * Componente da página de Cadastro.
  * Gerencia a entrada de dados (nome, username, email, senha e confirmação de senha),
- * validações de igualdade e tamanho de senha, e tratamento de mensagens de sucesso/erro.
+ * validações de igualdade e tamanho de senha, e integração com Supabase Auth.
  */
 const Cadastro: NextPage = () => {
   const router = useRouter();
@@ -68,57 +53,9 @@ const Cadastro: NextPage = () => {
   /** Estado de envio do formulário para evitar cadastros duplicados */
   const [isLoading, setIsLoading] = useState(false);
 
-  const createDemoAccount = useCallback(() => {
-    const usersJson = localStorage.getItem("studyflow_users");
-    const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedUsername = username.trim().toLowerCase();
-
-    const emailExists = users.some((user) => user.email.toLowerCase() === normalizedEmail);
-    const usernameExists = users.some((user) => user.username.toLowerCase() === normalizedUsername);
-
-    if (emailExists) {
-      setErrorMsg("Este e-mail já está cadastrado neste dispositivo.");
-      return false;
-    }
-
-    if (usernameExists) {
-      setErrorMsg("Este nome de usuário já está em uso neste dispositivo.");
-      return false;
-    }
-
-    users.push({
-      nome,
-      username,
-      email,
-      senha,
-    });
-
-    localStorage.setItem("studyflow_users", JSON.stringify(users));
-    localStorage.setItem(
-      "studyflow_session",
-      JSON.stringify({
-        email,
-        nome,
-        username,
-        loginTime: new Date().getTime(),
-        rememberMe: true,
-        demoMode: true,
-      })
-    );
-
-    setSuccessMsg("Cadastro demo criado com sucesso! Entrando...");
-    setTimeout(() => {
-      router.push("/timer");
-    }, 1000);
-    return true;
-  }, [email, nome, router, senha, username]);
-
   /**
-   * Executa o fluxo de registro do usuário.
-   * Valida se todos os campos estão preenchidos, se as senhas coincidem, se possuem tamanho mínimo,
-   * e se o e-mail ou username já estão cadastrados no localStorage.
-   * Em caso de sucesso, adiciona o novo registro ao banco local simulado (localStorage) e redireciona para a tela de login.
+   * Executa o fluxo de registro do usuário via Supabase Auth.
+   * Valida se todos os campos estão preenchidos, se as senhas coincidem e possuem tamanho mínimo.
    *
    * @param e - Evento de envio do formulário React
    */
@@ -128,7 +65,11 @@ const Cadastro: NextPage = () => {
       setErrorMsg("");
       setSuccessMsg("");
 
-      if (!nome || !username || !email || !senha || !confirmarSenha) {
+      const cleanNome = nome.trim();
+      const cleanUsername = username.trim().toLowerCase();
+      const cleanEmail = email.trim().toLowerCase();
+
+      if (!cleanNome || !cleanUsername || !cleanEmail || !senha || !confirmarSenha) {
         setErrorMsg("Todos os campos são obrigatórios.");
         return;
       }
@@ -147,67 +88,52 @@ const Cadastro: NextPage = () => {
 
       try {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password: senha,
           options: {
             data: {
-              full_name: nome,
-              username,
+              nome: cleanNome,
+              full_name: cleanNome,
+              username: cleanUsername,
             },
           },
         });
 
         if (error) {
           const authMessage = error.message.toLowerCase();
-
-          if (authMessage.includes("already registered")) {
-            createDemoAccount();
-            return;
+          if (authMessage.includes("already registered") || authMessage.includes("already in use") || authMessage.includes("duplicate")) {
+            setErrorMsg("Este e-mail já está cadastrado.");
+          } else {
+            setErrorMsg(error.message || "Erro ao realizar cadastro.");
           }
-
-          createDemoAccount();
           return;
         }
 
-        if (data.session) {
+        if (data.user) {
           localStorage.setItem(
             "studyflow_session",
             JSON.stringify({
-              email,
-              nome,
-              username,
+              email: cleanEmail,
+              nome: cleanNome,
+              username: cleanUsername,
               loginTime: new Date().getTime(),
               rememberMe: true,
+              pendingEmailConfirmation: !data.session,
             })
           );
+
           setSuccessMsg("Cadastro realizado com sucesso! Entrando...");
           setTimeout(() => {
             router.push("/timer");
           }, 1000);
-          return;
         }
-
-        localStorage.setItem(
-          "studyflow_session",
-          JSON.stringify({
-            email,
-            nome,
-            username,
-            loginTime: new Date().getTime(),
-            rememberMe: true,
-            pendingEmailConfirmation: true,
-          })
-        );
-
-        setSuccessMsg("Cadastro realizado com sucesso! Entrando...");
-        setTimeout(() => {
-          router.push("/timer");
-        }, 1000);
+      } catch (err: any) {
+        setErrorMsg(err.message || "Erro ao conectar com o servidor.");
       } finally {
         setIsLoading(false);
       }
     },
-    [createDemoAccount, nome, username, email, senha, confirmarSenha, router]
+    [nome, username, email, senha, confirmarSenha, router]
   );
 
   return (
@@ -224,7 +150,7 @@ const Cadastro: NextPage = () => {
             width={190}
             height={255}
             alt="Study Flow Logo"
-            src={`${basePath}/Picsart-25-06-23-14-17-57-475-1@2x.png`}
+            src={`${basePath}/logo.png`}
           />
         </div>
       </section>

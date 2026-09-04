@@ -1,23 +1,73 @@
 /**
- * Validates whether a string is a valid ISO date in YYYY-MM-DD format.
+ * Validates whether a string is a valid date in DD/MM/YYYY or YYYY-MM-DD format.
  */
 export function isValidDateString(dateStr: string): boolean {
   if (!dateStr || typeof dateStr !== 'string') return false;
   const trimmed = dateStr.trim();
-  const regex = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-  if (!regex.test(trimmed)) return false;
 
-  const [yearStr, monthStr, dayStr] = trimmed.split('-');
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-  const day = parseInt(dayStr, 10);
+  // Format DD/MM/YYYY
+  const brRegex = /^([0-2]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/;
+  if (brRegex.test(trimmed)) {
+    const [dayStr, monthStr, yearStr] = trimmed.split('/');
+    const day = parseInt(dayStr, 10);
+    const month = parseInt(monthStr, 10);
+    const year = parseInt(yearStr, 10);
+    const date = new Date(year, month - 1, day);
+    return (
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+    );
+  }
 
-  const date = new Date(year, month - 1, day);
-  return (
-    date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day
-  );
+  // Format YYYY-MM-DD
+  const isoRegex = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  if (isoRegex.test(trimmed)) {
+    const [yearStr, monthStr, dayStr] = trimmed.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    const date = new Date(year, month - 1, day);
+    return (
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+    );
+  }
+
+  return false;
+}
+
+/**
+ * Converts a DD/MM/YYYY or YYYY-MM-DD string to ISO YYYY-MM-DD for database storage.
+ */
+export function toDatabaseDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const trimmed = dateStr.trim();
+  if (/^([0-2]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(trimmed)) {
+    const [day, month, year] = trimmed.split('/');
+    return `${year}-${month}-${day}`;
+  }
+  if (/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
+/**
+ * Converts a YYYY-MM-DD database string (or ISO timestamp) to DD/MM/YYYY for UI display.
+ */
+export function formatDisplayDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.slice(0, 10).trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(trimmed)) {
+    const [year, month, day] = trimmed.split('-');
+    return `${day}/${month}/${year}`;
+  }
+  if (/^([0-2]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return dateStr;
 }
 
 /**
@@ -43,13 +93,13 @@ export function isTimeIntervalValid(startTime: string, endTime: string): boolean
 }
 
 /**
- * Applies a YYYY-MM-DD mask to a raw user input string.
+ * Applies a DD/MM/YYYY mask to a raw user input string.
  */
 export function applyDateMask(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
 }
 
 /**

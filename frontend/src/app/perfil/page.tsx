@@ -27,7 +27,6 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 type UserSession = {
-  demoMode?: boolean;
   email: string;
   nome: string;
   username: string;
@@ -226,7 +225,7 @@ export default function PerfilPage() {
     try {
       const session = getStoredSession();
 
-      if (supabaseUserId && session && !session.demoMode) {
+      if (supabaseUserId && session) {
         if (currentPassword) {
           const { error: signInError } = await supabase.auth.signInWithPassword({
             email: session.email,

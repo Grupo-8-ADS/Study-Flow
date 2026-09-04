@@ -21,6 +21,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 type UserSession = {
   email: string;
@@ -95,26 +96,23 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     }
   }, [router]);
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignora se offline
+    }
     localStorage.removeItem("studyflow_session");
     router.push("/");
   };
 
-  const deleteAccount = () => {
+  const deleteAccount = async () => {
     if (!user) return;
 
-    const storedUsers = localStorage.getItem("studyflow_users");
-
-    if (storedUsers) {
-      try {
-        const users = JSON.parse(storedUsers) as Array<{ email?: string }>;
-        localStorage.setItem(
-          "studyflow_users",
-          JSON.stringify(users.filter((registeredUser) => registeredUser.email !== user.email)),
-        );
-      } catch {
-        localStorage.removeItem("studyflow_users");
-      }
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignora erro se offline
     }
 
     localStorage.removeItem("studyflow_session");

@@ -53,12 +53,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleFillDemo = () => {
-    setIdentifier('admin@studyflow.com');
-    setPassword('123456');
-    setErrorMessage('');
-  };
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -157,17 +151,6 @@ export default function LoginScreen() {
             onPress={() => router.push('/(auth)/cadastro')}
             style={styles.signupButton}
           />
-
-          {/* Quick Demo Fill Helper */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handleFillDemo}
-            style={styles.demoHelper}
-          >
-            <Text style={styles.demoHelperText}>
-              ⚡ Preencher com usuário demo de teste
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

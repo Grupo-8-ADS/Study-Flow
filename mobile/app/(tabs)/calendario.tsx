@@ -23,6 +23,8 @@ import {
   isTimeIntervalValid,
   applyDateMask,
   applyTimeMask,
+  toDatabaseDate,
+  formatDisplayDate,
 } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
@@ -129,7 +131,7 @@ export default function CalendarioScreen() {
     }
 
     if (eventDate.trim() && !isValidDateString(eventDate.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-08-21).');
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato DD/MM/AAAA (ex: 15/09/2026).');
       return;
     }
 
@@ -159,7 +161,7 @@ export default function CalendarioScreen() {
         return;
       }
 
-      const cleanDate = eventDate.trim() || `${year}-${(month + 1).toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
+      const dbDate = toDatabaseDate(eventDate.trim()) || `${year}-${(month + 1).toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
       const cleanStart = eventTimeStart.trim() || '09:00';
       const cleanEnd = eventTimeEnd.trim() || '11:00';
 
@@ -170,8 +172,8 @@ export default function CalendarioScreen() {
           nome: eventName.trim(),
           tipo: eventType,
           prioridade: eventType === 'Prova' ? 2 : eventType === 'Trabalho' ? 1 : 0,
-          data_inicio: `${cleanDate}T${cleanStart}:00`,
-          data_fim: `${cleanDate}T${cleanEnd}:00`,
+          data_inicio: `${dbDate}T${cleanStart}:00`,
+          data_fim: `${dbDate}T${cleanEnd}:00`,
           descricao: eventDesc.trim() || null,
           completed: false,
         })
@@ -179,7 +181,7 @@ export default function CalendarioScreen() {
         .single();
 
       if (error || !data) {
-        Alert.alert('Erro', 'Não foi possível salvar o evento no calendário.');
+        Alert.alert('Erro', error?.message || 'Não foi possível salvar o evento no calendário.');
         return;
       }
 
@@ -318,7 +320,7 @@ export default function CalendarioScreen() {
             title="+ Compromisso"
             size="sm"
             onPress={() => {
-              setEventDate(`${year}-${(month + 1).toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`);
+              setEventDate(`${selectedDay.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`);
               setModalVisible(true);
             }}
           />
@@ -433,7 +435,8 @@ export default function CalendarioScreen() {
         </View>
 
         <Input
-          label="Data (AAAA-MM-DD)"
+          label="Data (DD/MM/AAAA)"
+          placeholder="ex: 15/09/2026"
           value={eventDate}
           onChangeText={(val) => setEventDate(applyDateMask(val))}
         />

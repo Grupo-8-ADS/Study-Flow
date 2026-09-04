@@ -25,7 +25,6 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 interface UserSession {
-  demoMode?: boolean;
   email: string;
   nome: string;
   username: string;

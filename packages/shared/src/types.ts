@@ -1,5 +1,4 @@
 export type StudyFlowSession = {
-  demoMode?: boolean;
   email: string;
   nome: string;
   pendingEmailConfirmation?: boolean;

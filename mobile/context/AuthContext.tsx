@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email,
       nome: prof?.nome || email.split('@')[0],
       username: prof?.username || email.split('@')[0],
-      demoMode: false,
       avatar_url: prof?.avatar_url,
       banner_url: prof?.banner_url,
       bg_color: prof?.bg_color || '#29645e',
@@ -111,13 +110,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       let email = cleanId;
       if (!isEmail) {
-        const { data: rpcEmail, error: rpcError } = await supabase.rpc('get_email_by_username', {
-          p_username: cleanId,
-        });
-        if (rpcError || !rpcEmail) {
+        let resolvedEmail: string | null = null;
+        try {
+          const { data: rpcEmail, error: rpcError } = await supabase.rpc('get_email_by_username', {
+            login_username: cleanId,
+          });
+          if (!rpcError && typeof rpcEmail === 'string' && rpcEmail.includes('@')) {
+            resolvedEmail = rpcEmail;
+          }
+        } catch {
+          // RPC fallback
+        }
+
+        if (!resolvedEmail) {
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('email')
+              .ilike('username', cleanId)
+              .maybeSingle();
+
+            if (profile?.email) {
+              resolvedEmail = profile.email;
+            }
+          } catch {
+            // Profile query fallback
+          }
+        }
+
+        if (!resolvedEmail) {
           return { error: 'Email/usuário ou senha informados são inválidos.' };
         }
-        email = rpcEmail;
+        email = resolvedEmail;
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -165,7 +189,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: email.trim(),
           nome: nome.trim(),
           username: username.trim(),
-          demoMode: false,
           pendingEmailConfirmation: !data.session,
           bg_color: '#29645e',
           nivel_atual: 1,

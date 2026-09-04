@@ -29,6 +29,8 @@ import {
   StudyDistribution,
   isValidDateString,
   applyDateMask,
+  toDatabaseDate,
+  formatDisplayDate,
 } from '@studyflow/shared';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/layout/Header';
@@ -204,7 +206,7 @@ export default function DashboardScreen() {
     }
 
     if (taskDueDate.trim() && !isValidDateString(taskDueDate.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-09-10).');
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato DD/MM/AAAA (ex: 15/09/2026).');
       return;
     }
 
@@ -215,6 +217,8 @@ export default function DashboardScreen() {
         return;
       }
 
+      const dbDate = toDatabaseDate(taskDueDate.trim());
+
       const { data, error } = await supabase
         .from('itens_cronograma')
         .insert({
@@ -222,14 +226,14 @@ export default function DashboardScreen() {
           nome: taskName.trim(),
           tipo: taskType,
           prioridade: taskType === 'Prova' ? 2 : taskType === 'Trabalho' ? 1 : 0,
-          data_fim: taskDueDate.trim() ? `${taskDueDate.trim()}T23:59:00` : new Date().toISOString(),
+          data_fim: dbDate ? `${dbDate}T23:59:00` : new Date().toISOString(),
           completed: false,
         })
         .select()
         .single();
 
       if (error || !data) {
-        Alert.alert('Erro', 'Não foi possível salvar a tarefa.');
+        Alert.alert('Erro', error?.message || 'Não foi possível salvar a tarefa.');
         return;
       }
 
@@ -422,7 +426,7 @@ export default function DashboardScreen() {
                   />
                   {Boolean(task.data_fim) && (
                     <Text style={styles.taskDueDate}>
-                      📅 {task.data_fim?.slice(0, 10)}
+                      📅 {formatDisplayDate(task.data_fim)}
                     </Text>
                   )}
                 </View>
@@ -508,8 +512,8 @@ export default function DashboardScreen() {
         </View>
 
         <Input
-          label="Data Prevista (AAAA-MM-DD)"
-          placeholder="ex: 2026-09-10"
+          label="Data Prevista (DD/MM/AAAA)"
+          placeholder="ex: 15/09/2026"
           value={taskDueDate}
           onChangeText={(val) => setTaskDueDate(applyDateMask(val))}
         />

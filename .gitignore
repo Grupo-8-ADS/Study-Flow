@@ -2,8 +2,6 @@
 # Study Flow - Root .gitignore
 # ##############################################################################
 
-# Project specific files to ignore
-Milestone.md
 
 # Dependencies
 node_modules/

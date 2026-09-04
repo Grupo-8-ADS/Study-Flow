@@ -25,6 +25,8 @@ import {
   isTimeIntervalValid,
   applyDateMask,
   applyTimeMask,
+  toDatabaseDate,
+  formatDisplayDate,
 } from '@studyflow/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -86,7 +88,8 @@ export default function AtividadeScreen() {
   const openCreateModal = () => {
     setEditingId(null);
     setNome('');
-    setDataAtividade(new Date().toISOString().slice(0, 10));
+    const now = new Date();
+    setDataAtividade(`${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`);
     setHorarioInicio('09:00');
     setHorarioFim('10:00');
     setAnotacoes('');
@@ -96,7 +99,7 @@ export default function AtividadeScreen() {
   const openEditModal = (a: ItemCronograma) => {
     setEditingId(a.id);
     setNome(a.nome);
-    setDataAtividade(a.data_inicio?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+    setDataAtividade(formatDisplayDate(a.data_inicio));
     setHorarioInicio(a.data_inicio?.slice(11, 16) || '09:00');
     setHorarioFim(a.data_fim?.slice(11, 16) || '10:00');
     setAnotacoes(a.descricao || '');
@@ -111,7 +114,7 @@ export default function AtividadeScreen() {
     }
 
     if (dataAtividade.trim() && !isValidDateString(dataAtividade.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data válida no formato AAAA-MM-DD (ex: 2026-08-21).');
+      Alert.alert('Data Inválida', 'Informe uma data válida no formato DD/MM/AAAA (ex: 15/09/2026).');
       return;
     }
 
@@ -141,7 +144,7 @@ export default function AtividadeScreen() {
         return;
       }
 
-      const cleanDate = dataAtividade.trim() || new Date().toISOString().slice(0, 10);
+      const dbDate = toDatabaseDate(dataAtividade.trim()) || new Date().toISOString().slice(0, 10);
       const cleanStart = horarioInicio.trim() || '09:00';
       const cleanEnd = horarioFim.trim() || '10:00';
 
@@ -149,8 +152,8 @@ export default function AtividadeScreen() {
         nome: nome.trim(),
         tipo: 'atividade',
         prioridade: 1,
-        data_inicio: `${cleanDate}T${cleanStart}:00`,
-        data_fim: `${cleanDate}T${cleanEnd}:00`,
+        data_inicio: `${dbDate}T${cleanStart}:00`,
+        data_fim: `${dbDate}T${cleanEnd}:00`,
         descricao: anotacoes.trim() || null,
       };
 
@@ -162,7 +165,7 @@ export default function AtividadeScreen() {
           .eq('user_id', userRes.user.id);
 
         if (error) {
-          Alert.alert('Erro', 'Não foi possível atualizar a atividade.');
+          Alert.alert('Erro', error.message || 'Não foi possível atualizar a atividade.');
           return;
         }
 
@@ -188,7 +191,7 @@ export default function AtividadeScreen() {
           .single();
 
         if (error || !data) {
-          Alert.alert('Erro', 'Não foi possível criar a atividade.');
+          Alert.alert('Erro', error?.message || 'Não foi possível criar a atividade.');
           return;
         }
 
@@ -196,9 +199,9 @@ export default function AtividadeScreen() {
       }
 
       setModalVisible(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error saving activity:', e);
-      Alert.alert('Erro', 'Ocorreu um erro ao salvar a atividade.');
+      Alert.alert('Erro', e.message || 'Ocorreu um erro ao salvar a atividade.');
     }
   };
 
@@ -280,7 +283,7 @@ export default function AtividadeScreen() {
                 <View style={styles.titleInfo}>
                   <Text style={styles.activityName}>{item.nome}</Text>
                   <Text style={styles.timeText}>
-                    ⏰ {item.data_inicio?.slice(11, 16)} - {item.data_fim?.slice(11, 16)}
+                    📅 {formatDisplayDate(item.data_inicio)} • ⏰ {item.data_inicio?.slice(11, 16)} - {item.data_fim?.slice(11, 16)}
                   </Text>
                 </View>
 
@@ -331,8 +334,8 @@ export default function AtividadeScreen() {
         />
 
         <Input
-          label="Data (AAAA-MM-DD)"
-          placeholder="2026-08-21"
+          label="Data (DD/MM/AAAA)"
+          placeholder="ex: 15/09/2026"
           value={dataAtividade}
           onChangeText={(val) => setDataAtividade(applyDateMask(val))}
         />

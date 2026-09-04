@@ -25,6 +25,8 @@ import {
   isTimeIntervalValid,
   applyDateMask,
   applyTimeMask,
+  toDatabaseDate,
+  formatDisplayDate,
 } from '@studyflow/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -99,10 +101,10 @@ export default function DisciplinasScreen() {
     setProfessor(d.professor || '');
 
     const notesObj = typeof d.anotacoes === 'object' && d.anotacoes !== null ? (d.anotacoes as any) : {};
-    setHorarioInicio(notesObj.startTime || d.data_inicio || '08:00');
-    setHorarioFim(notesObj.endTime || d.data_fim || '10:00');
-    setDataProva(notesObj.examDate || '');
-    setDataTrabalho(notesObj.workDate || '');
+    setHorarioInicio(notesObj.startTime || '08:00');
+    setHorarioFim(notesObj.endTime || '10:00');
+    setDataProva(formatDisplayDate(notesObj.examDate || ''));
+    setDataTrabalho(formatDisplayDate(notesObj.workDate || ''));
     setAnotacoes(typeof d.anotacoes === 'string' ? d.anotacoes : notesObj.notes || '');
     setModalVisible(true);
   };
@@ -133,12 +135,12 @@ export default function DisciplinasScreen() {
     }
 
     if (dataProva.trim() && !isValidDateString(dataProva.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data de prova válida no formato AAAA-MM-DD (ex: 2026-09-15).');
+      Alert.alert('Data Inválida', 'Informe uma data de prova válida no formato DD/MM/AAAA (ex: 15/09/2026).');
       return;
     }
 
     if (dataTrabalho.trim() && !isValidDateString(dataTrabalho.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data de trabalho válida no formato AAAA-MM-DD (ex: 2026-09-22).');
+      Alert.alert('Data Inválida', 'Informe uma data de trabalho válida no formato DD/MM/AAAA (ex: 22/09/2026).');
       return;
     }
 
@@ -151,8 +153,8 @@ export default function DisciplinasScreen() {
 
       const notesPayload = {
         notes: anotacoes.trim(),
-        examDate: dataProva.trim() || null,
-        workDate: dataTrabalho.trim() || null,
+        examDate: toDatabaseDate(dataProva) || null,
+        workDate: toDatabaseDate(dataTrabalho) || null,
         startTime: horarioInicio.trim() || '08:00',
         endTime: horarioFim.trim() || '10:00',
       };
@@ -163,15 +165,15 @@ export default function DisciplinasScreen() {
           .update({
             nome: nome.trim(),
             professor: professor.trim() || null,
-            data_inicio: horarioInicio.trim() || null,
-            data_fim: horarioFim.trim() || null,
+            data_inicio: null,
+            data_fim: null,
             anotacoes: notesPayload,
           })
           .eq('id', editingId)
           .eq('user_id', userRes.user.id);
 
         if (error) {
-          Alert.alert('Erro', 'Não foi possível atualizar a disciplina.');
+          Alert.alert('Erro', error.message || 'Não foi possível atualizar a disciplina.');
           return;
         }
 
@@ -182,8 +184,8 @@ export default function DisciplinasScreen() {
                   ...item,
                   nome: nome.trim(),
                   professor: professor.trim(),
-                  data_inicio: horarioInicio.trim() || '08:00',
-                  data_fim: horarioFim.trim() || '10:00',
+                  data_inicio: null,
+                  data_fim: null,
                   anotacoes: notesPayload,
                 }
               : item
@@ -196,15 +198,15 @@ export default function DisciplinasScreen() {
             user_id: userRes.user.id,
             nome: nome.trim(),
             professor: professor.trim() || null,
-            data_inicio: horarioInicio.trim() || null,
-            data_fim: horarioFim.trim() || null,
+            data_inicio: null,
+            data_fim: null,
             anotacoes: notesPayload,
           })
           .select()
           .single();
 
         if (error || !data) {
-          Alert.alert('Erro', 'Não foi possível cadastrar a disciplina.');
+          Alert.alert('Erro', error?.message || 'Não foi possível cadastrar a disciplina.');
           return;
         }
 
@@ -212,9 +214,9 @@ export default function DisciplinasScreen() {
       }
 
       setModalVisible(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error saving subject:', e);
-      Alert.alert('Erro', 'Ocorreu um erro ao salvar a disciplina.');
+      Alert.alert('Erro', e.message || 'Ocorreu um erro ao salvar a disciplina.');
     }
   };
 
@@ -328,7 +330,15 @@ export default function DisciplinasScreen() {
                     <View style={styles.metaItem}>
                       <Calendar size={14} color={COLORS.danger} />
                       <Text style={[styles.metaText, { color: COLORS.danger }]}>
-                        Prova: {notesObj.examDate}
+                        Prova: {formatDisplayDate(notesObj.examDate)}
+                      </Text>
+                    </View>
+                  )}
+                  {Boolean(notesObj.workDate) && (
+                    <View style={styles.metaItem}>
+                      <Calendar size={14} color={COLORS.primary} />
+                      <Text style={[styles.metaText, { color: COLORS.primary }]}>
+                        Trabalho: {formatDisplayDate(notesObj.workDate)}
                       </Text>
                     </View>
                   )}
@@ -390,14 +400,14 @@ export default function DisciplinasScreen() {
 
         <Input
           label="Data da Prova 1 (opcional)"
-          placeholder="ex: 2026-09-15"
+          placeholder="ex: 15/09/2026"
           value={dataProva}
           onChangeText={(val) => setDataProva(applyDateMask(val))}
         />
 
         <Input
           label="Data do Trabalho 1 (opcional)"
-          placeholder="ex: 2026-09-22"
+          placeholder="ex: 22/09/2026"
           value={dataTrabalho}
           onChangeText={(val) => setDataTrabalho(applyDateMask(val))}
         />

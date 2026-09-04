@@ -1,6 +1,6 @@
 /**
  * Página de Login do aplicativo Study Flow.
- * Esta tela permite a autenticação de usuários cadastrados no localStorage
+ * Esta tela permite a autenticação de usuários via Supabase Auth
  * e realiza o redirecionamento automático caso já exista uma sessão ativa.
  * @packageDocumentation
  */
@@ -17,17 +17,15 @@ import { supabase } from "@/lib/supabase";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
- * Interface que representa a estrutura de um usuário registrado.
+ * Interface que representa a estrutura de um usuário autenticado.
  */
-interface RegisteredUser {
+interface SessionUser {
   /** Nome completo do usuário */
   nome: string;
   /** Nome de usuário/apelido único */
   username: string;
   /** Endereço de e-mail utilizado no login */
   email: string;
-  /** Senha de acesso do usuário (opcional na busca do localStorage) */
-  senha?: string;
 }
 
 /**
@@ -38,7 +36,7 @@ interface RegisteredUser {
 const Login: NextPage = () => {
   const router = useRouter();
 
-  /** Estado do campo de entrada do e-mail */
+  /** Estado do campo de entrada do e-mail ou username */
   const [email, setEmail] = useState("");
 
   /** Estado do campo de entrada da senha */
@@ -56,36 +54,6 @@ const Login: NextPage = () => {
   /** Estado de envio do formulário para evitar logins duplicados */
   const [isLoading, setIsLoading] = useState(false);
 
-  const signInDemoUser = useCallback(() => {
-    const usersJson = localStorage.getItem("studyflow_users");
-    const users: RegisteredUser[] = usersJson ? JSON.parse(usersJson) : [];
-    const login = email.trim().toLowerCase();
-    const user = users.find(
-      (registeredUser) =>
-        (registeredUser.email.toLowerCase() === login ||
-          registeredUser.username.toLowerCase() === login) &&
-        registeredUser.senha === senha
-    );
-
-    if (!user) {
-      return false;
-    }
-
-    localStorage.setItem(
-      "studyflow_session",
-      JSON.stringify({
-        email: user.email,
-        nome: user.nome,
-        username: user.username,
-        loginTime: new Date().getTime(),
-        rememberMe,
-        demoMode: true,
-      })
-    );
-    router.push("/timer");
-    return true;
-  }, [email, rememberMe, router, senha]);
-
   const resolveLoginEmail = useCallback(async () => {
     const login = email.trim();
 
@@ -93,12 +61,30 @@ const Login: NextPage = () => {
       return login;
     }
 
-    const { data } = await supabase.rpc("get_email_by_username", {
-      login_username: login,
-    });
+    try {
+      const { data } = await supabase.rpc("get_email_by_username", {
+        login_username: login,
+      });
 
-    if (typeof data === "string" && data.includes("@")) {
-      return data;
+      if (typeof data === "string" && data.includes("@")) {
+        return data;
+      }
+    } catch {
+      // Fallback
+    }
+
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .ilike("username", login)
+        .maybeSingle();
+
+      if (profile?.email) {
+        return profile.email;
+      }
+    } catch {
+      // Fallback
     }
 
     return login;
@@ -116,10 +102,7 @@ const Login: NextPage = () => {
   }, [router]);
 
   /**
-   * Trata o envio do formulário de login.
-   * Valida se os campos estão preenchidos, verifica as credenciais cadastradas no localStorage
-   * (incluindo uma conta padrão "admin" como seed se não houver usuários cadastrados)
-   * e, em caso de sucesso, salva os dados da sessão no localStorage e redireciona para a tela do Timer.
+   * Trata o envio do formulário de login via Supabase Auth.
    *
    * @param e - Evento de envio do formulário React
    */
@@ -127,7 +110,7 @@ const Login: NextPage = () => {
     e.preventDefault();
     setError("");
 
-    if (!email || !senha) {
+    if (!email.trim() || !senha) {
       setError("Preencha e-mail/usuário e senha.");
       return;
     }
@@ -142,11 +125,7 @@ const Login: NextPage = () => {
       });
 
       if (signInError || !data.user) {
-        if (signInDemoUser()) {
-          return;
-        }
-
-        setError("Email e/ou senha informados são inválidos.");
+        setError("Email/usuário ou senha informados são inválidos.");
         return;
       }
 
@@ -156,10 +135,11 @@ const Login: NextPage = () => {
         .eq("id", data.user.id)
         .maybeSingle();
 
-      const sessionUser: RegisteredUser = {
+      const sessionUser: SessionUser = {
         nome:
           profile?.nome ||
           data.user.user_metadata?.full_name ||
+          data.user.user_metadata?.nome ||
           data.user.email?.split("@")[0] ||
           "Usuário Study Flow",
         username:
@@ -177,14 +157,16 @@ const Login: NextPage = () => {
           nome: sessionUser.nome,
           username: sessionUser.username,
           loginTime: new Date().getTime(),
-          rememberMe
+          rememberMe,
         })
       );
       router.push("/timer");
+    } catch (err: any) {
+      setError(err.message || "Erro ao conectar com o servidor.");
     } finally {
       setIsLoading(false);
     }
-  }, [email, senha, rememberMe, resolveLoginEmail, router, signInDemoUser]);
+  }, [email, senha, rememberMe, resolveLoginEmail, router]);
 
   /**
    * Navega para a página de cadastro de novas contas.
@@ -208,7 +190,7 @@ const Login: NextPage = () => {
             width={190}
             height={255}
             alt="Study Flow Logo"
-            src={`${basePath}/Picsart-25-06-23-14-17-57-475-1@2x.png`}
+            src={`${basePath}/logo.png`}
           />
         </div>
       </section>

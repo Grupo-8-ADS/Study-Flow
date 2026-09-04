@@ -12,68 +12,140 @@
   - [🛠 Built With](#built-with)
     - [Tech Stack](#tech-stack)
     - [Key Features](#key-features)
+- [💻 Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation & Execution](#installation--execution)
+- [📌 Project Milestones](#project-milestones)
+- [🚀 Live Demo](#live-demo)
 - [👥 Authors](#authors)
 
 # 📖 Study Flow <a name="about-project"></a>
 
-> O **Study Flow** é uma ferramenta de gerenciamento de estudos focada em produtividade pessoal, organização acadêmica e automação de rotinas de planejamento.
+> O **Study Flow** é uma plataforma de gerenciamento de estudos multiplataforma (Web & Mobile) voltada para a produtividade pessoal, organização acadêmica e controle de rotinas de aprendizagem.
 
-O projeto visa integrar compromissos recebidos por e-mail, utilizando identificação de palavras-chave para automatizar a criação de cronogramas e tarefas, reduzindo a carga cognitiva do estudante na organização diária.
+A aplicação unifica o controle de tempo de estudo por meio de ciclos Pomodoro, gerenciamento de disciplinas com datas de provas e trabalhos, calendário interativo de compromissos, acompanhamento de métricas de desempenho e gamificação para incentivar o hábito diário de estudos.
 
 ## 🛠 Built With <a name="built-with"></a>
 
 ### Tech Stack <a name="tech-stack"></a>
 
 <details>
-  <summary>Client</summary>
+  <summary>Frontend Web (<code>frontend/</code>)</summary>
   <ul>
-    <li><a href="https://reactjs.org/">React.js / Next.js</a></li>
+    <li><a href="https://nextjs.org/">Next.js 16 (App Router & Turbopack)</a></li>
+    <li><a href="https://react.dev/">React 19</a></li>
+    <li><a href="https://tailwindcss.com/">Tailwind CSS v4</a></li>
+    <li><a href="https://lucide.dev/">Lucide React</a></li>
   </ul>
 </details>
 
 <details>
-  <summary>Server</summary>
+  <summary>Mobile App (<code>mobile/</code>)</summary>
   <ul>
-    <li><a href="https://nodejs.org/">Node.js</a></li>
+    <li><a href="https://reactnative.dev/">React Native</a></li>
+    <li><a href="https://expo.dev/">Expo SDK 57 (Expo Router)</a></li>
+    <li><a href="https://lucide.dev/">Lucide React Native</a></li>
+    <li><a href="https://docs.expo.dev/versions/latest/sdk/async-storage/">Async Storage & Safe Area Context</a></li>
   </ul>
 </details>
 
 <details>
-<summary>Database</summary>
+  <summary>Shared Package (<code>packages/shared/</code>)</summary>
   <ul>
-    <li><a href="https://www.postgresql.org/">PostgreSQL</a></li>
+    <li>Módulo TypeScript comum com tipagens unificadas de sessão, disciplinas, itens de cronograma e rotinas.</li>
+    <li>Utilitários e validadores de data/hora com máscaras e formatação padrão brasileiro (<code>DD/MM/AAAA</code>) convertidas de/para ISO <code>YYYY-MM-DD</code>.</li>
+  </ul>
+</details>
+
+<details>
+  <summary>Backend & Database (Supabase)</summary>
+  <ul>
+    <li><a href="https://supabase.com/">Supabase</a> (PostgreSQL, Row Level Security, Auth & Storage)</li>
+    <li>Autenticação unificada com suporte a login flexível por e-mail ou nome de usuário (username).</li>
+    <li>Funções RPC e migrações estruturadas para perfis, disciplinas, cronograma e rotinas semanais.</li>
   </ul>
 </details>
 
 ### Key Features <a name="key-features"></a>
 
-- **Automação via E-mail:** Sincronização automática com Gmail para extração de datas de provas e entregas.
-- **Cronograma Adaptativo:** Algoritmo que sugere horários de estudo baseados na rotina do usuário.
-- **Gamificação de Progresso:** Sistema de conquistas e metas para incentivar a constância nos estudos.
+- **Temporizador Pomodoro & Anotações:** Ciclos de foco e pausas configuráveis, anel animado de progresso, alertas visuais/sonoros e editor de anotações persistidas.
+- **Gestão de Disciplinas & Prazos:** Cadastro de matérias, horários de aula, anotações de aula e datas previstas de provas e trabalhos formatadas em `DD/MM/AAAA`.
+- **Calendário Acadêmico:** Visualização mensal e diária de compromissos, provas e prazos de entrega com filtros rápidos.
+- **Dashboard & Rotinas Semanais:** Resumo diário de tarefas concluídas/pendentes e organização da grade horária semanal.
+- **Estatísticas & Gamificação:** Gráficos de distribuição por matéria, metas diárias de horas de estudo, histórico de sessões, níveis e conquistas desbloqueáveis.
+- **Autenticação Híbrida Segura:** Login facilitado por e-mail ou username, persistência de sessão e perfil do usuário.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## 💻 Getting Started <a name="getting-started"></a>
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (versão 20 ou superior)
+- [npm](https://www.npmjs.com/) (versão 10 ou superior)
+- [Expo Go](https://expo.dev/go) instalado no smartphone (para testar o app mobile)
+
+### Installation & Execution
+
+1. **Clone o repositório:**
+   ```bash
+   git clone https://github.com/Zackkinho11/Study-Flow.git
+   cd Study-Flow
+   ```
+
+2. **Instale as dependências do monorepo:**
+   ```bash
+   npm install
+   ```
+
+3. **Execute o Frontend Web:**
+   ```bash
+   npm run dev:web
+   ```
+   Acesse a aplicação no navegador em `http://localhost:3000`.
+
+4. **Execute o Aplicativo Mobile:**
+   ```bash
+   npm run dev:mobile
+   # ou com tunnel para testes em redes externas:
+   npm run dev:mobile:tunnel
+   ```
+   Abra o app **Expo Go** e escaneie o QR Code exibido no terminal.
+
+5. **Build de produção da Web:**
+   ```bash
+   npm run build:web
+   ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## 📌 Project Milestones <a name="project-milestones"></a>
+
+O acompanhamento detalhado de todas as fases, funcionalidades concluídas e backlog futuro pode ser consultado no documento:
+- 📄 [Milestone.md](./Milestone.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## 🚀 Live Demo <a name="live-demo"></a>
 
-- [Link do Protótipo/Aplicação](https://www.figma.com/design/KjIEnEdvbbahRYknOauBoy/Wireframes-Kit---Free-wireframing-Websites-and-SaaS-UI-UX--Community-?node-id=3102-1990&p=f&t=A1gtB7KxMSXFyHY7-0)
+- [Link do Protótipo no Figma](https://www.figma.com/design/KjIEnEdvbbahRYknOauBoy/Wireframes-Kit---Free-wireframing-Websites-and-SaaS-UI-UX--Community-?node-id=3102-1990&p=f&t=A1gtB7KxMSXFyHY7-0)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 
 ## 👥 Authors <a name="authors"></a>
 
 * **Beatriz Coelho Pereira**
-* **Email:** <d2022010992@unifei.edu.br>
-* **GitHub:** [@BiaCodess](https://github.com/BiaCodess)
+  * **Email:** <d2022010992@unifei.edu.br>
+  * **GitHub:** [@BiaCodess](https://github.com/BiaCodess)
 * **Breno Vítor de Paula**
-* **Email:** <anonymoustp44@gmail.com>
-* **GitHub:** [@Juuzou0012](https://github.com/Juuzou0012)
+  * **Email:** <anonymoustp44@gmail.com>
+  * **GitHub:** [@Juuzou0012](https://github.com/Juuzou0012)
 * **Carlos Eduardo Abreu da Silva**
-* **Email:** <d2022004556@unifei.edu.br>
-* **GitHub:** [@CarloseduASilva](https://github.com/CarloseduASilva)
+  * **Email:** <d2022004556@unifei.edu.br>
+  * **GitHub:** [@CarloseduASilva](https://github.com/CarloseduASilva)
 * **Lucas Luz Souza Pires**
-* **Email:** <d2022003076@unifei.edu.br>
-* **GitHub:** [@Lucass654](https://github.com/Lucass654)
+  * **Email:** <d2022003076@unifei.edu.br>
+  * **GitHub:** [@Lucass654](https://github.com/Lucass654)
 * **Vítor Hugo Rodrigues Basílio**
-* **Email:** <d2023011321@unifei.edu.br>
-* **GitHub:** [@Zackkinho11](https://https://github.com/Zackkinho11)
+  * **Email:** <d2023011321@unifei.edu.br>
+  * **GitHub:** [@Zackkinho11](https://github.com/Zackkinho11)

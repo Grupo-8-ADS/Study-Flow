@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
 export type StudyFlowSession = {
-  demoMode?: boolean;
   email: string;
   nome: string;
   pendingEmailConfirmation?: boolean;
@@ -25,8 +24,6 @@ export function getStoredSession(): StudyFlowSession | null {
 }
 
 export async function getCurrentSupabaseUserId(session: StudyFlowSession) {
-  if (session.demoMode) return null;
-
   const { data } = await supabase.auth.getUser();
   return data.user?.id ?? null;
 }
