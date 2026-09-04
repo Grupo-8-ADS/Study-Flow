@@ -161,8 +161,9 @@ const Login: NextPage = () => {
         })
       );
       router.push("/timer");
-    } catch (err: any) {
-      setError(err.message || "Erro ao conectar com o servidor.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+      setError(message);
     } finally {
       setIsLoading(false);
     }

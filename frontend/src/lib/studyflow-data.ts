@@ -23,7 +23,8 @@ export function getStoredSession(): StudyFlowSession | null {
   return JSON.parse(storedSession) as StudyFlowSession;
 }
 
-export async function getCurrentSupabaseUserId(session: StudyFlowSession) {
+export async function getCurrentSupabaseUserId(session?: StudyFlowSession) {
+  void session;
   const { data } = await supabase.auth.getUser();
   return data.user?.id ?? null;
 }

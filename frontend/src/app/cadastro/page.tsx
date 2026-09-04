@@ -127,8 +127,9 @@ const Cadastro: NextPage = () => {
             router.push("/timer");
           }, 1000);
         }
-      } catch (err: any) {
-        setErrorMsg(err.message || "Erro ao conectar com o servidor.");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+        setErrorMsg(message);
       } finally {
         setIsLoading(false);
       }
