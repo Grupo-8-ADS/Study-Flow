@@ -13,6 +13,7 @@ O **Study Flow** é uma solução completa (Web e Mobile) para produtividade e o
 - **Frontend Web**: Next.js 16 (App Router, Turbopack), React 19, Tailwind CSS v4, Lucide React.
 - **Mobile**: React Native, Expo SDK 57 (Expo Router), Lucide React Native, React Native Safe Area Context.
 - **Módulo Compartilhado (`@studyflow/shared`)**: Tipagens TypeScript comuns, constantes de tema, regras de negócio e utilitários de validação e máscaras de data/hora (`DD/MM/AAAA`).
+- **Testes & Qualidade**: Vitest, @vitest/coverage-v8, ESLint e TypeScript estrito (Testing Trophy / Escola de Detroit).
 - **Backend & Banco de Dados**: Supabase (PostgreSQL, Auth com login por email/username, Row Level Security, RPCs, Storage).
 
 ---
@@ -31,9 +32,9 @@ O **Study Flow** é uma solução completa (Web e Mobile) para produtividade e o
 
 ---
 
-## 🎯 Milestone Atual: Integração Definitiva Supabase, Padronização DD/MM/AAAA e Polimento Multiplataforma (Concluída)
+## 🎯 Milestone Atual: Integração Definitiva Supabase, Padronização DD/MM/AAAA e Testes Unitários Vitest (Concluída)
 
-Nesta etapa, consolidamos a integração nativa com o backend de produção Supabase e aprimoramos a experiência do usuário em todas as telas web e mobile.
+Nesta etapa, consolidamos a integração nativa com o backend de produção Supabase, aprimoramos a experiência do usuário e introduzimos a infraestrutura profissional de testes automatizados com Vitest.
 
 ### Funcionalidades e Melhorias Entregues:
 
@@ -54,6 +55,12 @@ Nesta etapa, consolidamos a integração nativa com o backend de produção Supa
    - Implementação de `useSafeAreaInsets` na barra de abas inferior (`TabLayout`) do app mobile, eliminando sobreposições com as barras de navegação do sistema no Android e iOS.
    - Atualização e unificação do asset visual de logotipo (`logo.png`) entre as aplicações web e mobile.
    - Mensagens de erro e feedback aprimoradas diretamente a partir das respostas do backend.
+
+4. **Infraestrutura e Cobertura de Testes Unitários (Vitest & Testing Trophy)**
+   - Configuração do **Vitest** (`vitest.config.mts`) nativo com ESM e aliases no monorepo, alcançando tempo de execução sub-segundo (< 400ms).
+   - Relatórios de cobertura via `@vitest/coverage-v8` com **100% de cobertura de funções** e **> 92% de cobertura de declarações** no core de negócio (`validation.ts` e `studyflow-data.ts`).
+   - 43 testes unitários com padrão **AAA** (*Arrange, Act, Assert*) e nomenclatura comportamental (`[Cenario]_[Condicao]_[ResultadoEsperado]`).
+   - Integração da etapa `Run Tests` no workflow do **GitHub Actions CI**.
 
 ---
 

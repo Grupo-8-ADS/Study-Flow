@@ -29,6 +29,9 @@ jobs:
     - name: Lint
       run: npm --workspace=frontend run lint
       
+    - name: Run Tests
+      run: npm test
+      
     - name: Build
       run: npm --workspace=frontend run build
       env:

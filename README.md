@@ -58,6 +58,15 @@ A aplicação unifica o controle de tempo de estudo por meio de ciclos Pomodoro,
 </details>
 
 <details>
+  <summary>Testing & Quality Assurance</summary>
+  <ul>
+    <li><a href="https://vitest.dev/">Vitest</a> (Executor nativo de testes unitários de alta performance com ESM)</li>
+    <li><code>@vitest/coverage-v8</code> (Relatórios de cobertura com v8 nativo)</li>
+    <li>Filosofia baseada no <strong>Testing Trophy</strong> (Kent C. Dodds) e padrão comportamental <strong>AAA</strong></li>
+  </ul>
+</details>
+
+<details>
   <summary>Backend & Database (Supabase)</summary>
   <ul>
     <li><a href="https://supabase.com/">Supabase</a> (PostgreSQL, Row Level Security, Auth & Storage)</li>
@@ -74,6 +83,7 @@ A aplicação unifica o controle de tempo de estudo por meio de ciclos Pomodoro,
 - **Dashboard & Rotinas Semanais:** Resumo diário de tarefas concluídas/pendentes e organização da grade horária semanal.
 - **Estatísticas & Gamificação:** Gráficos de distribuição por matéria, metas diárias de horas de estudo, histórico de sessões, níveis e conquistas desbloqueáveis.
 - **Autenticação Híbrida Segura:** Login facilitado por e-mail ou username, persistência de sessão e perfil do usuário.
+- **Alta Cobertura de Testes Automatizados:** Suíte unitária e de integração em milissegundos com validações de regressão em CI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -112,7 +122,19 @@ A aplicação unifica o controle de tempo de estudo por meio de ciclos Pomodoro,
    ```
    Abra o app **Expo Go** e escaneie o QR Code exibido no terminal.
 
-5. **Build de produção da Web:**
+5. **Executar a Suíte de Testes (Vitest):**
+   ```bash
+   npm test
+   # ou em modo observação contínua (watch):
+   npm run test:watch
+   ```
+
+6. **Gerar Relatório de Cobertura de Código:**
+   ```bash
+   npm run test:coverage
+   ```
+
+7. **Build de produção da Web:**
    ```bash
    npm run build:web
    ```

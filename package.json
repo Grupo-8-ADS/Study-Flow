@@ -10,9 +10,14 @@
     "dev:web": "npm --workspace=frontend run dev",
     "dev:mobile": "npm --workspace=mobile run start",
     "dev:mobile:tunnel": "npm --workspace=mobile run tunnel",
-    "build:web": "npm --workspace=frontend run build"
+    "build:web": "npm --workspace=frontend run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "supabase": "^2.112.0"
+    "@vitest/coverage-v8": "^5.0.0",
+    "supabase": "^2.112.0",
+    "vitest": "^5.0.0"
   }
 }

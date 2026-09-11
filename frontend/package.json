@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "test": "vitest run"
   },
   "dependencies": {
     "@studyflow/shared": "*",
