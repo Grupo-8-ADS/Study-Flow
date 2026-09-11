@@ -6,5 +6,9 @@
   "tsconfig": "tsconfig.json",
   "name": "Study Flow - Documentação Técnica",
   "includeVersion": true,
-  "readme": "README.md"
+  "readme": "README.md",
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
 }

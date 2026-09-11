@@ -8,6 +8,7 @@ import {
   StudyFlowSession,
 } from './studyflow-data';
 import { supabase } from '@/lib/supabase';
+import { AuthError } from '@supabase/supabase-js';
 
 // Mock do supabase client para isolar chamadas de infraestrutura
 vi.mock('@/lib/supabase', () => ({
@@ -91,7 +92,7 @@ describe('studyflow-data.ts - Suíte de Testes Unitários e de Integração Lóg
       // Arrange
       vi.mocked(supabase.auth.getUser).mockResolvedValue({
         data: { user: null },
-        error: null,
+        error: new AuthError('No session'),
       });
 
       // Act
