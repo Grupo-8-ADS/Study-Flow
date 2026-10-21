@@ -92,3 +92,7 @@ reports/mutation/
 .stryker-tmp/
 supabase/.temp.bak-legacy/
 e2e/evidencias/
+# Relatorios internos (controle da equipe, nao versionar)
+Docs/*.zip
+Docs/Relatorio_Artefato_Web_e_Testes.*
+Docs/assets/e2e/
