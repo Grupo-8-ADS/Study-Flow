@@ -38,7 +38,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Início',
+          title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard size={size || 22} color={color} />
           ),
@@ -56,7 +56,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="timer"
         options={{
-          title: 'Pomodoro',
+          title: 'Timer',
           tabBarIcon: ({ focused }) => (
             <View
               style={[
@@ -72,7 +72,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="estatisticas"
         options={{
-          title: 'Métricas',
+          title: 'Estatísticas',
           tabBarIcon: ({ color, size }) => (
             <BarChart3 size={size || 22} color={color} />
           ),

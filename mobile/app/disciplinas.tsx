@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   Plus,
   BookOpen,
@@ -36,7 +37,10 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
+type AssessmentItem = { id: string; nome: string; data: string };
+
 export default function DisciplinasScreen() {
+  const router = useRouter();
   const { session } = useAuth();
   const [disciplinas, setDisciplinas] = useState<Disciplina[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,10 +50,11 @@ export default function DisciplinasScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nome, setNome] = useState('');
   const [professor, setProfessor] = useState('');
+  const [dataDisciplina, setDataDisciplina] = useState('');
   const [horarioInicio, setHorarioInicio] = useState('08:00');
   const [horarioFim, setHorarioFim] = useState('10:00');
-  const [dataProva, setDataProva] = useState('');
-  const [dataTrabalho, setDataTrabalho] = useState('');
+  const [provas, setProvas] = useState<AssessmentItem[]>([]);
+  const [trabalhos, setTrabalhos] = useState<AssessmentItem[]>([]);
   const [anotacoes, setAnotacoes] = useState('');
 
   const loadDisciplinas = async () => {
@@ -87,10 +92,11 @@ export default function DisciplinasScreen() {
     setEditingId(null);
     setNome('');
     setProfessor('');
+    setDataDisciplina('');
     setHorarioInicio('08:00');
     setHorarioFim('10:00');
-    setDataProva('');
-    setDataTrabalho('');
+    setProvas([]);
+    setTrabalhos([]);
     setAnotacoes('');
     setModalVisible(true);
   };
@@ -99,12 +105,34 @@ export default function DisciplinasScreen() {
     setEditingId(d.id);
     setNome(d.nome);
     setProfessor(d.professor || '');
+    setDataDisciplina(d.data_inicio ? formatDisplayDate(d.data_inicio) : '');
 
     const notesObj = typeof d.anotacoes === 'object' && d.anotacoes !== null ? (d.anotacoes as any) : {};
     setHorarioInicio(notesObj.startTime || '08:00');
     setHorarioFim(notesObj.endTime || '10:00');
-    setDataProva(formatDisplayDate(notesObj.examDate || ''));
-    setDataTrabalho(formatDisplayDate(notesObj.workDate || ''));
+
+    const loadedProvas: AssessmentItem[] = Array.isArray(notesObj.provas)
+      ? notesObj.provas.map((p: any) => ({
+          id: p.id || Math.random().toString(),
+          nome: p.nome || 'Prova',
+          data: p.data ? formatDisplayDate(p.data) : '',
+        }))
+      : notesObj.examDate
+      ? [{ id: 'legacy-exam', nome: 'Prova', data: formatDisplayDate(notesObj.examDate) }]
+      : [];
+    setProvas(loadedProvas);
+
+    const loadedTrabalhos: AssessmentItem[] = Array.isArray(notesObj.trabalhos)
+      ? notesObj.trabalhos.map((t: any) => ({
+          id: t.id || Math.random().toString(),
+          nome: t.nome || 'Trabalho',
+          data: t.data ? formatDisplayDate(t.data) : '',
+        }))
+      : notesObj.workDate
+      ? [{ id: 'legacy-work', nome: 'Trabalho', data: formatDisplayDate(notesObj.workDate) }]
+      : [];
+    setTrabalhos(loadedTrabalhos);
+
     setAnotacoes(typeof d.anotacoes === 'string' ? d.anotacoes : notesObj.notes || '');
     setModalVisible(true);
   };
@@ -112,6 +140,11 @@ export default function DisciplinasScreen() {
   const handleSave = async () => {
     if (!nome.trim()) {
       Alert.alert('Atenção', 'Informe o nome da disciplina.');
+      return;
+    }
+
+    if (dataDisciplina.trim() && !isValidDateString(dataDisciplina.trim())) {
+      Alert.alert('Data Inválida', 'Informe uma data de disciplina válida no formato DD/MM/AAAA (ex: 15/09/2026).');
       return;
     }
 
@@ -134,14 +167,18 @@ export default function DisciplinasScreen() {
       return;
     }
 
-    if (dataProva.trim() && !isValidDateString(dataProva.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data de prova válida no formato DD/MM/AAAA (ex: 15/09/2026).');
-      return;
+    for (const p of provas) {
+      if (p.data.trim() && !isValidDateString(p.data.trim())) {
+        Alert.alert('Data Inválida', `Informe uma data válida para a prova "${p.nome || 'sem título'}" no formato DD/MM/AAAA.`);
+        return;
+      }
     }
 
-    if (dataTrabalho.trim() && !isValidDateString(dataTrabalho.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data de trabalho válida no formato DD/MM/AAAA (ex: 22/09/2026).');
-      return;
+    for (const t of trabalhos) {
+      if (t.data.trim() && !isValidDateString(t.data.trim())) {
+        Alert.alert('Data Inválida', `Informe uma data válida para o trabalho "${t.nome || 'sem título'}" no formato DD/MM/AAAA.`);
+        return;
+      }
     }
 
     try {
@@ -151,10 +188,28 @@ export default function DisciplinasScreen() {
         return;
       }
 
+      const dbExamDate = provas[0]?.data ? toDatabaseDate(provas[0].data) : null;
+      const dbWorkDate = trabalhos[0]?.data ? toDatabaseDate(trabalhos[0].data) : null;
+      const dbDate = dataDisciplina.trim() ? toDatabaseDate(dataDisciplina.trim()) : null;
+
+      const dbProvas = provas.map((p) => ({
+        id: p.id,
+        nome: p.nome.trim() || 'Prova',
+        data: p.data.trim() ? toDatabaseDate(p.data.trim()) : null,
+      }));
+
+      const dbTrabalhos = trabalhos.map((t) => ({
+        id: t.id,
+        nome: t.nome.trim() || 'Trabalho',
+        data: t.data.trim() ? toDatabaseDate(t.data.trim()) : null,
+      }));
+
       const notesPayload = {
         notes: anotacoes.trim(),
-        examDate: toDatabaseDate(dataProva) || null,
-        workDate: toDatabaseDate(dataTrabalho) || null,
+        examDate: dbExamDate,
+        workDate: dbWorkDate,
+        provas: dbProvas,
+        trabalhos: dbTrabalhos,
         startTime: horarioInicio.trim() || '08:00',
         endTime: horarioFim.trim() || '10:00',
       };
@@ -165,8 +220,8 @@ export default function DisciplinasScreen() {
           .update({
             nome: nome.trim(),
             professor: professor.trim() || null,
-            data_inicio: null,
-            data_fim: null,
+            data_inicio: dbDate,
+            data_fim: dbDate,
             anotacoes: notesPayload,
           })
           .eq('id', editingId)
@@ -184,8 +239,8 @@ export default function DisciplinasScreen() {
                   ...item,
                   nome: nome.trim(),
                   professor: professor.trim(),
-                  data_inicio: null,
-                  data_fim: null,
+                  data_inicio: dbDate,
+                  data_fim: dbDate,
                   anotacoes: notesPayload,
                 }
               : item
@@ -198,8 +253,8 @@ export default function DisciplinasScreen() {
             user_id: userRes.user.id,
             nome: nome.trim(),
             professor: professor.trim() || null,
-            data_inicio: null,
-            data_fim: null,
+            data_inicio: dbDate,
+            data_fim: dbDate,
             anotacoes: notesPayload,
           })
           .select()
@@ -253,19 +308,28 @@ export default function DisciplinasScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View>
+          <View style={{ flex: 1, marginRight: 8 }}>
             <Text style={styles.pageTitle}>Minhas Matérias</Text>
             <Text style={styles.pageSubtitle}>
               {disciplinas.length} {disciplinas.length === 1 ? 'disciplina cadastrada' : 'disciplinas cadastradas'}
             </Text>
           </View>
 
-          <Button
-            title="+ Disciplina"
-            onPress={openCreateModal}
-            size="sm"
-            icon={<Plus size={16} color="#ffffff" />}
-          />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <Button
+              title="Calendário"
+              variant="outline"
+              size="sm"
+              onPress={() => router.push('/(tabs)/calendario')}
+              icon={<Calendar size={15} color={COLORS.primary} />}
+            />
+            <Button
+              title="+ Matéria"
+              onPress={openCreateModal}
+              size="sm"
+              icon={<Plus size={16} color="#ffffff" />}
+            />
+          </View>
         </View>
 
         {loading ? (
@@ -285,6 +349,16 @@ export default function DisciplinasScreen() {
           disciplinas.map((d) => {
             const notesObj = typeof d.anotacoes === 'object' && d.anotacoes !== null ? (d.anotacoes as any) : {};
             const displayNotes = typeof d.anotacoes === 'string' ? d.anotacoes : notesObj.notes || '';
+            const provasList: AssessmentItem[] = Array.isArray(notesObj.provas)
+              ? notesObj.provas
+              : notesObj.examDate
+              ? [{ id: 'legacy-exam', nome: 'Prova', data: notesObj.examDate }]
+              : [];
+            const trabalhosList: AssessmentItem[] = Array.isArray(notesObj.trabalhos)
+              ? notesObj.trabalhos
+              : notesObj.workDate
+              ? [{ id: 'legacy-work', nome: 'Trabalho', data: notesObj.workDate }]
+              : [];
 
             return (
               <Card key={d.id} style={styles.subjectCard}>
@@ -322,27 +396,47 @@ export default function DisciplinasScreen() {
                   <View style={styles.metaItem}>
                     <Clock size={14} color={COLORS.textSecondary} />
                     <Text style={styles.metaText}>
-                      {d.data_inicio || notesObj.startTime || '--:--'} às {d.data_fim || notesObj.endTime || '--:--'}
+                      {notesObj.startTime || '08:00'} às {notesObj.endTime || '10:00'}
                     </Text>
                   </View>
 
-                  {Boolean(notesObj.examDate) && (
-                    <View style={styles.metaItem}>
-                      <Calendar size={14} color={COLORS.danger} />
-                      <Text style={[styles.metaText, { color: COLORS.danger }]}>
-                        Prova: {formatDisplayDate(notesObj.examDate)}
-                      </Text>
-                    </View>
-                  )}
-                  {Boolean(notesObj.workDate) && (
+                  {Boolean(d.data_inicio) && (
                     <View style={styles.metaItem}>
                       <Calendar size={14} color={COLORS.primary} />
                       <Text style={[styles.metaText, { color: COLORS.primary }]}>
-                        Trabalho: {formatDisplayDate(notesObj.workDate)}
+                        Data: {formatDisplayDate(d.data_inicio)}
                       </Text>
                     </View>
                   )}
                 </View>
+
+                {/* Lista de Provas */}
+                {provasList.length > 0 && (
+                  <View style={{ marginTop: 6, gap: 4 }}>
+                    {provasList.map((p, idx) => (
+                      <View key={p.id || idx} style={styles.metaItem}>
+                        <Calendar size={14} color={COLORS.danger} />
+                        <Text style={[styles.metaText, { color: COLORS.danger }]}>
+                          {p.nome || `Prova ${idx + 1}`}: {p.data ? formatDisplayDate(p.data) : 'Sem data'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Lista de Trabalhos */}
+                {trabalhosList.length > 0 && (
+                  <View style={{ marginTop: 6, gap: 4 }}>
+                    {trabalhosList.map((t, idx) => (
+                      <View key={t.id || idx} style={styles.metaItem}>
+                        <Calendar size={14} color={COLORS.warning} />
+                        <Text style={[styles.metaText, { color: COLORS.warning }]}>
+                          {t.nome || `Trabalho ${idx + 1}`}: {t.data ? formatDisplayDate(t.data) : 'Sem data'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {Boolean(displayNotes) && (
                   <View style={styles.notesContainer}>
@@ -379,6 +473,13 @@ export default function DisciplinasScreen() {
           onChangeText={setProfessor}
         />
 
+        <Input
+          label="Data da Disciplina (opcional)"
+          placeholder="ex: 15/09/2026"
+          value={dataDisciplina}
+          onChangeText={(val) => setDataDisciplina(applyDateMask(val))}
+        />
+
         <View style={styles.inputsRow}>
           <View style={{ flex: 1, marginRight: 8 }}>
             <Input
@@ -398,19 +499,115 @@ export default function DisciplinasScreen() {
           </View>
         </View>
 
-        <Input
-          label="Data da Prova 1 (opcional)"
-          placeholder="ex: 15/09/2026"
-          value={dataProva}
-          onChangeText={(val) => setDataProva(applyDateMask(val))}
-        />
+        {/* Dynamic Provas Section */}
+        <View style={{ marginVertical: 8, padding: 12, backgroundColor: '#f2f8f7', borderRadius: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, textTransform: 'uppercase' }}>
+              Provas / Avaliações
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setProvas((prev) => [...prev, { id: Math.random().toString(), nome: `Prova ${prev.length + 1}`, data: '' }])}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Plus size={14} color={COLORS.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary }}>Adicionar</Text>
+            </TouchableOpacity>
+          </View>
 
-        <Input
-          label="Data do Trabalho 1 (opcional)"
-          placeholder="ex: 22/09/2026"
-          value={dataTrabalho}
-          onChangeText={(val) => setDataTrabalho(applyDateMask(val))}
-        />
+          {provas.length === 0 ? (
+            <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Nenhuma prova adicionada.</Text>
+          ) : (
+            provas.map((p, idx) => (
+              <View key={p.id || idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <View style={{ flex: 1.2 }}>
+                  <Input
+                    placeholder="Título da prova"
+                    value={p.nome}
+                    onChangeText={(val) => {
+                      const next = [...provas];
+                      next[idx] = { ...p, nome: val };
+                      setProvas(next);
+                    }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    placeholder="DD/MM/AAAA"
+                    value={p.data}
+                    onChangeText={(val) => {
+                      const next = [...provas];
+                      next[idx] = { ...p, data: applyDateMask(val) };
+                      setProvas(next);
+                    }}
+                  />
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setProvas((prev) => prev.filter((_, i) => i !== idx))}
+                  style={{ padding: 6 }}
+                >
+                  <Trash2 size={16} color={COLORS.danger} />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Dynamic Trabalhos Section */}
+        <View style={{ marginVertical: 8, padding: 12, backgroundColor: '#f2f8f7', borderRadius: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, textTransform: 'uppercase' }}>
+              Trabalhos / Entregas
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setTrabalhos((prev) => [...prev, { id: Math.random().toString(), nome: `Trabalho ${prev.length + 1}`, data: '' }])}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Plus size={14} color={COLORS.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary }}>Adicionar</Text>
+            </TouchableOpacity>
+          </View>
+
+          {trabalhos.length === 0 ? (
+            <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Nenhum trabalho adicionado.</Text>
+          ) : (
+            trabalhos.map((t, idx) => (
+              <View key={t.id || idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <View style={{ flex: 1.2 }}>
+                  <Input
+                    placeholder="Título do trabalho"
+                    value={t.nome}
+                    onChangeText={(val) => {
+                      const next = [...trabalhos];
+                      next[idx] = { ...t, nome: val };
+                      setTrabalhos(next);
+                    }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    placeholder="DD/MM/AAAA"
+                    value={t.data}
+                    onChangeText={(val) => {
+                      const next = [...trabalhos];
+                      next[idx] = { ...t, data: applyDateMask(val) };
+                      setTrabalhos(next);
+                    }}
+                  />
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setTrabalhos((prev) => prev.filter((_, i) => i !== idx))}
+                  style={{ padding: 6 }}
+                >
+                  <Trash2 size={16} color={COLORS.danger} />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </View>
 
         <Input
           label="Anotações Gerais"

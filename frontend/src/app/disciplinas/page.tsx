@@ -7,8 +7,22 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
 
-type Subject = { date: string; endTime: string; examDate: string; id: string; name: string; notes: string; startTime: string; workDate: string };
-type UserSession = { email: string; nome: string; username: string };
+type AssessmentItem = { id: string; nome: string; data: string };
+
+type Subject = {
+  date: string;
+  endTime: string;
+  examDate?: string;
+  id: string;
+  name: string;
+  notes: string;
+  provas: AssessmentItem[];
+  startTime: string;
+  trabalhos: AssessmentItem[];
+  workDate?: string;
+};
+
+type UserSession = { email: string; nome: string; username: string; avatar_url?: string | null };
 
 const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard }, { name: "Calendário", href: "/calendario", icon: Calendar },
@@ -16,7 +30,17 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer }, { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift }, { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
-const emptySubject = { date: "", endTime: "", examDate: "", name: "", notes: "", startTime: "", workDate: "" };
+const emptySubject: Omit<Subject, "id"> = {
+  date: "",
+  endTime: "",
+  examDate: "",
+  name: "",
+  notes: "",
+  provas: [],
+  startTime: "",
+  trabalhos: [],
+  workDate: "",
+};
 
 export default function DisciplinasPage() {
   const router = useRouter();
@@ -46,14 +70,32 @@ export default function DisciplinasPage() {
           return;
         }
 
-        const { data } = await supabase
-          .from("disciplinas")
-          .select("id,nome,data_inicio,data_fim,anotacoes")
-          .eq("user_id", currentUserId)
-          .order("created_at", { ascending: false });
+        const [{ data }, { data: profile }] = await Promise.all([
+          supabase
+            .from("disciplinas")
+            .select("id,nome,data_inicio,data_fim,anotacoes")
+            .eq("user_id", currentUserId)
+            .order("created_at", { ascending: false }),
+          supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
+        ]);
+
+        if (profile?.avatar_url) {
+          setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
+        }
 
         setSubjects((data ?? []).map((item) => {
-          const notes = (item.anotacoes ?? {}) as Record<string, string>;
+          const notes = (item.anotacoes ?? {}) as Record<string, any>;
+          const provas: AssessmentItem[] = Array.isArray(notes.provas)
+            ? notes.provas
+            : notes.examDate
+            ? [{ id: "legacy-exam", nome: "Prova", data: notes.examDate }]
+            : [];
+          const trabalhos: AssessmentItem[] = Array.isArray(notes.trabalhos)
+            ? notes.trabalhos
+            : notes.workDate
+            ? [{ id: "legacy-work", nome: "Trabalho", data: notes.workDate }]
+            : [];
+
           return {
             date: item.data_inicio ?? "",
             endTime: notes.endTime ?? "",
@@ -61,7 +103,9 @@ export default function DisciplinasPage() {
             id: item.id,
             name: item.nome,
             notes: notes.notes ?? "",
+            provas,
             startTime: notes.startTime ?? "",
+            trabalhos,
             workDate: notes.workDate ?? "",
           };
         }));
@@ -80,9 +124,20 @@ export default function DisciplinasPage() {
   const openNew = () => { setEditingId(null); setForm(emptySubject); setFormError(null); setShowForm(true); };
   const openEdit = (subject: Subject) => {
     setEditingId(subject.id);
-    setForm({ date: subject.date, endTime: subject.endTime, examDate: subject.examDate, name: subject.name, notes: subject.notes, startTime: subject.startTime, workDate: subject.workDate });
+    setForm({
+      date: subject.date,
+      endTime: subject.endTime,
+      examDate: subject.examDate || "",
+      name: subject.name,
+      notes: subject.notes,
+      provas: subject.provas ? [...subject.provas] : [],
+      startTime: subject.startTime,
+      trabalhos: subject.trabalhos ? [...subject.trabalhos] : [],
+      workDate: subject.workDate || "",
+    });
     setFormError(null);
-    setViewing(null); setShowForm(true);
+    setViewing(null);
+    setShowForm(true);
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -98,14 +153,18 @@ export default function DisciplinasPage() {
       return;
     }
 
-    if (form.examDate && !isValidDateString(form.examDate)) {
-      setFormError("A data da prova é inválida.");
-      return;
+    for (const p of form.provas) {
+      if (p.data && !isValidDateString(p.data)) {
+        setFormError(`A data da prova "${p.nome || 'sem título'}" é inválida.`);
+        return;
+      }
     }
 
-    if (form.workDate && !isValidDateString(form.workDate)) {
-      setFormError("A data do trabalho é inválida.");
-      return;
+    for (const t of form.trabalhos) {
+      if (t.data && !isValidDateString(t.data)) {
+        setFormError(`A data do trabalho "${t.nome || 'sem título'}" é inválida.`);
+        return;
+      }
     }
 
     if (form.startTime && !isValidTimeString(form.startTime)) {
@@ -123,14 +182,22 @@ export default function DisciplinasPage() {
       return;
     }
 
+    const finalForm = {
+      ...form,
+      examDate: form.provas[0]?.data || form.examDate || "",
+      workDate: form.trabalhos[0]?.data || form.workDate || "",
+    };
+
     if (supabaseUserId) {
       const payload = {
         anotacoes: {
           endTime: form.endTime,
-          examDate: form.examDate,
+          examDate: finalForm.examDate,
           notes: form.notes,
+          provas: form.provas,
           startTime: form.startTime,
-          workDate: form.workDate,
+          trabalhos: form.trabalhos,
+          workDate: finalForm.workDate,
         },
         data_fim: form.date || null,
         data_inicio: form.date || null,
@@ -140,13 +207,13 @@ export default function DisciplinasPage() {
 
       if (editingId) {
         await supabase.from("disciplinas").update(payload).eq("id", editingId).eq("user_id", supabaseUserId);
-        save(subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item));
+        save(subjects.map((item) => (item.id === editingId ? { ...finalForm, id: editingId } : item)));
       } else {
         const { data } = await supabase.from("disciplinas").insert(payload).select("id").single();
-        if (data) save([{ ...form, id: data.id }, ...subjects]);
+        if (data) save([{ ...finalForm, id: data.id }, ...subjects]);
       }
     } else {
-      save(editingId ? subjects.map((item) => item.id === editingId ? { ...form, id: editingId } : item) : [...subjects, { ...form, id: crypto.randomUUID() }]);
+      save(editingId ? subjects.map((item) => (item.id === editingId ? { ...finalForm, id: editingId } : item)) : [{ ...finalForm, id: crypto.randomUUID() }, ...subjects]);
     }
 
     setShowForm(false); setEditingId(null); setForm(emptySubject); setFormError(null);
@@ -175,21 +242,43 @@ export default function DisciplinasPage() {
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
         <header className="mb-7 flex justify-end gap-4 border-b border-gray-100 pb-6">
           <button aria-label="Notificações" className="rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm" type="button"><Bell size={20} /></button>
-          <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e]" type="button"><User size={22} /></button>
+          <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e] overflow-hidden" onClick={() => router.push("/perfil")} type="button">
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />
+            ) : (
+              <User size={22} />
+            )}
+          </button>
         </header>
         <div className="mx-auto w-full max-w-6xl">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#5f8d87]">Organização acadêmica</p><h2 className="mt-1 text-2xl font-bold text-gray-800 lg:text-3xl">Disciplinas</h2><p className="mt-2 text-sm text-gray-500">Gerencie matérias, horários, provas e trabalhos.</p></div>
-            <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white hover:bg-[#1f514d]" onClick={openNew} type="button"><Plus size={19} />Adicionar disciplina</button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#29645e] bg-white px-4 py-3 font-semibold text-[#29645e] hover:bg-[#eaf6f4]" onClick={() => router.push("/calendario")} type="button"><Calendar size={19} />Ver no calendário</button>
+              <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white hover:bg-[#1f514d]" onClick={openNew} type="button"><Plus size={19} />Adicionar disciplina</button>
+            </div>
           </div>
           <section className="overflow-hidden rounded-[28px] border border-gray-100 bg-white shadow-[0_8px_30px_rgba(41,100,94,0.05)]">
             {subjects.length === 0 ? <div className="px-6 py-20 text-center text-gray-500">Nenhuma disciplina adicionada.</div> : (
               <div className="overflow-x-auto"><table className="w-full min-w-[820px]">
-                <thead className="bg-[#f3f8f7] text-left text-xs uppercase tracking-wider text-[#63817c]"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Horário</th><th className="px-6 py-4">Data</th><th className="px-6 py-4">Anotações</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
-                <tbody>{subjects.map((item) => <tr className="cursor-pointer border-t border-gray-100 hover:bg-[#f9fcfb]" key={item.id} onClick={() => setViewing(item)}>
-                  <td className="px-6 py-4 font-semibold text-gray-800">{item.name}</td><td className="px-6 py-4 text-sm text-gray-600">{item.startTime || "--:--"} - {item.endTime || "--:--"}</td><td className="px-6 py-4 text-sm text-gray-600">{item.date || "Sem data"}</td><td className="max-w-xs truncate px-6 py-4 text-sm text-gray-500">{item.notes || "Sem anotações"}</td>
-                  <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}><div className="flex justify-end gap-2"><button aria-label={`Editar ${item.name}`} className="cursor-pointer rounded-xl p-2 text-[#29645e] hover:bg-[#eaf6f4]" onClick={() => openEdit(item)} type="button"><Edit2 size={18} /></button><button aria-label={`Excluir ${item.name}`} className="cursor-pointer rounded-xl p-2 text-red-500 hover:bg-red-50" onClick={() => setDeleting(item)} type="button"><Trash2 size={18} /></button></div></td>
-                </tr>)}</tbody>
+                <thead className="bg-[#f3f8f7] text-left text-xs uppercase tracking-wider text-[#63817c]"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Horário</th><th className="px-6 py-4">Data</th><th className="px-6 py-4">Avaliações</th><th className="px-6 py-4">Anotações</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
+                <tbody>{subjects.map((item) => {
+                  const pCount = item.provas?.length || (item.examDate ? 1 : 0);
+                  const tCount = item.trabalhos?.length || (item.workDate ? 1 : 0);
+                  return (
+                    <tr className="cursor-pointer border-t border-gray-100 hover:bg-[#f9fcfb]" key={item.id} onClick={() => setViewing(item)}>
+                      <td className="px-6 py-4 font-semibold text-gray-800">{item.name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{item.startTime || "--:--"} - {item.endTime || "--:--"}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{item.date || "Sem data"}</td>
+                      <td className="px-6 py-4 text-xs text-gray-500">
+                        <span className="inline-block rounded-lg bg-[#eaf6f4] px-2 py-1 font-medium text-[#29645e]">{pCount} prova(s)</span>
+                        <span className="ml-1 inline-block rounded-lg bg-gray-100 px-2 py-1 font-medium text-gray-600">{tCount} trab.</span>
+                      </td>
+                      <td className="max-w-xs truncate px-6 py-4 text-sm text-gray-500">{item.notes || "Sem anotações"}</td>
+                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}><div className="flex justify-end gap-2"><button aria-label={`Editar ${item.name}`} className="cursor-pointer rounded-xl p-2 text-[#29645e] hover:bg-[#eaf6f4]" onClick={() => openEdit(item)} type="button"><Edit2 size={18} /></button><button aria-label={`Excluir ${item.name}`} className="cursor-pointer rounded-xl p-2 text-red-500 hover:bg-red-50" onClick={() => setDeleting(item)} type="button"><Trash2 size={18} /></button></div></td>
+                    </tr>
+                  );
+                })}</tbody>
               </table></div>
             )}
           </section>
@@ -204,22 +293,206 @@ export default function DisciplinasPage() {
 }
 
 function SubjectEditor({ error, form, onChange, onClose, onSubmit }: { error?: string | null; form: typeof emptySubject; onChange: (form: typeof emptySubject) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) {
-  return <Modal title="Adicionar/editar disciplina" onClose={onClose}><form className="grid gap-4" onSubmit={onSubmit}>
-    {error && (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-600">
-        ⚠️ {error}
-      </div>
-    )}
-    <input className="rounded-2xl border border-gray-200 px-4 py-3" placeholder="Nome da disciplina" required value={form.name} onChange={(e) => onChange({ ...form, name: e.target.value })} />
-    <div className="grid gap-3 sm:grid-cols-3"><input className="rounded-2xl border border-gray-200 px-4 py-3" type="date" value={form.date} onChange={(e) => onChange({ ...form, date: e.target.value })} /><input className="rounded-2xl border border-gray-200 px-4 py-3" type="time" value={form.startTime} onChange={(e) => onChange({ ...form, startTime: e.target.value })} /><input className="rounded-2xl border border-gray-200 px-4 py-3" type="time" value={form.endTime} onChange={(e) => onChange({ ...form, endTime: e.target.value })} /></div>
-    <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-xs font-bold uppercase text-gray-500">Data da prova<input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="date" value={form.examDate} onChange={(e) => onChange({ ...form, examDate: e.target.value })} /></label><label className="grid gap-2 text-xs font-bold uppercase text-gray-500">Data do trabalho<input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="date" value={form.workDate} onChange={(e) => onChange({ ...form, workDate: e.target.value })} /></label></div>
-    <textarea className="min-h-28 resize-none rounded-2xl border border-gray-200 px-4 py-3" placeholder="Anotações" value={form.notes} onChange={(e) => onChange({ ...form, notes: e.target.value })} />
-    <div className="grid gap-3 sm:grid-cols-2"><button className="cursor-pointer rounded-2xl border border-[#cfe0dd] px-4 py-3 font-semibold text-[#29645e]" onClick={onClose} type="button">Cancelar</button><button className="cursor-pointer rounded-2xl bg-[#29645e] px-4 py-3 font-semibold text-white" type="submit">Salvar</button></div>
-  </form></Modal>;
+  return (
+    <Modal title="Adicionar/editar disciplina" onClose={onClose}>
+      <form className="grid gap-4" onSubmit={onSubmit}>
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-600">
+            ⚠️ {error}
+          </div>
+        )}
+        <label className="grid gap-1 text-xs font-bold uppercase text-gray-500">
+          Nome da disciplina
+          <input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-800" placeholder="Ex: Cálculo I" required value={form.name} onChange={(e) => onChange({ ...form, name: e.target.value })} />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="grid gap-1 text-xs font-bold uppercase text-gray-500">
+            Data da disciplina
+            <input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="date" value={form.date} onChange={(e) => onChange({ ...form, date: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-xs font-bold uppercase text-gray-500">
+            Início
+            <input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="time" value={form.startTime} onChange={(e) => onChange({ ...form, startTime: e.target.value })} />
+          </label>
+          <label className="grid gap-1 text-xs font-bold uppercase text-gray-500">
+            Término
+            <input className="rounded-2xl border border-gray-200 px-4 py-3 text-base font-normal text-gray-700" type="time" value={form.endTime} onChange={(e) => onChange({ ...form, endTime: e.target.value })} />
+          </label>
+        </div>
+
+        {/* Provas */}
+        <div className="rounded-2xl border border-gray-100 bg-[#f9fcfb] p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-bold uppercase text-[#29645e]">Provas / Avaliações</span>
+            <button
+              type="button"
+              onClick={() => {
+                const newProvas = [...form.provas, { id: crypto.randomUUID(), nome: `Prova ${form.provas.length + 1}`, data: "" }];
+                onChange({ ...form, provas: newProvas });
+              }}
+              className="flex items-center gap-1 text-xs font-bold text-[#29645e] hover:underline"
+            >
+              <Plus size={14} /> Adicionar Prova
+            </button>
+          </div>
+          {form.provas.length === 0 ? (
+            <p className="text-xs text-gray-400">Nenhuma prova adicionada. Clique acima para adicionar.</p>
+          ) : (
+            <div className="grid gap-2">
+              {form.provas.map((p, idx) => (
+                <div key={p.id || idx} className="flex items-center gap-2">
+                  <input
+                    className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
+                    placeholder="Título da prova"
+                    value={p.nome}
+                    onChange={(e) => {
+                      const next = [...form.provas];
+                      next[idx] = { ...p, nome: e.target.value };
+                      onChange({ ...form, provas: next });
+                    }}
+                  />
+                  <input
+                    className="w-36 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+                    type="date"
+                    value={p.data}
+                    onChange={(e) => {
+                      const next = [...form.provas];
+                      next[idx] = { ...p, data: e.target.value };
+                      onChange({ ...form, provas: next });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...form, provas: form.provas.filter((_, i) => i !== idx) })}
+                    className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
+                    aria-label="Remover prova"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Trabalhos */}
+        <div className="rounded-2xl border border-gray-100 bg-[#f9fcfb] p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-bold uppercase text-[#29645e]">Trabalhos / Entregas</span>
+            <button
+              type="button"
+              onClick={() => {
+                const newTrabalhos = [...form.trabalhos, { id: crypto.randomUUID(), nome: `Trabalho ${form.trabalhos.length + 1}`, data: "" }];
+                onChange({ ...form, trabalhos: newTrabalhos });
+              }}
+              className="flex items-center gap-1 text-xs font-bold text-[#29645e] hover:underline"
+            >
+              <Plus size={14} /> Adicionar Trabalho
+            </button>
+          </div>
+          {form.trabalhos.length === 0 ? (
+            <p className="text-xs text-gray-400">Nenhum trabalho adicionado. Clique acima para adicionar.</p>
+          ) : (
+            <div className="grid gap-2">
+              {form.trabalhos.map((t, idx) => (
+                <div key={t.id || idx} className="flex items-center gap-2">
+                  <input
+                    className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
+                    placeholder="Título do trabalho"
+                    value={t.nome}
+                    onChange={(e) => {
+                      const next = [...form.trabalhos];
+                      next[idx] = { ...t, nome: e.target.value };
+                      onChange({ ...form, trabalhos: next });
+                    }}
+                  />
+                  <input
+                    className="w-36 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+                    type="date"
+                    value={t.data}
+                    onChange={(e) => {
+                      const next = [...form.trabalhos];
+                      next[idx] = { ...t, data: e.target.value };
+                      onChange({ ...form, trabalhos: next });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...form, trabalhos: form.trabalhos.filter((_, i) => i !== idx) })}
+                    className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
+                    aria-label="Remover trabalho"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <textarea className="min-h-24 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm" placeholder="Anotações gerais..." value={form.notes} onChange={(e) => onChange({ ...form, notes: e.target.value })} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button className="cursor-pointer rounded-2xl border border-[#cfe0dd] px-4 py-3 font-semibold text-[#29645e]" onClick={onClose} type="button">Cancelar</button>
+          <button className="cursor-pointer rounded-2xl bg-[#29645e] px-4 py-3 font-semibold text-white" type="submit">Salvar</button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
+
 function SubjectView({ item, onClose, onEdit }: { item: Subject; onClose: () => void; onEdit: () => void }) {
-  return <Modal title={item.name} onClose={onClose}><div className="grid gap-3 text-sm text-gray-600"><p><strong>Horário:</strong> {item.startTime || "--:--"} - {item.endTime || "--:--"}</p><p><strong>Data:</strong> {item.date || "Sem data"}</p><p><strong>Prova:</strong> {item.examDate || "Não informada"}</p><p><strong>Trabalho:</strong> {item.workDate || "Não informado"}</p><p><strong>Anotações:</strong> {item.notes || "Sem anotações"}</p><button className="mt-3 cursor-pointer rounded-2xl bg-[#29645e] px-4 py-3 font-semibold text-white" onClick={onEdit} type="button">Editar</button></div></Modal>;
+  const provas = item.provas && item.provas.length > 0 
+    ? item.provas 
+    : (item.examDate ? [{ id: "legacy-exam", nome: "Prova", data: item.examDate }] : []);
+  const trabalhos = item.trabalhos && item.trabalhos.length > 0 
+    ? item.trabalhos 
+    : (item.workDate ? [{ id: "legacy-work", nome: "Trabalho", data: item.workDate }] : []);
+
+  return (
+    <Modal title={item.name} onClose={onClose}>
+      <div className="grid gap-3 text-sm text-gray-600">
+        <p><strong>Horário:</strong> {item.startTime || "--:--"} - {item.endTime || "--:--"}</p>
+        <p><strong>Data da disciplina:</strong> {item.date || "Sem data"}</p>
+
+        <div>
+          <strong className="text-gray-800">Provas:</strong>
+          {provas.length === 0 ? (
+            <span className="ml-2 text-gray-400">Nenhuma prova cadastrada</span>
+          ) : (
+            <ul className="mt-1 space-y-1 pl-2">
+              {provas.map((p, idx) => (
+                <li key={p.id || idx} className="flex justify-between rounded-lg bg-gray-50 px-3 py-1.5">
+                  <span className="font-medium text-gray-700">{p.nome || `Prova ${idx + 1}`}</span>
+                  <span className="text-gray-500">{p.data || "Sem data"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <strong className="text-gray-800">Trabalhos:</strong>
+          {trabalhos.length === 0 ? (
+            <span className="ml-2 text-gray-400">Nenhum trabalho cadastrado</span>
+          ) : (
+            <ul className="mt-1 space-y-1 pl-2">
+              {trabalhos.map((t, idx) => (
+                <li key={t.id || idx} className="flex justify-between rounded-lg bg-gray-50 px-3 py-1.5">
+                  <span className="font-medium text-gray-700">{t.nome || `Trabalho ${idx + 1}`}</span>
+                  <span className="text-gray-500">{t.data || "Sem data"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <p><strong>Anotações:</strong> {item.notes || "Sem anotações"}</p>
+        <button className="mt-3 cursor-pointer rounded-2xl bg-[#29645e] px-4 py-3 font-semibold text-white" onClick={onEdit} type="button">Editar</button>
+      </div>
+    </Modal>
+  );
 }
+
 function ConfirmDelete({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
   return <Modal title="Excluir disciplina" onClose={onCancel}><p className="leading-7 text-gray-600">Tem certeza que deseja excluir “{name}”?</p><div className="mt-6 grid gap-3 sm:grid-cols-2"><button className="cursor-pointer rounded-2xl border border-gray-200 px-4 py-3" onClick={onCancel} type="button">Cancelar</button><button className="cursor-pointer rounded-2xl bg-red-500 px-4 py-3 font-semibold text-white" onClick={onConfirm} type="button">Excluir</button></div></Modal>;
 }

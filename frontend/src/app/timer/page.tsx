@@ -28,6 +28,7 @@ interface UserSession {
   email: string;
   nome: string;
   username: string;
+  avatar_url?: string | null;
 }
 
 type DisciplineOption = { id: string; name: string };
@@ -82,7 +83,15 @@ const TimerDashboard: NextPage = () => {
         return;
       }
 
-      const { data } = await supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at");
+      const [{ data }, { data: profile }] = await Promise.all([
+        supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at"),
+        supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
+      ]);
+
+      if (profile?.avatar_url) {
+        setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
+      }
+
       const remoteDisciplines = (data ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
       setDisciplines(remoteDisciplines);
       setSelectedDiscipline(remoteDisciplines[0]?.id ?? "");
@@ -353,10 +362,14 @@ const TimerDashboard: NextPage = () => {
               <button
                 aria-label="Abrir perfil"
                 onClick={() => router.push("/perfil")}
-                className="flex items-center justify-center p-2 rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] hover:border-[#29645e] transition cursor-pointer w-10 h-10 shadow-sm"
+                className="flex items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] hover:border-[#29645e] transition cursor-pointer w-10 h-10 shadow-sm overflow-hidden"
                 type="button"
               >
-                <User size={22} />
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />
+                ) : (
+                  <User size={22} />
+                )}
               </button>
             </div>
           </div>

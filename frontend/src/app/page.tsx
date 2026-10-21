@@ -190,6 +190,7 @@ const Login: NextPage = () => {
             priority
             width={190}
             height={255}
+            style={{ height: "auto" }}
             alt="Study Flow Logo"
             src={`${basePath}/logo.png`}
           />

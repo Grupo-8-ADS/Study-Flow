@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: session?.bg_color || COLORS.primary }]}>
         <View style={styles.left}>
           {showLogo ? (
             <View style={styles.logoRow}>
@@ -82,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
             style={styles.iconButton}
             onPress={() => setNotificationVisible(true)}
           >
-            <Bell size={22} color={COLORS.primary} />
+            <Bell size={22} color="#ffffff" />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -100,6 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
               size={36}
               level={session?.nivel_atual || 1}
               showLevel
+              uri={session?.avatar_url}
             />
           </TouchableOpacity>
         </View>
@@ -123,9 +124,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    backgroundColor: COLORS.primary,
+    borderBottomWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   left: {
     flex: 1,
@@ -142,13 +147,13 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 18,
     fontWeight: '800',
-    color: COLORS.primary,
+    color: '#ffffff',
     letterSpacing: -0.5,
   },
   titleText: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.primary,
+    color: '#ffffff',
   },
   right: {
     flexDirection: 'row',
@@ -158,7 +163,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     padding: 8,
     borderRadius: 12,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     marginRight: 10,
   },
   badge: {

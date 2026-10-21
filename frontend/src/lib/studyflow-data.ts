@@ -5,6 +5,8 @@ export type StudyFlowSession = {
   nome: string;
   pendingEmailConfirmation?: boolean;
   username: string;
+  avatar_url?: string | null;
+  banner_url?: string | null;
 };
 
 export type StudyDistribution = {

@@ -70,17 +70,102 @@ export default function CalendarioScreen() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('itens_cronograma')
-        .select('*')
-        .eq('user_id', userRes.user.id)
-        .order('data_inicio', { ascending: true });
+      const [{ data: cronogramaData, error: cronogramaError }, { data: disciplinasData }] = await Promise.all([
+        supabase
+          .from('itens_cronograma')
+          .select('*')
+          .eq('user_id', userRes.user.id)
+          .order('data_inicio', { ascending: true }),
+        supabase
+          .from('disciplinas')
+          .select('id,nome,data_inicio,data_fim,anotacoes')
+          .eq('user_id', userRes.user.id),
+      ]);
 
-      if (error) {
-        console.error('Error fetching calendar events:', error);
-      } else {
-        setEvents(data || []);
+      if (cronogramaError) {
+        console.error('Error fetching calendar events:', cronogramaError);
       }
+
+      const allEvents: ItemCronograma[] = [...(cronogramaData || [])];
+
+      (disciplinasData || []).forEach((disc) => {
+        const notes = (disc.anotacoes ?? {}) as Record<string, any>;
+        const startTime = notes.startTime || '08:00';
+        const endTime = notes.endTime || '10:00';
+
+        // 1. Data da disciplina (aula)
+        if (disc.data_inicio) {
+          const startIso = disc.data_inicio.includes('T')
+            ? disc.data_inicio
+            : `${disc.data_inicio}T${startTime}:00`;
+          const endIso = disc.data_fim?.includes('T')
+            ? disc.data_fim
+            : `${disc.data_fim || disc.data_inicio}T${endTime}:00`;
+
+          allEvents.push({
+            id: `disc-class-${disc.id}`,
+            user_id: userRes.user.id,
+            nome: `Aula: ${disc.nome}`,
+            tipo: 'Disciplina',
+            prioridade: 0,
+            data_inicio: startIso,
+            data_fim: endIso,
+            descricao: notes.notes ? String(notes.notes) : 'Aula regular da disciplina',
+            completed: false,
+            created_at: new Date().toISOString(),
+          });
+        }
+
+        // 2. Provas
+        const provasList = Array.isArray(notes.provas)
+          ? notes.provas
+          : notes.examDate
+          ? [{ id: 'legacy-exam', nome: 'Prova', data: notes.examDate }]
+          : [];
+
+        provasList.forEach((p: any, idx: number) => {
+          if (p.data) {
+            allEvents.push({
+              id: `disc-prova-${disc.id}-${p.id || idx}`,
+              user_id: userRes.user.id,
+              nome: `Prova: ${p.nome || disc.nome}`,
+              tipo: 'Prova',
+              prioridade: 2,
+              data_inicio: `${p.data}T${startTime}:00`,
+              data_fim: `${p.data}T${endTime}:00`,
+              descricao: `Avaliação da disciplina ${disc.nome}`,
+              completed: false,
+              created_at: new Date().toISOString(),
+            });
+          }
+        });
+
+        // 3. Trabalhos
+        const trabalhosList = Array.isArray(notes.trabalhos)
+          ? notes.trabalhos
+          : notes.workDate
+          ? [{ id: 'legacy-work', nome: 'Trabalho', data: notes.workDate }]
+          : [];
+
+        trabalhosList.forEach((t: any, idx: number) => {
+          if (t.data) {
+            allEvents.push({
+              id: `disc-trab-${disc.id}-${t.id || idx}`,
+              user_id: userRes.user.id,
+              nome: `Entrega: ${t.nome || disc.nome}`,
+              tipo: 'Trabalho',
+              prioridade: 1,
+              data_inicio: `${t.data}T${endTime}:00`,
+              data_fim: `${t.data}T${endTime}:00`,
+              descricao: `Entrega da disciplina ${disc.nome}`,
+              completed: false,
+              created_at: new Date().toISOString(),
+            });
+          }
+        });
+      });
+
+      setEvents(allEvents);
     } catch (e) {
       console.error('Failed to load events:', e);
     } finally {
@@ -196,6 +281,14 @@ export default function CalendarioScreen() {
   };
 
   const handleDeleteEvent = (id: string) => {
+    if (id.startsWith('disc-')) {
+      Alert.alert(
+        'Item Vinculado à Disciplina',
+        'Este compromisso foi gerado automaticamente a partir de uma disciplina cadastrada. Para alterá-lo ou excluí-lo, acesse a aba de Disciplinas.'
+      );
+      return;
+    }
+
     Alert.alert('Excluir Compromisso', 'Deseja realmente remover este compromisso do calendário?', [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -288,9 +381,9 @@ export default function CalendarioScreen() {
                             styles.eventDot,
                             {
                               backgroundColor:
-                                type === 'Prova'
+                                type?.toLowerCase().includes('prova')
                                   ? COLORS.danger
-                                  : type === 'Trabalho'
+                                  : type?.toLowerCase().includes('trabalho')
                                   ? COLORS.warning
                                   : COLORS.primary,
                             },
@@ -343,36 +436,33 @@ export default function CalendarioScreen() {
             }}
           />
         ) : (
-          selectedDayEvents.map((ev) => (
-            <Card key={ev.id} style={styles.eventCard}>
-              <View
-                style={[
-                  styles.eventLeftBar,
-                  {
-                    backgroundColor:
-                      ev.tipo === 'Prova'
+          selectedDayEvents.map((ev) => {
+            const isP = ev.tipo?.toLowerCase().includes('prova');
+            const isT = ev.tipo?.toLowerCase().includes('trabalho');
+
+            return (
+              <Card key={ev.id} style={styles.eventCard}>
+                <View
+                  style={[
+                    styles.eventLeftBar,
+                    {
+                      backgroundColor: isP
                         ? COLORS.danger
-                        : ev.tipo === 'Trabalho'
+                        : isT
                         ? COLORS.warning
                         : COLORS.primary,
-                  },
-                ]}
-              />
-              <View style={styles.eventContent}>
-                <View style={styles.eventHeader}>
-                  <Text style={styles.eventTitle}>{ev.nome}</Text>
-                  <Badge
-                    label={ev.tipo}
-                    variant={
-                      ev.tipo === 'Prova'
-                        ? 'danger'
-                        : ev.tipo === 'Trabalho'
-                        ? 'warning'
-                        : 'primary'
-                    }
-                    size="sm"
-                  />
-                </View>
+                    },
+                  ]}
+                />
+                <View style={styles.eventContent}>
+                  <View style={styles.eventHeader}>
+                    <Text style={styles.eventTitle}>{ev.nome}</Text>
+                    <Badge
+                      label={ev.tipo}
+                      variant={isP ? 'danger' : isT ? 'warning' : 'primary'}
+                      size="sm"
+                    />
+                  </View>
 
                 {Boolean(ev.data_inicio) && (
                   <Text style={styles.eventTimeText}>
@@ -393,8 +483,9 @@ export default function CalendarioScreen() {
                 <Trash2 size={16} color={COLORS.danger} />
               </TouchableOpacity>
             </Card>
-          ))
-        )}
+          );
+        })
+      )}
       </ScrollView>
 
       {/* Add Event Modal */}

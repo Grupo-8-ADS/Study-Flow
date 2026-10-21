@@ -271,6 +271,8 @@ export default function PerfilPage() {
             email: profile.email,
             nome: profile.name,
             username: profile.username,
+            avatar_url: profilePic,
+            banner_url: bannerPic,
           })
         );
         localStorage.setItem(`studyflow_profile_${profile.email}`, JSON.stringify(profile));
@@ -426,23 +428,35 @@ export default function PerfilPage() {
               </div>
             ) : null}
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm">
-              <User size={22} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm overflow-hidden">
+              {profilePic ? (
+                <img src={profilePic} alt={profile.name} className="h-full w-full object-cover" />
+              ) : (
+                <User size={22} />
+              )}
             </div>
           </div>
         </header>
 
         <div className="mx-auto mt-7 w-full max-w-6xl">
           <section className="overflow-hidden rounded-[28px] border border-[#dcecea] bg-white shadow-[0_8px_30px_rgba(41,100,94,0.06)]">
-            <div className="relative min-h-48 overflow-hidden sm:min-h-56">
-              <div
-                className="absolute inset-0"
-                style={{ background: `linear-gradient(135deg, ${profile.bgColor} 0%, #29655E 100%)` }}
-              />
-              <div className="absolute inset-0 bg-[#0f1c1d]/55" />
+            <div className="relative min-h-52 overflow-hidden sm:min-h-64">
+              {bannerPic ? (
+                <img
+                  alt="Banner do perfil"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  src={bannerPic}
+                />
+              ) : (
+                <div
+                  className="absolute inset-0"
+                  style={{ background: `linear-gradient(135deg, ${profile.bgColor} 0%, #29655E 100%)` }}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0f1c1d]/90 via-[#0f1c1d]/50 to-black/30" />
 
-              <div className="relative z-10 flex h-full min-h-48 items-center gap-5 p-6 sm:min-h-56 sm:p-8">
-                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-[28px] bg-gray-300 ring-4 ring-white/20 sm:h-32 sm:w-32">
+              <div className="relative z-10 flex h-full min-h-52 items-center gap-5 p-6 sm:min-h-64 sm:p-8">
+                <div className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-[28px] bg-gray-300 ring-4 ring-white/30 shadow-xl sm:h-32 sm:w-32">
                   {profilePic ? (
                     <img alt="Foto do perfil" className="h-full w-full object-cover" src={profilePic} />
                   ) : (
@@ -450,24 +464,34 @@ export default function PerfilPage() {
                       {profile.name.charAt(0).toUpperCase()}
                     </div>
                   )}
+                  <button
+                    onClick={() => profilePicRef.current?.click()}
+                    title="Alterar foto de perfil"
+                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition cursor-pointer"
+                    type="button"
+                  >
+                    <Upload size={22} />
+                  </button>
                 </div>
 
                 <div className="min-w-0 flex-1 text-white">
-                  <p className="truncate text-xl font-semibold">@{profile.username}</p>
-                  <p className="mt-1 text-sm text-white/80">
+                  <h3 className="truncate text-2xl font-bold">{profile.name}</h3>
+                  <p className="truncate text-base text-white/80">@{profile.username}</p>
+                  <p className="mt-2 text-sm text-white/90">
                     Nível {profile.level} &nbsp;•&nbsp; {profile.xp} XP
                   </p>
-                  <p className="mt-1 text-sm text-white/75">🏆 {profile.lastAchievement}</p>
+                  <p className="mt-1 text-xs text-white/75">🏆 {profile.lastAchievement}</p>
                 </div>
 
-                <div className="ml-auto hidden w-72 shrink-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 sm:block">
-                  {bannerPic ? (
-                    <img alt="Preview do banner" className="h-36 w-full object-cover" src={bannerPic} />
-                  ) : (
-                    <div className="flex h-36 w-full items-center justify-center bg-white/10 text-sm font-semibold text-white/80">
-                      Preview do banner
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => bannerPicRef.current?.click()}
+                    className="flex items-center gap-2 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-md px-4 py-2.5 text-sm font-semibold text-white transition border border-white/25 cursor-pointer shadow-sm"
+                    type="button"
+                  >
+                    <Upload size={16} />
+                    <span>Alterar banner</span>
+                  </button>
                 </div>
               </div>
             </div>

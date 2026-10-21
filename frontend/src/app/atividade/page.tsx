@@ -32,7 +32,7 @@ type StudyActivity = {
   startTime: string;
 };
 
-type UserSession = { email: string; nome: string; username: string };
+type UserSession = { email: string; nome: string; username: string; avatar_url?: string | null };
 
 const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -78,12 +78,19 @@ export default function AtividadePage() {
           return;
         }
 
-        const { data } = await supabase
-          .from("itens_cronograma")
-          .select("id,nome,data_inicio,data_fim,descricao")
-          .eq("user_id", currentUserId)
-          .eq("tipo", "atividade")
-          .order("data_inicio", { ascending: true });
+        const [{ data }, { data: profile }] = await Promise.all([
+          supabase
+            .from("itens_cronograma")
+            .select("id,nome,data_inicio,data_fim,descricao")
+            .eq("user_id", currentUserId)
+            .eq("tipo", "atividade")
+            .order("data_inicio", { ascending: true }),
+          supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
+        ]);
+
+        if (profile?.avatar_url) {
+          setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
+        }
 
         setActivities((data ?? []).map((item) => {
           const startDate = item.data_inicio ? new Date(item.data_inicio) : null;
@@ -209,7 +216,7 @@ export default function AtividadePage() {
   if (!user) return <Loading label="Carregando atividades..." />;
 
   return (
-    <PageFrame active="Atividade" onLogout={() => { localStorage.removeItem("studyflow_session"); router.push("/"); }} router={router}>
+    <PageFrame active="Atividade" onLogout={() => { localStorage.removeItem("studyflow_session"); router.push("/"); }} router={router} user={user}>
       <div className="mx-auto w-full max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -217,9 +224,14 @@ export default function AtividadePage() {
             <h2 className="mt-1 text-2xl font-bold text-gray-800 lg:text-3xl">Atividades</h2>
             <p className="mt-2 text-sm text-gray-500">Cadastre tarefas, compromissos e lembretes pessoais.</p>
           </div>
-          <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white transition hover:bg-[#1f514d]" onClick={openNew} type="button">
-            <Plus size={19} /> Adicionar atividade
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#29645e] bg-white px-4 py-3 font-semibold text-[#29645e] hover:bg-[#eaf6f4]" onClick={() => router.push("/calendario")} type="button">
+              <Calendar size={19} /> Ver no calendário
+            </button>
+            <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white transition hover:bg-[#1f514d]" onClick={openNew} type="button">
+              <Plus size={19} /> Adicionar atividade
+            </button>
+          </div>
         </div>
 
         <StudyTable
@@ -354,7 +366,7 @@ function Loading({ label }: { label: string }) {
   return <div className="flex min-h-screen items-center justify-center bg-[#f7fdfd] text-[#29645e]">{label}</div>;
 }
 
-function PageFrame({ active, children, onLogout, router }: { active: string; children: React.ReactNode; onLogout: () => void; router: ReturnType<typeof useRouter> }) {
+function PageFrame({ active, children, onLogout, router, user }: { active: string; children: React.ReactNode; onLogout: () => void; router: ReturnType<typeof useRouter>; user?: UserSession | null }) {
   return (
     <div className="flex min-h-screen flex-col bg-[#f7fdfd] font-[Roboto] lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col justify-between bg-[#29645e] px-4 py-6 text-white shadow-lg lg:min-h-screen lg:w-[260px]">
@@ -372,7 +384,13 @@ function PageFrame({ active, children, onLogout, router }: { active: string; chi
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
         <header className="mb-7 flex justify-end gap-4 border-b border-gray-100 pb-6">
           <button aria-label="Notificações" className="rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm" type="button"><Bell size={20} /></button>
-          <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e]" type="button"><User size={22} /></button>
+          <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e] overflow-hidden" onClick={() => router.push("/perfil")} type="button">
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />
+            ) : (
+              <User size={22} />
+            )}
+          </button>
         </header>
         {children}
       </main>

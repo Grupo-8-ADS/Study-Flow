@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   Plus,
   Activity as ActivityIcon,
@@ -37,6 +38,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function AtividadeScreen() {
+  const router = useRouter();
   const { session } = useAuth();
   const [atividades, setAtividades] = useState<ItemCronograma[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,19 +243,28 @@ export default function AtividadeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View>
+          <View style={{ flex: 1, marginRight: 8 }}>
             <Text style={styles.pageTitle}>Atividades & Rotina</Text>
             <Text style={styles.pageSubtitle}>
               {atividades.length} {atividades.length === 1 ? 'compromisso registrado' : 'compromissos registrados'}
             </Text>
           </View>
 
-          <Button
-            title="+ Atividade"
-            onPress={openCreateModal}
-            size="sm"
-            icon={<Plus size={16} color="#ffffff" />}
-          />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <Button
+              title="Calendário"
+              variant="outline"
+              size="sm"
+              onPress={() => router.push('/(tabs)/calendario')}
+              icon={<Calendar size={15} color={COLORS.primary} />}
+            />
+            <Button
+              title="+ Atividade"
+              onPress={openCreateModal}
+              size="sm"
+              icon={<Plus size={16} color="#ffffff" />}
+            />
+          </View>
         </View>
 
         {loading ? (

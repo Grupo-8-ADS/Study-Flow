@@ -26,8 +26,9 @@ function RootNavigation() {
         options={{
           headerShown: true,
           title: 'Disciplinas',
-          headerTintColor: COLORS.primary,
-          headerStyle: { backgroundColor: '#ffffff' },
+          headerTintColor: '#ffffff',
+          headerStyle: { backgroundColor: session?.bg_color || COLORS.primary },
+          headerTitleStyle: { color: '#ffffff', fontWeight: '700' },
           headerShadowVisible: false,
         }}
       />
@@ -36,8 +37,9 @@ function RootNavigation() {
         options={{
           headerShown: true,
           title: 'Atividades & Tarefas',
-          headerTintColor: COLORS.primary,
-          headerStyle: { backgroundColor: '#ffffff' },
+          headerTintColor: '#ffffff',
+          headerStyle: { backgroundColor: session?.bg_color || COLORS.primary },
+          headerTitleStyle: { color: '#ffffff', fontWeight: '700' },
           headerShadowVisible: false,
         }}
       />
@@ -46,8 +48,9 @@ function RootNavigation() {
         options={{
           headerShown: true,
           title: 'Recompensas',
-          headerTintColor: COLORS.primary,
-          headerStyle: { backgroundColor: '#ffffff' },
+          headerTintColor: '#ffffff',
+          headerStyle: { backgroundColor: session?.bg_color || COLORS.primary },
+          headerTitleStyle: { color: '#ffffff', fontWeight: '700' },
           headerShadowVisible: false,
         }}
       />
@@ -56,8 +59,9 @@ function RootNavigation() {
         options={{
           headerShown: true,
           title: 'Configurações',
-          headerTintColor: COLORS.primary,
-          headerStyle: { backgroundColor: '#ffffff' },
+          headerTintColor: '#ffffff',
+          headerStyle: { backgroundColor: session?.bg_color || COLORS.primary },
+          headerTitleStyle: { color: '#ffffff', fontWeight: '700' },
           headerShadowVisible: false,
         }}
       />
@@ -69,7 +73,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <RootNavigation />
       </AuthProvider>
     </SafeAreaProvider>

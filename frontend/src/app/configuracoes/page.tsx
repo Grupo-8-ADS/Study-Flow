@@ -10,6 +10,7 @@ import {
   Calendar,
   ChevronRight,
   CircleHelp,
+  FileText,
   Gift,
   LayoutDashboard,
   LogOut,
@@ -27,6 +28,7 @@ type UserSession = {
   email: string;
   nome: string;
   username: string;
+  avatar_url?: string | null;
 };
 
 type PrivacySettings = {
@@ -70,31 +72,77 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const [showProfile, setShowProfile] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [privacy, setPrivacy] = useState<PrivacySettings>(defaultPrivacy);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   useEffect(() => {
-    const storedSession = localStorage.getItem("studyflow_session");
+    async function loadConfig() {
+      const storedSession = localStorage.getItem("studyflow_session");
 
-    if (!storedSession) {
-      router.push("/");
-      return;
+      if (!storedSession) {
+        router.push("/");
+        return;
+      }
+
+      try {
+        const parsedSession = JSON.parse(storedSession) as UserSession;
+        setUser(parsedSession);
+
+        const storedPrivacy = localStorage.getItem(`studyflow_privacy_${parsedSession.email}`);
+        if (storedPrivacy) {
+          setPrivacy(JSON.parse(storedPrivacy) as PrivacySettings);
+        }
+
+        const storedNotif = localStorage.getItem(`studyflow_notifications_${parsedSession.email}`);
+        if (storedNotif !== null) {
+          setNotificationsEnabled(JSON.parse(storedNotif));
+        }
+
+        // Se houver conexão com o Supabase, sincroniza preferência
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("recebe_notificacao_pref,avatar_url")
+            .eq("id", userData.user.id)
+            .maybeSingle();
+
+          if (profile) {
+            if (profile.recebe_notificacao_pref !== undefined) {
+              setNotificationsEnabled(profile.recebe_notificacao_pref);
+            }
+            if (profile.avatar_url && !parsedSession.avatar_url) {
+              setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
+            }
+          }
+        }
+      } catch {
+        localStorage.removeItem("studyflow_session");
+        router.push("/");
+      }
     }
+
+    void loadConfig();
+  }, [router]);
+
+  const toggleNotifications = async () => {
+    if (!user) return;
+    const nextVal = !notificationsEnabled;
+    setNotificationsEnabled(nextVal);
+    localStorage.setItem(`studyflow_notifications_${user.email}`, JSON.stringify(nextVal));
 
     try {
-      const parsedSession = JSON.parse(storedSession) as UserSession;
-      setTimeout(() => setUser(parsedSession), 0);
-      const storedPrivacy = localStorage.getItem(`studyflow_privacy_${parsedSession.email}`);
-      if (storedPrivacy) {
-        const parsedPrivacy = JSON.parse(storedPrivacy) as PrivacySettings;
-        setTimeout(() => setPrivacy(parsedPrivacy), 0);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        await supabase.from("profiles").update({ recebe_notificacao_pref: nextVal }).eq("id", data.user.id);
       }
     } catch {
-      localStorage.removeItem("studyflow_session");
-      router.push("/");
+      // offline fallback
     }
-  }, [router]);
+  };
 
   const logout = async () => {
     try {
@@ -218,17 +266,25 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
             <div className="relative">
               <button
                 aria-label="Abrir perfil"
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e] overflow-hidden"
                 onClick={() => router.push("/perfil")}
                 type="button"
               >
-                <User size={22} />
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
+                ) : (
+                  <User size={22} />
+                )}
               </button>
 
               {showProfile ? (
                 <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md">
-                    {user.nome.charAt(0).toUpperCase()}
+                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md overflow-hidden">
+                    {user.avatar_url ? (
+                      <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
+                    ) : (
+                      user.nome.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <p className="font-semibold text-gray-800">{user.nome}</p>
                   <p className="text-xs text-gray-500">@{user.username}</p>
@@ -243,8 +299,12 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           <section className="relative overflow-hidden rounded-[28px] border border-[#dcecea] bg-white p-6 shadow-[0_8px_30px_rgba(41,100,94,0.06)] lg:p-8">
             <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full bg-[#e3f3f0]" />
             <div className="relative flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[28px] bg-[#29645e] text-3xl font-bold text-white shadow-lg shadow-[#29645e]/15">
-                {user.nome.charAt(0).toUpperCase()}
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[28px] bg-[#29645e] text-3xl font-bold text-white shadow-lg shadow-[#29645e]/15 overflow-hidden">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
+                ) : (
+                  user.nome.charAt(0).toUpperCase()
+                )}
               </div>
 
               <div className="min-w-0 flex-1">
@@ -277,6 +337,28 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
             </div>
 
             <div className="flex flex-col gap-3">
+              {/* Notificações e Lembretes */}
+              <div className="flex items-center justify-between gap-4 rounded-2xl border border-transparent bg-[#f8fbfa] p-4">
+                <div className="flex items-center gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f3f1] text-[#29645e]">
+                    <Bell size={21} />
+                  </span>
+                  <div>
+                    <strong className="block text-gray-800">Notificações e Lembretes</strong>
+                    <small className="mt-1 block text-sm text-gray-500">Avisos de sessões de estudo, provas e entregas.</small>
+                  </div>
+                </div>
+                <button
+                  aria-pressed={notificationsEnabled}
+                  className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition ${notificationsEnabled ? "bg-[#29645e]" : "bg-[#d6e1df]"}`}
+                  onClick={toggleNotifications}
+                  type="button"
+                >
+                  <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition ${notificationsEnabled ? "left-6" : "left-1"}`} />
+                </button>
+              </div>
+
+              {/* Configurações de privacidade */}
               <button
                 className={`group flex items-center gap-4 rounded-2xl border border-transparent bg-[#f8fbfa] p-4 text-left ${
                   basic ? "cursor-default opacity-80" : "cursor-pointer transition hover:border-[#cfe2df] hover:bg-[#f1f8f6]"
@@ -301,6 +383,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 )}
               </button>
 
+              {/* Ajuda e FAQ */}
               <button
                 className={`group flex items-center gap-4 rounded-2xl border border-transparent bg-[#f8fbfa] p-4 text-left ${
                   basic ? "cursor-default opacity-80" : "cursor-pointer transition hover:border-[#cfe2df] hover:bg-[#f1f8f6]"
@@ -325,6 +408,32 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 )}
               </button>
 
+              {/* Termos de Serviço */}
+              <button
+                className={`group flex items-center gap-4 rounded-2xl border border-transparent bg-[#f8fbfa] p-4 text-left ${
+                  basic ? "cursor-default opacity-80" : "cursor-pointer transition hover:border-[#cfe2df] hover:bg-[#f1f8f6]"
+                }`}
+                disabled={basic}
+                onClick={() => setShowTerms(true)}
+                type="button"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f3f1] text-[#29645e]">
+                  <FileText size={21} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-gray-800">Termos de Serviço</strong>
+                  <small className="mt-1 block text-sm text-gray-500">Políticas e licença de uso do aplicativo.</small>
+                </span>
+                {basic ? (
+                  <span className="rounded-full bg-[#e8f0ef] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#60716e]">
+                    Em breve
+                  </span>
+                ) : (
+                  <ChevronRight className="text-gray-400 transition group-hover:translate-x-1 group-hover:text-[#29645e]" size={21} />
+                )}
+              </button>
+
+              {/* Sair da conta */}
               <button
                 className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-transparent bg-[#f8fbfa] p-4 text-left transition hover:border-[#cfe2df] hover:bg-[#f1f8f6]"
                 onClick={logout}
@@ -521,6 +630,61 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 );
               })}
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {showTerms ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#142421]/45 p-5 backdrop-blur-sm">
+          <section
+            aria-labelledby="terms-title"
+            aria-modal="true"
+            className="relative flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[#f8fcfb] shadow-2xl"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between border-b border-[#deebe8] bg-white px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#5f8d87]">Termos e Condições</p>
+                <h2 className="mt-1 text-2xl font-bold text-gray-800" id="terms-title">Termos de Serviço</h2>
+                <p className="mt-1 text-sm text-gray-500">Políticas e licença de uso do Study Flow.</p>
+              </div>
+              <button
+                aria-label="Fechar Termos"
+                className="cursor-pointer rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                onClick={() => setShowTerms(false)}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="flex flex-col gap-4 overflow-y-auto p-6 text-sm leading-relaxed text-gray-600">
+              <p className="font-semibold text-gray-800">
+                O Study Flow é uma ferramenta desenvolvida com finalidade acadêmica e de produtividade pessoal.
+              </p>
+              <div className="rounded-2xl border border-[#dce9e6] bg-white p-4">
+                <p className="font-bold text-gray-800 mb-1">1. Uso Individual</p>
+                <p className="text-gray-600">Os dados e horários armazenados são de uso estritamente individual do estudante para fins de organização acadêmica.</p>
+              </div>
+              <div className="rounded-2xl border border-[#dce9e6] bg-white p-4">
+                <p className="font-bold text-gray-800 mb-1">2. Privacidade e Dados</p>
+                <p className="text-gray-600">O aplicativo respeita sua privacidade e não compartilha dados confidenciais ou de rotina com terceiros.</p>
+              </div>
+              <div className="rounded-2xl border border-[#dce9e6] bg-white p-4">
+                <p className="font-bold text-gray-800 mb-1">3. Responsabilidade</p>
+                <p className="text-gray-600">O usuário é responsável pela veracidade dos dados cadastrados e conformidade de sua rotina de estudos com seus compromissos institucionais.</p>
+              </div>
+            </div>
+
+            <footer className="border-t border-[#deebe8] bg-white px-6 py-4 flex justify-end">
+              <button
+                className="cursor-pointer rounded-2xl bg-[#29645e] px-6 py-2.5 font-semibold text-white transition hover:bg-[#1e4e49]"
+                onClick={() => setShowTerms(false)}
+                type="button"
+              >
+                Entendido
+              </button>
+            </footer>
           </section>
         </div>
       ) : null}

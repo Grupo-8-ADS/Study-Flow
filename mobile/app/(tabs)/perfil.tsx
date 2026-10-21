@@ -6,13 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Camera,
   Lock,
   LogOut,
   Palette,
+  Image as ImageIcon,
+  Trash2,
 } from 'lucide-react-native';
 import { COLORS } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
@@ -32,6 +36,8 @@ export default function PerfilScreen() {
   const [username, setUsername] = useState(session?.username || '');
   const [email, setEmail] = useState(session?.email || '');
   const [bgColor, setBgColor] = useState(session?.bg_color || COLORS.primary);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(session?.avatar_url || null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(session?.banner_url || null);
   const [saving, setSaving] = useState(false);
 
   // Password Modal
@@ -46,6 +52,8 @@ export default function PerfilScreen() {
       setUsername(session.username || '');
       setEmail(session.email || '');
       setBgColor(session.bg_color || COLORS.primary);
+      setAvatarUrl(session.avatar_url || null);
+      setBannerUrl(session.banner_url || null);
     }
   }, [session]);
 
@@ -57,6 +65,90 @@ export default function PerfilScreen() {
     '#581c87', // Purple
     '#7c2d12', // Warm Amber/Brown
   ];
+
+  const handlePickAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'Precisamos de permissão para acessar sua galeria de fotos.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const newUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setAvatarUrl(newUri);
+
+        const { data: userRes } = await supabase.auth.getUser();
+        if (userRes?.user) {
+          await supabase.from('profiles').update({ avatar_url: newUri }).eq('id', userRes.user.id);
+          await updateSession({ avatar_url: newUri });
+          await refreshProfile();
+        }
+      }
+    } catch (err) {
+      console.error('Error picking avatar:', err);
+      Alert.alert('Erro', 'Não foi possível selecionar a foto de perfil.');
+    }
+  };
+
+  const handlePickBanner = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'Precisamos de permissão para acessar sua galeria de fotos.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const newUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setBannerUrl(newUri);
+
+        const { data: userRes } = await supabase.auth.getUser();
+        if (userRes?.user) {
+          await supabase.from('profiles').update({ banner_url: newUri }).eq('id', userRes.user.id);
+          await updateSession({ banner_url: newUri });
+          await refreshProfile();
+        }
+      }
+    } catch (err) {
+      console.error('Error picking banner:', err);
+      Alert.alert('Erro', 'Não foi possível selecionar a imagem do banner.');
+    }
+  };
+
+  const handleRemoveBanner = async () => {
+    setBannerUrl(null);
+    const { data: userRes } = await supabase.auth.getUser();
+    if (userRes?.user) {
+      await supabase.from('profiles').update({ banner_url: null }).eq('id', userRes.user.id);
+      await updateSession({ banner_url: null });
+      await refreshProfile();
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!nome.trim()) {
@@ -78,6 +170,8 @@ export default function PerfilScreen() {
           nome: nome.trim(),
           username: username.trim(),
           bg_color: bgColor,
+          avatar_url: avatarUrl,
+          banner_url: bannerUrl,
         })
         .eq('id', userRes.user.id);
 
@@ -90,6 +184,8 @@ export default function PerfilScreen() {
         nome: nome.trim(),
         username: username.trim(),
         bg_color: bgColor,
+        avatar_url: avatarUrl,
+        banner_url: bannerUrl,
       });
 
       await refreshProfile();
@@ -159,10 +255,27 @@ export default function PerfilScreen() {
       >
         {/* Profile Banner & Header Card */}
         <View style={styles.bannerContainer}>
-          <View style={[styles.bannerBg, { backgroundColor: bgColor }]} />
+          <View style={[styles.bannerBg, { backgroundColor: bgColor }]}>
+            {bannerUrl ? (
+              <Image
+                source={{ uri: bannerUrl }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              />
+            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.bannerEditBtn}
+              onPress={handlePickBanner}
+            >
+              <Camera size={13} color="#ffffff" />
+              <Text style={styles.bannerEditText}>Alterar banner</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.avatarWrapper}>
             <Avatar
+              uri={avatarUrl}
               name={nome}
               size={84}
               level={session?.nivel_atual || 1}
@@ -171,12 +284,7 @@ export default function PerfilScreen() {
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.cameraBadge}
-              onPress={() =>
-                Alert.alert(
-                  'Foto de Perfil',
-                  'Selecione uma foto da sua galeria ou câmera.'
-                )
-              }
+              onPress={handlePickAvatar}
             >
               <Camera size={14} color="#ffffff" />
             </TouchableOpacity>
@@ -234,9 +342,56 @@ export default function PerfilScreen() {
             keyboardType="email-address"
           />
 
+          {/* Banner Photo and Color Selector */}
+          <Text style={styles.colorLabel}>
+            <ImageIcon size={14} color={COLORS.primary} /> Personalização do Banner
+          </Text>
+
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: '#eaf6f4',
+              }}
+              onPress={handlePickBanner}
+            >
+              <Camera size={15} color={COLORS.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary }}>
+                {bannerUrl ? 'Trocar Foto' : 'Escolher da Galeria'}
+              </Text>
+            </TouchableOpacity>
+
+            {bannerUrl && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  borderRadius: 10,
+                  backgroundColor: '#fee2e2',
+                }}
+                onPress={handleRemoveBanner}
+              >
+                <Trash2 size={15} color={COLORS.danger} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.danger }}>
+                  Remover Foto
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           {/* Color Theme Selector */}
           <Text style={styles.colorLabel}>
-            <Palette size={14} color={COLORS.primary} /> Cor de Fundo do Banner
+            <Palette size={14} color={COLORS.primary} /> Cor de Fundo Padrão
           </Text>
           <View style={styles.colorPaletteRow}>
             {colorPalette.map((c) => (
@@ -339,8 +494,26 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   bannerBg: {
-    height: 100,
+    height: 120,
     width: '100%',
+    position: 'relative',
+  },
+  bannerEditBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    gap: 5,
+  },
+  bannerEditText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
   },
   avatarWrapper: {
     position: 'relative',

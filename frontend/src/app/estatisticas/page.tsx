@@ -31,6 +31,7 @@ import {
 type Period = "semana" | "mes" | "acumulado";
 
 type UserSession = {
+  avatar_url?: string | null;
   email: string;
   nome: string;
   username: string;
@@ -148,7 +149,7 @@ export default function EstatisticasPage() {
           return;
         }
 
-        const [{ data: sessoes }, { data: conquistas }, { data: todasConquistas }] = await Promise.all([
+        const [{ data: sessoes }, { data: conquistas }, { data: todasConquistas }, { data: profile }] = await Promise.all([
           supabase
             .from("sessoes_estudo")
             .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
@@ -159,7 +160,12 @@ export default function EstatisticasPage() {
             .eq("user_id", currentUserId)
             .order("data_conquista", { ascending: false }),
           supabase.from("conquistas").select("nome,descricao"),
+          supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
         ]);
+
+        if (profile?.avatar_url) {
+          setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
+        }
 
         const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
         const periodStats = buildStats(completedSessions);
@@ -302,18 +308,26 @@ export default function EstatisticasPage() {
             <div className="relative">
               <button
                 aria-label="Abrir perfil"
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e] overflow-hidden"
                 onClick={() => router.push("/perfil")}
                 type="button"
               >
-                <User size={22} />
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />
+                ) : (
+                  <User size={22} />
+                )}
               </button>
 
               {showProfile ? (
                 <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md">
-                    {user.nome.charAt(0).toUpperCase()}
-                  </div>
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.nome || "Avatar"} className="mx-auto mb-3 h-16 w-16 rounded-full object-cover shadow-md" />
+                  ) : (
+                    <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md">
+                      {user.nome.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <p className="font-semibold text-gray-800">{user.nome}</p>
                   <p className="text-xs text-gray-500">@{user.username}</p>
                   <p className="mt-1 break-all text-xs text-gray-400">{user.email}</p>
