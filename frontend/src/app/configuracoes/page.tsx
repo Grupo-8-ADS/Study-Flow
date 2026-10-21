@@ -21,6 +21,7 @@ import {
   TriangleAlert,
   User,
   X,
+  CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -59,6 +60,7 @@ const menuItems = [
   { name: "Calendário", href: "/calendario", icon: Calendar },
   { name: "Atividade", href: "/atividade", icon: Activity },
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
+  { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },

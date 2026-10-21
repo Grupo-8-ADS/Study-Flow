@@ -30,7 +30,8 @@ import {
   Book,
   Clock,
   Sparkles,
-  Gift
+  Gift,
+  CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -86,6 +87,7 @@ const menuItems = [
   { name: "Calendário", href: "/calendario", icon: CalendarIcon },
   { name: "Atividade", href: "/atividade", icon: Activity },
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
+  { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },

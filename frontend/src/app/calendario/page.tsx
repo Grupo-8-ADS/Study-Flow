@@ -27,7 +27,8 @@ import {
   ChevronRight,
   RefreshCw,
   Info,
-  Gift
+  Gift,
+  CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
@@ -58,6 +59,8 @@ type CalendarEvent = {
   /** Nome da disciplina acadêmica relacionada ao evento */
   discipline: string;
   disciplineId?: string | null;
+  /** Faixa de horário opcional (ex.: "19:00 – 19:50"), usada nos blocos de estudo */
+  time?: string;
   /** Tipo do evento para categorização e estilo visual */
   type: "Prova" | "Trabalho" | "Estudo" | "Atividade" | string;
 };
@@ -65,6 +68,28 @@ type CalendarEvent = {
 type DisciplineOption = {
   id: string;
   name: string;
+};
+
+/** Prova ou trabalho guardado nas anotacoes da disciplina */
+type ProvaNota = { id?: string; nome?: string; data?: string };
+
+/** Formato das anotacoes (JSON) salvas em cada disciplina */
+type AnotacoesDisciplina = {
+  provas?: ProvaNota[];
+  trabalhos?: ProvaNota[];
+  examDate?: string;
+  workDate?: string;
+};
+
+/** Disciplina salva no localStorage (modo sem login Supabase) */
+type DisciplinaLocal = {
+  id: string;
+  name: string;
+  date?: string;
+  examDate?: string;
+  workDate?: string;
+  provas?: ProvaNota[];
+  trabalhos?: ProvaNota[];
 };
 
 /**
@@ -75,6 +100,7 @@ const menuItems = [
   { name: "Calendário", href: "/calendario", icon: CalendarIcon },
   { name: "Atividade", href: "/atividade", icon: Activity },
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
+  { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
@@ -157,8 +183,8 @@ export default function CalendarioPage() {
     }
 
     try {
-      setUser(parsedSession);
       const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+      setUser(parsedSession);
       setSupabaseUserId(currentUserId);
 
       if (!currentUserId) {
@@ -167,7 +193,7 @@ export default function CalendarioPage() {
         const storedActivities = localStorage.getItem(`studyflow_activities_${parsedSession.email}`);
 
         const localSubjects = storedSubjects
-          ? (JSON.parse(storedSubjects) as Array<any>).map((subject) => ({
+          ? (JSON.parse(storedSubjects) as DisciplinaLocal[]).map((subject) => ({
               id: subject.id,
               name: subject.name,
             }))
@@ -195,7 +221,7 @@ export default function CalendarioPage() {
 
         // Provas e Trabalhos de disciplinas locais
         if (storedSubjects) {
-          const subs = JSON.parse(storedSubjects) as Array<any>;
+          const subs = JSON.parse(storedSubjects) as DisciplinaLocal[];
           subs.forEach((s) => {
             if (s.date && !combined.some((c) => c.id === `disc-${s.id}`)) {
               combined.push({
@@ -208,7 +234,7 @@ export default function CalendarioPage() {
               });
             }
             if (Array.isArray(s.provas)) {
-              s.provas.forEach((p: any, idx: number) => {
+              s.provas.forEach((p, idx: number) => {
                 if (p?.data) {
                   combined.push({
                     id: p.id || `prova-${s.id}-${idx}`,
@@ -231,7 +257,7 @@ export default function CalendarioPage() {
               });
             }
             if (Array.isArray(s.trabalhos)) {
-              s.trabalhos.forEach((t: any, idx: number) => {
+              s.trabalhos.forEach((t, idx: number) => {
                 if (t?.data) {
                   combined.push({
                     id: t.id || `trab-${s.id}-${idx}`,
@@ -283,13 +309,17 @@ export default function CalendarioPage() {
       (itens ?? []).forEach((item) => {
         const disciplina = Array.isArray(item.disciplinas) ? item.disciplinas[0] : item.disciplinas;
         const isAtiv = String(item.tipo).toLowerCase() === "atividade";
+        const isEstudo = String(item.tipo).toLowerCase() === "estudo";
+        const inicioHora = item.data_inicio ? String(item.data_inicio).slice(11, 16) : "";
+        const fimHora = item.data_fim ? String(item.data_fim).slice(11, 16) : "";
         combinedEvents.push({
+          time: isEstudo && inicioHora && fimHora ? `${inicioHora} – ${fimHora}` : undefined,
           date: item.data_inicio ? String(item.data_inicio).slice(0, 10) : item.data_fim ? String(item.data_fim).slice(0, 10) : new Date().toISOString().slice(0, 10),
           discipline: disciplina?.nome ?? (isAtiv ? "Atividade" : "Geral"),
           disciplineId: item.disciplina_id,
           id: item.id,
           title: item.nome,
-          type: isAtiv ? "Atividade" : item.tipo,
+          type: isAtiv ? "Atividade" : isEstudo ? "Estudo" : item.tipo,
         });
       });
 
@@ -306,10 +336,10 @@ export default function CalendarioPage() {
           });
         }
 
-        const notesObj = typeof disc.anotacoes === "object" && disc.anotacoes !== null ? (disc.anotacoes as any) : {};
+        const notesObj: AnotacoesDisciplina = typeof disc.anotacoes === "object" && disc.anotacoes !== null ? (disc.anotacoes as AnotacoesDisciplina) : {};
 
         if (Array.isArray(notesObj.provas)) {
-          notesObj.provas.forEach((p: any, idx: number) => {
+          notesObj.provas.forEach((p, idx: number) => {
             if (p?.data) {
               combinedEvents.push({
                 date: String(p.data).slice(0, 10),
@@ -333,7 +363,7 @@ export default function CalendarioPage() {
         }
 
         if (Array.isArray(notesObj.trabalhos)) {
-          notesObj.trabalhos.forEach((t: any, idx: number) => {
+          notesObj.trabalhos.forEach((t, idx: number) => {
             if (t?.data) {
               combinedEvents.push({
                 date: String(t.data).slice(0, 10),
@@ -365,6 +395,8 @@ export default function CalendarioPage() {
   };
 
   useEffect(() => {
+    // Carga assíncrona: os setState de loadCalendar ocorrem após o await, não em cascata.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCalendar();
   }, [router]);
 
@@ -771,6 +803,7 @@ export default function CalendarioPage() {
                       <p className="text-sm font-bold text-gray-700 leading-snug">
                         {event.title}
                       </p>
+                      {event.time ? <p className="mt-0.5 text-xs text-gray-500">{event.time}</p> : null}
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <span className="text-[10px] bg-gray-100 text-gray-500 rounded font-semibold px-2 py-0.5 uppercase">
                           {event.discipline}

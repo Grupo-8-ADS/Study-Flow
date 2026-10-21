@@ -160,15 +160,15 @@ export async function POST(request: Request) {
         status: 201,
         headers: { "Content-Type": "application/json" },
       });
-    } catch (err: any) {
-      if (err.code === "23505") {
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "23505") {
         return NextResponse.json(
           { code: "DUPLICATE_RESOURCE", message: "Restrição de unicidade violada no banco" },
           { status: 409, headers: { "Content-Type": "application/json" } }
         );
       }
       return NextResponse.json(
-        { code: "INTERNAL_ERROR", message: err.message },
+        { code: "INTERNAL_ERROR", message: err instanceof Error ? err.message : String(err) },
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -212,8 +212,11 @@ export async function POST(request: Request) {
       status: 201,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (err: any) {
-    return NextResponse.json({ code: "INTERNAL_ERROR", message: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { code: "INTERNAL_ERROR", message: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
   }
 }
 
