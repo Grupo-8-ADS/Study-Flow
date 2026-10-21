@@ -42,10 +42,15 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
 
     await test.step("4. Concluir o ciclo e receber o aviso de término", async () => {
       const aviso = page.waitForEvent("dialog");
+      // A sessão é gravada em segundo plano; navegar antes da resposta cancelaria o insert.
+      const gravacao = page.waitForResponse(
+        (r) => r.url().includes("/rest/v1/sessoes_estudo") && r.request().method() === "POST",
+      );
       await page.clock.runFor(25 * 60 * 1000);
       const dialogo = await aviso;
       expect(dialogo.message()).toContain('Sessão de foco em "Engenharia de Software" finalizada!');
       await dialogo.accept();
+      expect((await gravacao).ok()).toBe(true);
       await expect(timer.relogio()).toHaveText("00:00");
       await evidencia(page, testInfo, "fluxo2-03-timer-concluido");
     });
