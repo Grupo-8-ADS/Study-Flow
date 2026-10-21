@@ -3,7 +3,7 @@ import request from "supertest";
 import { POST, GET } from "@/app/api/disciplinas/route";
 import { createRouteServer } from "../setup/http-adapter";
 import { DisciplinaBuilder, DisciplinaOutputSchema } from "@studyflow/shared";
-import { getTestPool, cleanTables, seedProfile } from "../setup/db-helper";
+import { getTestPool, cleanTables, seedProfile, closeTestPool } from "../setup/db-helper";
 
 describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
   const server = createRouteServer({ POST, GET });
@@ -14,7 +14,7 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
     // Se o banco estiver ativo (Testcontainers ou DATABASE_URL)
     const pool = getTestPool();
     if (pool) {
-      await cleanTables(["disciplinas", "profiles"]);
+      await cleanTables(["disciplinas", "profiles", "auth.users"]);
       await seedProfile(testUserId, "Carlos Estudante", "carlos@unifei.edu.br");
     }
   });
@@ -22,8 +22,9 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
   afterAll(async () => {
     const pool = getTestPool();
     if (pool) {
-      await cleanTables(["disciplinas", "profiles"]);
+      await cleanTables(["disciplinas", "profiles", "auth.users"]);
     }
+    await closeTestPool();
   });
 
   beforeEach(async () => {
@@ -181,6 +182,57 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
       expect(response.body.length).toBe(2);
       expect(response.body[0].nome).toBe("Algoritmos");
       expect(response.body[1].nome).toBe("Banco de Dados");
+    });
+  });
+
+  describe("Dimensão 5: Autenticação, isolamento entre usuários e JSON malformado", () => {
+    it("deve retornar 401 no GET quando o token de autorização estiver ausente", async () => {
+      const response = await request(server).get("/api/disciplinas");
+
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe("AUTH_INVALID");
+    });
+
+    it("deve retornar 401 quando o token não for um UUID válido (ex.: 'Bearer abc')", async () => {
+      const response = await request(server)
+        .get("/api/disciplinas")
+        .set("Authorization", "Bearer abc");
+
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe("AUTH_INVALID");
+    });
+
+    it("deve retornar 400 Bad Request quando o corpo da requisição for um JSON malformado", async () => {
+      const response = await request(server)
+        .post("/api/disciplinas")
+        .set("Authorization", validAuthHeader)
+        .set("Content-Type", "application/json")
+        .send("{ nome: 'quebrado'");
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe("MALFORMED_JSON");
+    });
+
+    it("deve listar somente as disciplinas do usuário autenticado (isolamento entre usuários)", async () => {
+      const outroUserId = "b2c3d4e5-f6a7-4890-8bcd-ef1234567891";
+      await seedProfile(outroUserId, "Outra Pessoa", "outra@unifei.edu.br");
+      const minha = DisciplinaBuilder.aDisciplina().withNome("Minha Disciplina").build();
+      const alheia = DisciplinaBuilder.aDisciplina().withNome("Disciplina Alheia").build();
+
+      try {
+        await request(server).post("/api/disciplinas").set("Authorization", validAuthHeader).send(minha);
+        await request(server).post("/api/disciplinas").set("Authorization", `Bearer ${outroUserId}`).send(alheia);
+
+        const responseMinha = await request(server).get("/api/disciplinas").set("Authorization", validAuthHeader);
+        const responseOutro = await request(server).get("/api/disciplinas").set("Authorization", `Bearer ${outroUserId}`);
+
+        expect(responseMinha.status).toBe(200);
+        expect(responseMinha.body.map((d: { nome: string }) => d.nome)).toEqual(["Minha Disciplina"]);
+        expect(responseOutro.body.map((d: { nome: string }) => d.nome)).toEqual(["Disciplina Alheia"]);
+        expect(responseOutro.body[0].user_id).toBe(outroUserId);
+      } finally {
+        await getTestPool()!.query("DELETE FROM auth.users WHERE id = $1;", [outroUserId]);
+      }
     });
   });
 });

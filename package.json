@@ -17,6 +17,8 @@
     "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-socket": "^0.2.14",
     "@faker-js/faker": "^10.6.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/pg": "^8.23.1",

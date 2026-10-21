@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     globals: true,
+    fileParallelism: false, // arquivos compartilham o mesmo banco efêmero
     environment: "node",
     include: ["tests/integration/**/*.integration.test.ts"],
     globalSetup: ["./tests/integration/setup/testcontainers-global.ts"],

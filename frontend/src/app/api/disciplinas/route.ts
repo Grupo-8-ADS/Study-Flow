@@ -4,48 +4,67 @@ import {
   DisciplinaOutputSchema,
 } from "@studyflow/shared";
 import { getDatabasePool } from "@/lib/db";
-import { supabase } from "@/lib/supabase";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { supabase, SUPABASE_FALLBACK_URL, SUPABASE_FALLBACK_KEY } from "@/lib/supabase";
 
-function extractUserIdFromAuth(authHeader: string | null): string | null {
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface AuthContext {
+  userId: string;
+  /** Cliente Supabase com o JWT do usuario (RLS aplicada). Nulo em modo pool/teste. */
+  client: SupabaseClient | null;
+}
+
+function createUserClient(authHeader: string): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_FALLBACK_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    SUPABASE_FALLBACK_KEY;
+  return createClient(url, key, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function authenticate(authHeader: string | null): Promise<AuthContext | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
   }
-  const token = authHeader.replace("Bearer ", "").trim();
-  if (!token || token === "invalid" || token === "expired") {
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
     return null;
   }
 
-  // Se o token for um UUID direto (comum em testes de integração de API)
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (uuidRegex.test(token)) {
-    return token;
+  // Modo pool (DATABASE_URL, apenas testes de integracao): token e o proprio UUID do usuario.
+  if (getDatabasePool()) {
+    return UUID_REGEX.test(token) ? { userId: token, client: null } : null;
   }
 
-  // Se for um JWT codificado (tentativa de decodificação simples do payload)
+  // Modo Supabase: valida o token no servidor de autenticacao.
   try {
-    const parts = token.split(".");
-    if (parts.length === 3) {
-      const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-      return payload.sub || payload.id || payload.user_id || null;
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data.user) {
+      return null;
     }
+    return { userId: data.user.id, client: createUserClient(`Bearer ${token}`) };
   } catch {
-    // fallback
+    return null;
   }
-
-  return "00000000-0000-0000-0000-000000000001";
 }
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
-  const userId = extractUserIdFromAuth(authHeader);
+  const auth = await authenticate(authHeader);
 
   // 1. Dimensão: Autenticação na Fronteira (401)
-  if (!userId) {
+  if (!auth) {
     return NextResponse.json(
       { code: "AUTH_INVALID", message: "Token de autenticação ausente ou inválido" },
       { status: 401, headers: { "Content-Type": "application/json" } }
     );
   }
+  const { userId, client } = auth;
 
   let body: unknown;
   try {
@@ -76,7 +95,14 @@ export async function POST(request: Request) {
   if (pool) {
     // Modo Integração / Testcontainers com PostgreSQL físico
     try {
-      // Garantir existência de perfil na base física para chave estrangeira (se não existir)
+      // Garantir existência do usuário (stub auth.users) e do perfil para a chave estrangeira.
+      // O trigger handle_new_user cria o perfil; o INSERT abaixo é apenas defensivo.
+      await pool.query(
+        `INSERT INTO auth.users (id, email)
+         VALUES ($1, $2)
+         ON CONFLICT (id) DO NOTHING`,
+        [userId, `user_${userId.slice(0, 8)}@unifei.edu.br`]
+      );
       await pool.query(
         `INSERT INTO public.profiles (id, nome, username, email)
          VALUES ($1, 'Usuário Teste', $2, $3)
@@ -148,9 +174,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // Modo Produção / Supabase client
+  // Modo Produção / Supabase client (com JWT do usuário, RLS aplicada)
+  const db = client as SupabaseClient;
   try {
-    const { data: existing } = await supabase
+    const { data: existing } = await db
       .from("disciplinas")
       .select("id")
       .eq("user_id", userId)
@@ -163,7 +190,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("disciplinas")
       .insert({
         user_id: userId,
@@ -192,14 +219,15 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
-  const userId = extractUserIdFromAuth(authHeader);
+  const auth = await authenticate(authHeader);
 
-  if (!userId) {
+  if (!auth) {
     return NextResponse.json(
       { code: "AUTH_INVALID", message: "Token de autenticação ausente ou inválido" },
       { status: 401, headers: { "Content-Type": "application/json" } }
     );
   }
+  const { userId, client } = auth;
 
   const pool = getDatabasePool();
   if (pool) {
@@ -231,7 +259,8 @@ export async function GET(request: Request) {
     });
   }
 
-  const { data, error } = await supabase
+  const db = client as SupabaseClient;
+  const { data, error } = await db
     .from("disciplinas")
     .select("*")
     .eq("user_id", userId)
