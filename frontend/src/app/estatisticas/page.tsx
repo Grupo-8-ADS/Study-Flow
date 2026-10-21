@@ -19,6 +19,7 @@ import {
   Trophy,
   User,
   X,
+  CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -42,6 +43,7 @@ const menuItems = [
   { name: "Calendário", href: "/calendario", icon: Calendar },
   { name: "Atividade", href: "/atividade", icon: Activity },
   { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
+  { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
@@ -616,7 +618,7 @@ function AchievementGroup({
 
 function SummaryRing({ label, progress, value }: { label: string; progress: number; value: string }) {
   return (
-    <article className="flex items-center gap-4 rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_8px_25px_rgba(41,100,94,0.045)]">
+    <article aria-label={`Tempo: ${label}`} className="flex items-center gap-4 rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_8px_25px_rgba(41,100,94,0.045)]">
       <div
         className="grid h-20 w-20 shrink-0 place-items-center rounded-full"
         style={{ background: `conic-gradient(#57c7b2 ${progress}%, #dcece9 ${progress}% 100%)` }}

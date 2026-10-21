@@ -19,7 +19,8 @@ import {
   RotateCcw,
   Book,
   ClipboardList,
-  Gift
+  Gift,
+  CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
@@ -48,6 +49,9 @@ const TimerDashboard: NextPage = () => {
   // Pomodoro Timer States
   const [timerType, setTimerType] = useState<"foco" | "pausa_curta" | "pausa_longa">("foco");
   const [secondsLeft, setSecondsLeft] = useState<number>(25 * 60);
+  // Fonte da verdade para o intervalo: atualizada junto com o estado (sincronizar via
+  // efeito sobrescreveria ticks mais novos com um valor antigo).
+  const secondsLeftRef = useRef(25 * 60);
   const [totalDuration, setTotalDuration] = useState<number>(25 * 60);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -175,6 +179,7 @@ const TimerDashboard: NextPage = () => {
     setTimerType(type);
     const duration = getInitialTime(type);
     setSecondsLeft(duration);
+    secondsLeftRef.current = duration;
     setTotalDuration(duration);
   };
 
@@ -189,31 +194,42 @@ const TimerDashboard: NextPage = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     const duration = getInitialTime(timerType);
     setSecondsLeft(duration);
+    secondsLeftRef.current = duration;
   };
+
+  // Término do ciclo: registra a sessão e notifica (chamado uma única vez por ciclo)
+  const finishCycle = useCallback(() => {
+    void recordStudySession();
+
+    const notificationMsg = timerType === "foco"
+      ? `Sessão de foco em "${getSelectedDisciplineName()}" finalizada! Hora de uma pausa.`
+      : "Sua pausa acabou! Pronto para voltar ao foco?";
+
+    setNotifications(prevNotif => [notificationMsg, ...prevNotif]);
+    alert(notificationMsg);
+  }, [getSelectedDisciplineName, recordStudySession, timerType]);
+
+  // Ref com o callback mais recente, lido pelo intervalo sem recriá-lo a cada render
+  const finishCycleRef = useRef(finishCycle);
+  useEffect(() => {
+    finishCycleRef.current = finishCycle;
+  }, [finishCycle]);
 
   // Efeito principal do Timer (Intervalo de 1 segundo)
   useEffect(() => {
     if (isRunning) {
+      // Efeitos colaterais ficam fora do updater do setState: o React pode executá-lo
+      // duas vezes (StrictMode), o que gravava a sessão em dobro.
       timerRef.current = setInterval(() => {
-        setSecondsLeft((prev) => {
-          if (prev <= 1) {
-            setIsRunning(false);
-            if (timerRef.current) clearInterval(timerRef.current);
-            
-            // Adiciona notificação de término
-            void recordStudySession();
+        const next = Math.max(secondsLeftRef.current - 1, 0);
+        secondsLeftRef.current = next;
+        setSecondsLeft(next);
 
-            const notificationMsg = timerType === "foco" 
-              ? `Sessão de foco em "${getSelectedDisciplineName()}" finalizada! Hora de uma pausa.` 
-              : "Sua pausa acabou! Pronto para voltar ao foco?";
-            
-            setNotifications(prevNotif => [notificationMsg, ...prevNotif]);
-            alert(notificationMsg);
-            
-            return 0;
-          }
-          return prev - 1;
-        });
+        if (next === 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setIsRunning(false);
+          finishCycleRef.current();
+        }
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -222,7 +238,7 @@ const TimerDashboard: NextPage = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [getSelectedDisciplineName, isRunning, recordStudySession, timerType]);
+  }, [isRunning]);
 
   // Função de logout
   const handleLogout = () => {
@@ -250,6 +266,7 @@ const TimerDashboard: NextPage = () => {
     { name: "Calendário", href: "/calendario", icon: Calendar },
     { name: "Atividade", href: "/atividade", icon: Activity },
     { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
+    { name: "Rotina", href: "/rotina", icon: CalendarClock },
     { name: "Timer", href: "/timer", icon: TimerIcon },
     { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
     { name: "Recompensas", href: "/rewards", icon: Gift },
@@ -425,7 +442,7 @@ const TimerDashboard: NextPage = () => {
                   
                   {/* Texto do Timer */}
                   <div className="absolute flex flex-col items-center">
-                    <span className="text-4xl lg:text-5xl font-bold font-mono text-[#29645e]">
+                    <span role="timer" aria-live="off" className="text-4xl lg:text-5xl font-bold font-mono text-[#29645e]">
                       {formatTime(secondsLeft)}
                     </span>
                     <span className="text-xs font-semibold tracking-widest uppercase text-gray-400 mt-1">
@@ -438,12 +455,14 @@ const TimerDashboard: NextPage = () => {
                 <div className="flex gap-4 mt-8">
                   <button
                     onClick={toggleTimer}
+                    aria-label={isRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
                     className="p-4 rounded-full bg-[#29645e] text-white shadow-lg hover:bg-[#1e4b47] hover:scale-105 active:scale-95 transition cursor-pointer"
                   >
                     {isRunning ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
                   </button>
                   <button
                     onClick={resetTimer}
+                    aria-label="Reiniciar cronômetro"
                     className="p-4 rounded-full bg-white border border-gray-200 text-gray-500 shadow-md hover:text-[#29645e] hover:border-[#29645e] hover:scale-105 active:scale-95 transition cursor-pointer"
                   >
                     <RotateCcw size={24} />
@@ -462,6 +481,7 @@ const TimerDashboard: NextPage = () => {
                   </div>
                   <div className="relative">
                     <select
+                      aria-label="Disciplina da sessão"
                       value={selectedDiscipline}
                       onChange={(e) => setSelectedDiscipline(e.target.value)}
                       className="w-full bg-[#eaf6f4] border-none outline-none rounded-xl text-base text-gray-700 py-3 px-4 appearance-none cursor-pointer focus:ring-2 focus:ring-[#29645e] transition"
