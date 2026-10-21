@@ -103,3 +103,4 @@ jobs:
           e2e/.report
           e2e/.results
         retention-days: 14
+        include-hidden-files: true
