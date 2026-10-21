@@ -82,3 +82,12 @@ skills/
 *.key
 *.mobileprovision
 *.orig.*
+
+# Playwright
+e2e/.results/
+e2e/.report/
+
+# Stryker
+reports/mutation/
+.stryker-tmp/
+supabase/.temp.bak-legacy/

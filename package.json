@@ -14,21 +14,26 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:mutation": "stryker run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.11",
     "@electric-sql/pglite-socket": "^0.2.14",
     "@faker-js/faker": "^10.6.0",
+    "@playwright/test": "^1.56.1",
+    "@stryker-mutator/core": "^10.0.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.5",
     "pg": "^8.23.0",
-    "supabase": "^2.112.0",
+    "supabase": "^2.121.0",
     "supertest": "^7.2.2",
     "testcontainers": "^12.1.0",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.5",
     "zod": "^4.6.5"
   }
 }

@@ -16,6 +16,8 @@ export default defineConfig({
       '**/.expo/**',
       '**/build/**',
       '**/tests/integration/**',
+      '**/e2e/**',
+      '**/.stryker-tmp/**',
     ],
     coverage: {
       provider: 'v8',
