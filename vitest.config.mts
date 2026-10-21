@@ -15,6 +15,7 @@ export default defineConfig({
       '**/dist/**',
       '**/.expo/**',
       '**/build/**',
+      '**/tests/integration/**',
     ],
     coverage: {
       provider: 'v8',
