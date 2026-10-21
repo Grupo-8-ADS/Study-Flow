@@ -64,6 +64,9 @@ export default function DisciplinasPage() {
   const [deleting, setDeleting] = useState<Subject | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+  // Enquanto o modo de dados (Supabase x local) não é resolvido, criar uma disciplina
+  // a gravaria só no localStorage e ela sumiria ao fim do carregamento.
+  const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
     async function loadSubjects() {
@@ -122,6 +125,8 @@ export default function DisciplinasPage() {
         }));
       } catch {
         router.push("/");
+      } finally {
+        setLoadingData(false);
       }
     }
 
@@ -266,7 +271,7 @@ export default function DisciplinasPage() {
             <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#5f8d87]">Organização acadêmica</p><h2 className="mt-1 text-2xl font-bold text-gray-800 lg:text-3xl">Disciplinas</h2><p className="mt-2 text-sm text-gray-500">Gerencie matérias, horários, provas e trabalhos.</p></div>
             <div className="flex flex-wrap items-center gap-2">
               <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#29645e] bg-white px-4 py-3 font-semibold text-[#29645e] hover:bg-[#eaf6f4]" onClick={() => router.push("/calendario")} type="button"><Calendar size={19} />Ver no calendário</button>
-              <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white hover:bg-[#1f514d]" onClick={openNew} type="button"><Plus size={19} />Adicionar disciplina</button>
+              <button className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#29645e] px-5 py-3 font-semibold text-white hover:bg-[#1f514d] disabled:cursor-wait disabled:opacity-60" disabled={loadingData} onClick={openNew} type="button"><Plus size={19} />Adicionar disciplina</button>
             </div>
           </div>
           <section className="overflow-hidden rounded-[28px] border border-gray-100 bg-white shadow-[0_8px_30px_rgba(41,100,94,0.05)]">
