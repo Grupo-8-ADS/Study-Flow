@@ -35,6 +35,10 @@ const AUTH_STUB_SQL = `
     if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
   end $$;
 
+  -- Privilégios padrão do Supabase: o RLS isola os dados e o schema.sql restringe o que precisar.
+  grant usage on schema public to anon, authenticated;
+  alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
+
   create or replace function auth.uid() returns uuid
   language sql stable as $$
     select coalesce(
