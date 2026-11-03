@@ -13,7 +13,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar as CalendarIcon,
   LayoutDashboard,
@@ -32,6 +31,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { NotificationBell } from "@/components/notification-bell";
 
 /**
  * Representa a sessão ativa do usuário autenticado no sistema.
@@ -129,8 +129,6 @@ function CalendarioConteudo() {
   /** Sessão do usuário logado ou null se não autenticado */
   const [user, setUser] = useState<UserSession | null>(null);
 
-  /** Controla a exibição da gaveta de notificações rápidas */
-  const [showNotifications, setShowNotifications] = useState(false);
 
   /** Controla a exibição do tooltip/modal de detalhes de perfil */
   const [showProfile, setShowProfile] = useState(false);
@@ -604,31 +602,7 @@ function CalendarioConteudo() {
 
           <div className="relative flex items-center gap-4">
             {/* Notificações */}
-            <div className="relative">
-              <button
-                aria-label="Abrir notificações"
-                className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-                onClick={() => {
-                  setShowNotifications((currentValue) => !currentValue);
-                  setShowProfile(false);
-                }}
-                type="button"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {showNotifications && (
-                <div className="absolute right-0 z-40 mt-3 w-80 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                  <p className="font-semibold text-gray-700 text-sm pb-2 border-b border-gray-100">Notificações</p>
-                  <div className="mt-2 flex flex-col gap-2 max-h-48 overflow-y-auto">
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Sessão de foco concluída! Suas horas totais foram atualizadas.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotificationBell />
 
             {/* Perfil */}
             <div className="relative">

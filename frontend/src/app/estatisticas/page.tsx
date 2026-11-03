@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   Check,
+  Download,
   Gift,
   LayoutDashboard,
   LogOut,
@@ -28,8 +28,32 @@ import {
   getLocalStudyMinutes,
   getStoredSession,
 } from "@/lib/studyflow-data";
+import { NotificationBell } from "@/components/notification-bell";
+import {
+  dataLocalISO,
+  gerarRelatorioPeriodo,
+  intervaloDoPeriodo,
+  intervaloPersonalizado,
+  progressoConquista,
+  progressoNivel,
+  relatorioParaCSV,
+  textoCompartilhamento,
+  type CriterioConquista,
+  type SessaoRelatorio,
+} from "@studyflow/shared";
 
 type Period = "semana" | "mes" | "acumulado";
+type ReportMode = "semana" | "mes" | "personalizado";
+
+// Metas sugeridas (horas) usadas quando o usuário ainda não definiu horas diárias no perfil.
+const DEFAULT_WEEKLY_GOAL = 28;
+const DEFAULT_MONTHLY_GOAL = 80;
+
+const formatMinutes = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours > 0 ? `${hours}h${String(rest).padStart(2, "0")}` : `${rest}min`;
+};
 
 type UserSession = {
   avatar_url?: string | null;
@@ -119,13 +143,18 @@ export default function EstatisticasPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [shared, setShared] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
   const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
   const [allAchievements, setAllAchievements] = useState(emptyAchievements);
+  const [level, setLevel] = useState(progressoNivel(0));
+  const [dailyHours, setDailyHours] = useState(0);
+  const [reportSessions, setReportSessions] = useState<SessaoRelatorio[]>([]);
+  const [reportMode, setReportMode] = useState<ReportMode>("semana");
+  const [customStart, setCustomStart] = useState(() => dataLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [customEnd, setCustomEnd] = useState(() => dataLocalISO(new Date()));
 
   useEffect(() => {
     async function loadStats() {
@@ -161,15 +190,41 @@ export default function EstatisticasPage() {
             .select("conquistas(nome,descricao)")
             .eq("user_id", currentUserId)
             .order("data_conquista", { ascending: false }),
-          supabase.from("conquistas").select("nome,descricao"),
-          supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
+          supabase.from("conquistas").select("nome,descricao,criterio"),
+          supabase.from("profiles").select("avatar_url,xp,horas_diarias").eq("id", currentUserId).maybeSingle(),
         ]);
 
         if (profile?.avatar_url) {
           setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
         }
 
+        // O XP e o nível são mantidos pelo banco (trigger); aqui só leitura.
+        setLevel(progressoNivel(profile?.xp ?? 0));
+        setDailyHours(profile?.horas_diarias ?? 0);
+
         const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
+        setReportSessions(
+          completedSessions.map((sessao) => {
+            const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+            return {
+              data_inicio: sessao.data_inicio,
+              disciplina_nome: disciplina?.nome ?? null,
+              duracao_efetiva_min: sessao.duracao_efetiva_min,
+              status: sessao.status,
+            };
+          }),
+        );
+        const achievementStats = {
+          minutosEstudados: 0,
+          sessoesConcluidas: completedSessions.length,
+          sessoesPorDisciplina: {} as Record<string, number>,
+        };
+        for (const sessao of completedSessions) {
+          const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+          const nome = disciplina?.nome ?? "";
+          achievementStats.minutosEstudados += sessao.duracao_efetiva_min ?? 0;
+          if (nome) achievementStats.sessoesPorDisciplina[nome] = (achievementStats.sessoesPorDisciplina[nome] ?? 0) + 1;
+        }
         const periodStats = buildStats(completedSessions);
         const completedAchievements = (conquistas ?? []).map((item) => {
           const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
@@ -179,16 +234,24 @@ export default function EstatisticasPage() {
           };
         });
         const completedNames = new Set(completedAchievements.map((achievement) => achievement.name));
-        const availableAchievements = (todasConquistas ?? [])
+        // Conquistas ainda bloqueadas: progresso real calculado das sessões concluídas (RF004).
+        const lockedAchievements = (todasConquistas ?? [])
           .filter((achievement) => !completedNames.has(achievement.nome))
-          .map((achievement) => ({
-            detail: achievement.descricao ?? "Continue estudando para desbloquear",
-            name: achievement.nome,
-          }));
+          .map((achievement) => {
+            const progress = progressoConquista(achievement.criterio as CriterioConquista | null, achievementStats);
+            return {
+              detail: achievement.descricao ?? "Continue estudando para desbloquear",
+              name: achievement.nome,
+              progress: progress.percentual,
+              progressLabel: `${Math.floor(progress.atual)} / ${progress.alvo}`,
+            };
+          });
+        const inProgressAchievements = lockedAchievements.filter((achievement) => achievement.progress > 0);
+        const availableAchievements = lockedAchievements.filter((achievement) => achievement.progress === 0);
 
         setStatsData(periodStats);
         setFeaturedAchievements(completedAchievements.slice(0, 4));
-        setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: [] });
+        setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: inProgressAchievements });
       } catch {
         localStorage.removeItem("studyflow_session");
         router.push("/");
@@ -205,16 +268,55 @@ export default function EstatisticasPage() {
 
   const shareStats = async () => {
     const current = statsData[period];
-    const text = `Estou no nível 12 no Study Flow! Meu tópico mais estudado em ${current.label.toLowerCase()} foi ${current.topic}, com ${current.topicHours}.`;
+    const hours = current.chart.reduce((sum, item) => sum + item.value, 0);
+    const text = textoCompartilhamento({
+      horas: Number(hours.toFixed(1)),
+      nivel: level.nivel,
+      periodo: current.label,
+      topico: current.chart.length > 0 ? current.topic : null,
+    });
 
     try {
-      await navigator.clipboard.writeText(text);
-    } catch {
+      if (typeof navigator.share === "function") {
+        await navigator.share({ title: "Study Flow", text });
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+    } catch (error) {
+      // Cancelar o compartilhamento não é erro: sem feedback.
+      if (error instanceof DOMException && error.name === "AbortError") return;
       // O feedback visual permanece útil caso a API de clipboard não esteja disponível.
     }
 
     setShared(true);
     setTimeout(() => setShared(false), 2200);
+  };
+
+  const buildReport = () => {
+    try {
+      const range = reportMode === "personalizado"
+        ? intervaloPersonalizado(customStart, customEnd)
+        : intervaloDoPeriodo(reportMode, new Date());
+      return { report: gerarRelatorioPeriodo(reportSessions, range), error: "" };
+    } catch (error) {
+      return { report: null, error: error instanceof Error ? error.message : "Período inválido" };
+    }
+  };
+
+  const exportCsv = () => {
+    const { report } = buildReport();
+    if (!report) return;
+
+    // BOM UTF-8 para o Excel exibir os acentos corretamente.
+    const blob = new Blob(["\uFEFF", relatorioParaCSV(report)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `relatorio-studyflow-${report.inicio}-a-${report.fim}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   if (!user) {
@@ -229,9 +331,12 @@ export default function EstatisticasPage() {
   const maxValue = Math.max(1, ...current.chart.map((item) => item.value));
   const weeklyHours = statsData.semana.chart.reduce((sum, item) => sum + item.value, 0);
   const monthlyHours = statsData.mes.chart.reduce((sum, item) => sum + item.value, 0);
-  const totalHours = statsData.acumulado.chart.reduce((sum, item) => sum + item.value, 0);
-  const weeklyGoal = 28;
+  // Metas derivadas das horas diárias do perfil (semana = 7 dias, mês = 30 dias).
+  const hasGoal = dailyHours > 0;
+  const weeklyGoal = hasGoal ? dailyHours * 7 : DEFAULT_WEEKLY_GOAL;
+  const monthlyGoal = hasGoal ? dailyHours * 30 : DEFAULT_MONTHLY_GOAL;
   const weeklyProgress = Math.min(100, Math.round((weeklyHours / weeklyGoal) * 100));
+  const { report, error: reportError } = buildReport();
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7fdfd] font-[Roboto] lg:flex-row">
@@ -283,29 +388,7 @@ export default function EstatisticasPage() {
           </div>
 
           <div className="relative flex items-center gap-4">
-            <div className="relative">
-              <button
-                aria-label="Abrir notificações"
-                className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-                onClick={() => {
-                  setShowNotifications((currentValue) => !currentValue);
-                  setShowProfile(false);
-                }}
-                type="button"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {showNotifications ? (
-                <div className="absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                  <p className="font-semibold text-gray-700">Notificações</p>
-                  <p className="mt-2 text-sm leading-6 text-gray-500">
-                    Você completou 5 horas de estudo hoje. Continue assim!
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            <NotificationBell />
 
             <div className="relative">
               <button
@@ -351,9 +434,132 @@ export default function EstatisticasPage() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <SummaryRing label="Semana" progress={weeklyProgress} value={`${weeklyHours.toFixed(1)}H`} />
-              <SummaryRing label="Meta semanal" progress={weeklyProgress} value={`${weeklyGoal}H`} />
-              <SummaryRing label="Mês" progress={Math.min(100, Math.round((monthlyHours / 80) * 100))} value={`${monthlyHours.toFixed(1)}H`} />
+              <SummaryRing label={hasGoal ? "Meta semanal" : "Meta semanal sugerida"} progress={weeklyProgress} value={`${weeklyGoal}H`} />
+              <SummaryRing label="Mês" note={`${hasGoal ? "meta" : "meta sugerida"}: ${monthlyGoal}H`} progress={Math.min(100, Math.round((monthlyHours / monthlyGoal) * 100))} value={`${monthlyHours.toFixed(1)}H`} />
             </div>
+          </section>
+
+          <section aria-labelledby="report-title" className="rounded-[28px] border border-gray-100 bg-white p-5 shadow-[0_8px_30px_rgba(41,100,94,0.05)] lg:p-7">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#5f8d87]">Relatório</p>
+                <h3 className="mt-1 text-xl font-bold text-gray-800" id="report-title">Relatório de estudos</h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex rounded-2xl bg-[#eef6f4] p-1">
+                  {([
+                    ["semana", "Semana"],
+                    ["mes", "Mês"],
+                    ["personalizado", "Personalizado"],
+                  ] as Array<[ReportMode, string]>).map(([mode, label]) => (
+                    <button
+                      aria-pressed={reportMode === mode}
+                      className={`cursor-pointer rounded-xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
+                        reportMode === mode ? "bg-[#29645e] text-white shadow-sm" : "text-[#4f716c] hover:bg-white/70"
+                      }`}
+                      key={mode}
+                      onClick={() => setReportMode(mode)}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  className="flex cursor-pointer items-center gap-2 rounded-2xl border border-[#cfe2df] bg-white px-4 py-2.5 text-sm font-bold text-[#29645e] transition hover:bg-[#f1f8f6] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!report}
+                  onClick={exportCsv}
+                  type="button"
+                >
+                  <Download size={16} />
+                  Exportar CSV
+                </button>
+              </div>
+            </div>
+
+            {reportMode === "personalizado" ? (
+              <div className="mt-4 flex flex-wrap gap-4">
+                <label className="flex flex-col gap-1 text-xs font-semibold text-gray-500">
+                  Data inicial
+                  <input
+                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-normal text-gray-700"
+                    onChange={(event) => setCustomStart(event.target.value)}
+                    type="date"
+                    value={customStart}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold text-gray-500">
+                  Data final
+                  <input
+                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-normal text-gray-700"
+                    onChange={(event) => setCustomEnd(event.target.value)}
+                    type="date"
+                    value={customEnd}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {reportError ? (
+              <p className="mt-4 text-sm font-medium text-red-500" role="alert">{reportError}</p>
+            ) : null}
+
+            {report ? (
+              <>
+                <p className="mt-4 text-xs text-gray-400">Período: {report.inicio} a {report.fim}</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-2xl bg-[#f7fbfa] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total de horas</p>
+                    <p className="mt-2 text-lg font-bold text-gray-800">{(report.totalMinutos / 60).toFixed(1)}H</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#f7fbfa] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sessões</p>
+                    <p className="mt-2 text-lg font-bold text-gray-800">{report.totalSessoes}</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#f7fbfa] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Dias estudados</p>
+                    <p className="mt-2 text-lg font-bold text-gray-800">{report.diasEstudados}</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#f7fbfa] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Média por dia</p>
+                    <p className="mt-2 text-lg font-bold text-gray-800">{formatMinutes(report.mediaMinutosPorDia)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400">
+                        <th className="py-2 pr-4 font-bold">Disciplina</th>
+                        <th className="py-2 pr-4 font-bold">Tempo</th>
+                        <th className="py-2 pr-4 font-bold">Sessões</th>
+                        <th className="py-2 font-bold">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.porDisciplina.length === 0 ? (
+                        <tr>
+                          <td className="py-4 text-center text-gray-400" colSpan={4}>
+                            Nenhuma sessão concluída neste período.
+                          </td>
+                        </tr>
+                      ) : (
+                        report.porDisciplina.map((linha) => (
+                          <tr className="border-b border-gray-50 text-gray-700 last:border-0" key={linha.disciplina}>
+                            <td className="py-2 pr-4 font-medium">{linha.disciplina}</td>
+                            <td className="py-2 pr-4">{formatMinutes(linha.minutos)}</td>
+                            <td className="py-2 pr-4">{linha.sessoes}</td>
+                            <td className="py-2">{linha.percentual}%</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
           </section>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
@@ -417,7 +623,7 @@ export default function EstatisticasPage() {
             <aside className="flex flex-col gap-6">
               <section className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgba(41,100,94,0.05)]">
                 <div className="flex flex-col items-center text-center">
-                  <LevelRing level={Math.max(1, Math.floor(totalHours / 10) + 1)} progress={Math.min(100, Math.round((totalHours % 10) * 10))} />
+                  <LevelRing level={level.nivel} progress={Math.round(level.progresso * 100)} xpLabel={`${level.xpNoNivel}/100 XP • faltam ${level.faltam}`} />
                   <div className="mt-5 grid w-full grid-cols-2 gap-3 text-left">
                     <div className="rounded-2xl bg-[#f7fbfa] p-4">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Tópico mais estudado</p>
@@ -538,6 +744,7 @@ type AchievementItem = {
   detail: string;
   name: string;
   progress?: number;
+  progressLabel?: string;
 };
 
 function AchievementGroup({
@@ -599,7 +806,10 @@ function AchievementGroup({
                       style={{ width: `${achievement.progress}%` }}
                     />
                   </span>
-                  <span className="text-xs font-bold text-[#547771]">{achievement.progress}%</span>
+                  <span className="text-xs font-bold text-[#547771]">
+                    {achievement.progressLabel ? `${achievement.progressLabel} • ` : ""}
+                    {achievement.progress}%
+                  </span>
                 </span>
               ) : null}
             </span>
@@ -616,7 +826,7 @@ function AchievementGroup({
   );
 }
 
-function SummaryRing({ label, progress, value }: { label: string; progress: number; value: string }) {
+function SummaryRing({ label, note, progress, value }: { label: string; note?: string; progress: number; value: string }) {
   return (
     <article aria-label={`Tempo: ${label}`} className="flex items-center gap-4 rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_8px_25px_rgba(41,100,94,0.045)]">
       <div
@@ -630,13 +840,13 @@ function SummaryRing({ label, progress, value }: { label: string; progress: numb
       <div>
         <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Tempo</p>
         <h4 className="mt-1 text-base font-bold text-gray-800">{label}</h4>
-        <p className="mt-1 text-xs text-gray-400">{progress}% do objetivo</p>
+        <p className="mt-1 text-xs text-gray-400">{note ? `${progress}% • ${note}` : `${progress}% do objetivo`}</p>
       </div>
     </article>
   );
 }
 
-function LevelRing({ level, progress }: { level: number; progress: number }) {
+function LevelRing({ level, progress, xpLabel }: { level: number; progress: number; xpLabel: string }) {
   return (
     <div
       className="grid h-40 w-40 place-items-center rounded-full"
@@ -645,7 +855,7 @@ function LevelRing({ level, progress }: { level: number; progress: number }) {
       <div className="flex h-[138px] w-[138px] flex-col items-center justify-center rounded-full bg-white shadow-inner">
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#6c9791]">Nível</span>
         <strong className="mt-1 text-4xl font-bold text-[#29645e]">{level}</strong>
-        <small className="mt-1 text-xs text-gray-400">{progress}% concluído</small>
+        <small className="mt-1 text-xs text-gray-400">{xpLabel}</small>
       </div>
     </div>
   );

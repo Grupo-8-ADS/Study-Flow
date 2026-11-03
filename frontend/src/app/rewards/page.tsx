@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   Check,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { NotificationBell } from "@/components/notification-bell";
 
 type UserSession = {
   avatar_url?: string | null;
@@ -76,7 +76,6 @@ const baseRewardCollections = [
 export default function RewardsPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState(0);
   const [rewardCollections, setRewardCollections] = useState(baseRewardCollections);
@@ -198,29 +197,7 @@ export default function RewardsPage() {
           </div>
 
           <div className="relative flex items-center gap-4">
-            <div className="relative">
-              <button
-                aria-label="Abrir notificações"
-                className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-                onClick={() => {
-                  setShowNotifications((current) => !current);
-                  setShowProfile(false);
-                }}
-                type="button"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {showNotifications ? (
-                <div className="absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                  <p className="font-semibold text-gray-700">Nova recompensa</p>
-                  <p className="mt-2 text-sm leading-6 text-gray-500">
-                    Suas recompensas serão liberadas conforme você completa sessões e metas.
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            <NotificationBell />
 
             <div className="relative">
               <button
@@ -228,7 +205,6 @@ export default function RewardsPage() {
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e] overflow-hidden"
                 onClick={() => {
                   setShowProfile((current) => !current);
-                  setShowNotifications(false);
                 }}
                 type="button"
               >

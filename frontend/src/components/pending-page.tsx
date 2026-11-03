@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   ClipboardList,
@@ -16,6 +15,7 @@ import {
   User,
   CalendarClock,
 } from "lucide-react";
+import { NotificationBell } from "./notification-bell";
 
 type PendingPageProps = {
   description: string;
@@ -89,14 +89,7 @@ export function PendingPage({ description, title }: PendingPageProps) {
           <h2 className="text-2xl font-bold text-gray-800 lg:text-3xl">{title}</h2>
 
           <div className="flex items-center gap-4">
-            <button
-              aria-label="Notificações"
-              className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-              type="button"
-            >
-              <Bell size={20} />
-              <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-            </button>
+            <NotificationBell />
             <button
               aria-label="Perfil"
               className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e]"

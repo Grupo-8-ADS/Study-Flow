@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bell,
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   ChevronRight,
@@ -24,6 +24,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { NotificationBell } from "@/components/notification-bell";
 
 type UserSession = {
   email: string;
@@ -52,7 +53,7 @@ const faqItems = [
   ["Como as horas estudadas são registradas?", "As sessões concluídas serão usadas para alimentar seu histórico e a página de Estatísticas."],
   ["Como desbloquear conquistas?", "Conclua sessões, mantenha sequências de estudo e alcance metas relacionadas às disciplinas."],
   ["Como compartilhar meu progresso?", "Na página de Estatísticas, use o botão Compartilhar progresso para copiar um resumo."],
-  ["Como excluir minha conta?", "Em Configurações, use Excluir minha conta e confirme a ação no aviso de segurança."],
+  ["Como excluir minha conta?", "Em Configurações, use Excluir minha conta e confirme no aviso de segurança. A conta e todos os seus dados são apagados de forma permanente."],
 ];
 
 const menuItems = [
@@ -70,9 +71,10 @@ const menuItems = [
 export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -157,15 +159,32 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   };
 
   const deleteAccount = async () => {
-    if (!user) return;
+    if (!user || isDeleting) return;
+
+    setDeleteError("");
+    setIsDeleting(true);
+
+    // RNF001: com usuário no Supabase, a função do banco apaga a conta e todos os dados dele.
+    const { data } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+    if (data.user) {
+      const { error } = await supabase.rpc("delete_own_account");
+      if (error) {
+        setDeleteError(`Não foi possível excluir a conta: ${error.message}`);
+        setIsDeleting(false);
+        return;
+      }
+    }
 
     try {
       await supabase.auth.signOut();
     } catch {
-      // Ignora erro se offline
+      // A conta já foi removida; ignora erro de rede no logout
     }
 
-    localStorage.removeItem("studyflow_session");
+    // Limpa a sessão e todos os caches locais do app.
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("studyflow_"))
+      .forEach((key) => localStorage.removeItem(key));
     router.push("/");
   };
 
@@ -241,29 +260,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           </div>
 
           <div className="relative flex items-center gap-4">
-            <div className="relative">
-              <button
-                aria-label="Abrir notificações"
-                className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-                onClick={() => {
-                  setShowNotifications((current) => !current);
-                  setShowProfile(false);
-                }}
-                type="button"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {showNotifications ? (
-                <div className="absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                  <p className="font-semibold text-gray-700">Notificações</p>
-                  <p className="mt-2 text-sm leading-6 text-gray-500">
-                    Suas notificações continuarão disponíveis aqui, sem duplicar essa opção nas configurações.
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            <NotificationBell />
 
             <div className="relative">
               <button
@@ -471,7 +468,10 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
               }`}
               disabled={isPresentationAccount}
               onClick={() => {
-                if (!isPresentationAccount) setShowDeleteModal(true);
+                if (!isPresentationAccount) {
+                  setDeleteError("");
+                  setShowDeleteModal(true);
+                }
               }}
               type="button"
             >
@@ -505,8 +505,11 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
             </div>
             <h2 className="text-2xl font-bold text-gray-800" id="delete-account-title">Tem certeza?</h2>
             <p className="mt-3 leading-7 text-gray-500" id="delete-account-description">
-              Seu cadastro será removido deste dispositivo e você precisará criar uma nova conta para voltar.
+              Sua conta e todos os seus dados (disciplinas, sessões, conquistas e notificações) serão apagados de forma permanente e você precisará criar uma nova conta para voltar.
             </p>
+            {deleteError ? (
+              <p className="mt-3 text-sm font-medium text-red-500" role="alert">{deleteError}</p>
+            ) : null}
 
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
               <button
@@ -517,11 +520,12 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 Manter conta
               </button>
               <button
-                className="cursor-pointer rounded-2xl bg-red-500 px-4 py-3 font-semibold text-white transition hover:bg-red-600"
+                className="cursor-pointer rounded-2xl bg-red-500 px-4 py-3 font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isDeleting}
                 onClick={deleteAccount}
                 type="button"
               >
-                Sim, excluir
+                {isDeleting ? "Excluindo..." : "Sim, excluir"}
               </button>
             </div>
           </section>
