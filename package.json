@@ -21,11 +21,11 @@
     "release:mobile": "node scripts/release-mobile.mjs"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.11",
-    "@electric-sql/pglite-socket": "^0.2.14",
+    "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite-socket": "^0.2.18",
     "@faker-js/faker": "^10.6.0",
-    "@playwright/test": "^1.56.1",
-    "@stryker-mutator/core": "^10.0.0",
+    "@playwright/test": "^1.64.1",
+    "@stryker-mutator/core": "^10.1.1",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
