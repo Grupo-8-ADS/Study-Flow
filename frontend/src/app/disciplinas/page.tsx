@@ -2,10 +2,11 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, BarChart3, Bell, BookOpen, Calendar, CalendarClock, Edit2, Gift, LayoutDashboard, LogOut, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
+import { Activity, BarChart3, BookOpen, Calendar, CalendarClock, Edit2, Gift, LayoutDashboard, LogOut, Plug, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
+import { NotificationBell } from "@/components/notification-bell";
 
 type AssessmentItem = { id: string; nome: string; data: string };
 
@@ -39,7 +40,7 @@ const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard }, { name: "Calendário", href: "/calendario", icon: Calendar },
   { name: "Atividade", href: "/atividade", icon: Activity }, { name: "Disciplinas", href: "/disciplinas", icon: BookOpen }, { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer }, { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
-  { name: "Recompensas", href: "/rewards", icon: Gift }, { name: "Configurações", href: "/configuracoes", icon: Settings },
+  { name: "Recompensas", href: "/rewards", icon: Gift }, { name: "Integrações", href: "/integracoes", icon: Plug }, { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 const emptySubject: Omit<Subject, "id"> = {
   date: "",
@@ -257,7 +258,7 @@ export default function DisciplinasPage() {
 
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
         <header className="mb-7 flex justify-end gap-4 border-b border-gray-100 pb-6">
-          <button aria-label="Notificações" className="rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm" type="button"><Bell size={20} /></button>
+          <NotificationBell />
           <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e] overflow-hidden" onClick={() => router.push("/perfil")} type="button">
             {user?.avatar_url ? (
               <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />

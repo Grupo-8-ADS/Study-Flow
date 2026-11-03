@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   Edit2,
@@ -19,10 +18,12 @@ import {
   User,
   X,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
+import { NotificationBell } from "@/components/notification-bell";
 
 type StudyActivity = {
   date: string;
@@ -44,6 +45,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -385,7 +387,7 @@ function PageFrame({ active, children, onLogout, router, user }: { active: strin
       </aside>
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
         <header className="mb-7 flex justify-end gap-4 border-b border-gray-100 pb-6">
-          <button aria-label="Notificações" className="rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm" type="button"><Bell size={20} /></button>
+          <NotificationBell />
           <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf6f4] text-[#29645e] overflow-hidden" onClick={() => router.push("/perfil")} type="button">
             {user?.avatar_url ? (
               <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" />

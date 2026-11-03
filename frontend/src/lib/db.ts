@@ -1,5 +1,4 @@
 import { Pool } from "pg";
-import { supabase } from "./supabase";
 
 let pool: Pool | null = null;
 

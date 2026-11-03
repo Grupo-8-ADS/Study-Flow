@@ -13,7 +13,6 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar as CalendarIcon,
   LayoutDashboard,
@@ -32,6 +31,7 @@ import {
   Sparkles,
   Gift,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -42,6 +42,7 @@ import {
   getStoredSession,
   type StudyDistribution,
 } from "@/lib/studyflow-data";
+import { NotificationBell } from "@/components/notification-bell";
 
 /**
  * Representa os dados da sessão do usuário autenticado no sistema.
@@ -91,6 +92,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -108,11 +110,7 @@ export default function DashboardPage() {
   /** Dados do usuário logado */
   const [user, setUser] = useState<UserSession | null>(null);
 
-  /** Controla a visibilidade da gaveta de notificações rápidas */
-  const [showNotifications, setShowNotifications] = useState(false);
 
-  /** Controla a visibilidade do tooltip de perfil */
-  const [showProfile, setShowProfile] = useState(false);
 
   // Estados do Dashboard
   /** Lista completa de tarefas carregadas do usuário atual */
@@ -422,34 +420,7 @@ export default function DashboardPage() {
 
           <div className="relative flex items-center gap-4">
             {/* Notificações */}
-            <div className="relative">
-              <button
-                aria-label="Abrir notificações"
-                className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-                onClick={() => {
-                  setShowNotifications((currentValue) => !currentValue);
-                  setShowProfile(false);
-                }}
-                type="button"
-              >
-                <Bell size={20} />
-                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {showNotifications && (
-                <div className="absolute right-0 z-40 mt-3 w-80 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                  <p className="font-semibold text-gray-700 text-sm pb-2 border-b border-gray-100">Notificações</p>
-                  <div className="mt-2 flex flex-col gap-2 max-h-48 overflow-y-auto">
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Sessão de foco concluída! Suas horas totais foram atualizadas.
-                    </p>
-                    <p className="text-xs text-gray-500 leading-relaxed border-t border-gray-50 pt-2">
-                      Faltam {pendingTasksCount} entregas acadêmicas para esta semana.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotificationBell />
 
             {/* Perfil */}
             <div className="relative">
@@ -466,30 +437,6 @@ export default function DashboardPage() {
                 )}
               </button>
 
-              {showProfile && (
-                <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md overflow-hidden">
-                    {user.avatar_url ? (
-                      <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
-                    ) : (
-                      user.nome.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <div className="font-semibold text-gray-800 text-base">{user.nome}</div>
-                  <div className="text-xs text-gray-500 mb-1">@{user.username}</div>
-                  <div className="text-xs text-gray-400 break-all">{user.email}</div>
-                  <div className="mt-4 border-t border-gray-100 pt-3">
-                    <button
-                      className="flex w-full items-center justify-center gap-2 py-1.5 text-sm font-medium text-red-500 hover:text-red-700 cursor-pointer"
-                      onClick={logout}
-                      type="button"
-                    >
-                      <LogOut size={16} />
-                      Sair da Conta
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </header>

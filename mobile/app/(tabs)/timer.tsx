@@ -18,6 +18,7 @@ import { ProgressRing } from '../../components/ui/ProgressRing';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { notificarFimDoCiclo } from '../../lib/notifications';
 
 export default function TimerScreen() {
   const { session, refreshProfile } = useAuth();
@@ -101,6 +102,7 @@ export default function TimerScreen() {
   };
 
   const handleTimerCompleted = async () => {
+    void notificarFimDoCiclo(mode);
     if (mode === 'foco') {
       try {
         const { data: userRes } = await supabase.auth.getUser();

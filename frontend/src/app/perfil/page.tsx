@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   Calendar,
   Check,
@@ -22,10 +21,13 @@ import {
   User,
   X,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { progressoNivel } from "@studyflow/shared";
+import { NotificationBell } from "@/components/notification-bell";
 
 type UserSession = {
   email: string;
@@ -60,6 +62,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -91,7 +94,6 @@ export default function PerfilPage() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -413,22 +415,7 @@ export default function PerfilPage() {
           </div>
 
           <div className="relative flex items-center gap-4">
-            <button
-              aria-label="Abrir notificações"
-              className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
-              onClick={() => setShowNotifications((current) => !current)}
-              type="button"
-            >
-              <Bell size={20} />
-              <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-            </button>
-
-            {showNotifications ? (
-              <div className="absolute right-12 top-12 z-40 w-72 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl">
-                <p className="font-semibold text-gray-700">Notificações</p>
-                <p className="mt-2 text-sm leading-6 text-gray-500">Você não possui novas notificações de perfil.</p>
-              </div>
-            ) : null}
+            <NotificationBell />
 
             <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm overflow-hidden">
               {profilePic ? (
@@ -482,6 +469,19 @@ export default function PerfilPage() {
                   <p className="mt-2 text-sm text-white/90">
                     Nível {profile.level} &nbsp;•&nbsp; {profile.xp} XP
                   </p>
+                  <div
+                    aria-label="Progresso para o próximo nível"
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={Math.round(progressoNivel(Number(profile.xp) || 0).progresso * 100)}
+                    className="mt-2 h-1.5 w-48 max-w-full overflow-hidden rounded-full bg-white/25"
+                    role="progressbar"
+                  >
+                    <div
+                      className="h-full rounded-full bg-white"
+                      style={{ width: `${Math.round(progressoNivel(Number(profile.xp) || 0).progresso * 100)}%` }}
+                    />
+                  </div>
                   <p className="mt-1 text-xs text-white/75">🏆 {profile.lastAchievement}</p>
                 </div>
 

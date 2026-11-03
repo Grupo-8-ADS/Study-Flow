@@ -10,7 +10,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Trophy, Share2, Award, Zap } from 'lucide-react-native';
-import { COLORS, Conquista } from '@studyflow/shared';
+import {
+  COLORS,
+  Conquista,
+  progressoNivel,
+  progressoConquista,
+  textoCompartilhamento,
+  intervaloDoPeriodo,
+  gerarRelatorioPeriodo,
+} from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
 import { ProgressRing } from '../../components/ui/ProgressRing';
@@ -24,7 +32,7 @@ const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 export default function EstatisticasScreen() {
   const { session } = useAuth();
 
-  const [period, setPeriod] = useState<'semana' | 'mes' | 'acumulado'>('semana');
+  const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -32,6 +40,7 @@ export default function EstatisticasScreen() {
   const [monthHours, setMonthHours] = useState(0);
   const [totalHours, setTotalHours] = useState(0);
 
+  const [topSubject, setTopSubject] = useState<string | null>(null);
   const [subjectStats, setSubjectStats] = useState<Array<{ name: string; hours: number; percent: number; color: string }>>([]);
   const [conquistas, setConquistas] = useState<Array<Conquista & { unlocked: boolean; progress?: number }>>([]);
 
@@ -45,54 +54,57 @@ export default function EstatisticasScreen() {
       // 1. Fetch study sessions
       const { data: sessions } = await supabase
         .from('sessoes_estudo')
-        .select('duracao_efetiva_min, data_inicio, disciplina_id, disciplinas(nome)')
-        .eq('user_id', uid);
+        .select('duracao_efetiva_min, data_inicio, status, disciplina_id, disciplinas(nome)')
+        .eq('user_id', uid)
+        .eq('status', 'concluida');
 
-      if (sessions && sessions.length > 0) {
-        const now = new Date();
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const concluidas = (sessions || []).map((s: any) => ({
+        data_inicio: s.data_inicio as string,
+        duracao_efetiva_min: s.duracao_efetiva_min as number | null,
+        disciplina_nome: (s.disciplinas?.nome as string | undefined) || null,
+        status: 'concluida',
+      }));
 
-        let weekMins = 0;
-        let monthMins = 0;
-        let totalMins = 0;
-        const subMap = new Map<string, number>();
+      const agora = new Date();
+      const semana = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('semana', agora));
+      const mes = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('mes', agora));
+      const horas = (min: number) => Number((min / 60).toFixed(1));
 
-        sessions.forEach((s: any) => {
-          const dur = s.duracao_efetiva_min || 0;
-          totalMins += dur;
+      let totalMins = 0;
+      const subMap = new Map<string, number>();
+      const sessoesPorDisciplina: Record<string, number> = {};
+      concluidas.forEach((s) => {
+        const dur = s.duracao_efetiva_min || 0;
+        totalMins += dur;
+        const subName = s.disciplina_nome || 'Geral';
+        subMap.set(subName, (subMap.get(subName) || 0) + dur);
+        sessoesPorDisciplina[subName] = (sessoesPorDisciplina[subName] || 0) + 1;
+      });
 
-          const sDate = s.data_inicio ? new Date(s.data_inicio) : null;
-          if (sDate) {
-            if (sDate >= oneWeekAgo) weekMins += dur;
-            if (sDate >= oneMonthAgo) monthMins += dur;
-          }
+      setWeekHours(horas(semana.totalMinutos));
+      setMonthHours(horas(mes.totalMinutos));
+      setTotalHours(horas(totalMins));
 
-          const subName = s.disciplinas?.nome || 'Geral';
-          subMap.set(subName, (subMap.get(subName) || 0) + dur);
-        });
-
-        setWeekHours(Number((weekMins / 60).toFixed(1)));
-        setMonthHours(Number((monthMins / 60).toFixed(1)));
-        setTotalHours(Number((totalMins / 60).toFixed(1)));
-
-        const maxSubMins = Math.max(...Array.from(subMap.values()), 1);
-        const subList = Array.from(subMap.entries())
-          .sort((a, b) => b[1] - a[1])
+      const maxSubMins = Math.max(...Array.from(subMap.values()), 1);
+      setSubjectStats(
+        Array.from(subMap.entries())
+          .sort((x, y) => y[1] - x[1])
           .map(([name, mins], idx) => ({
             name,
-            hours: Number((mins / 60).toFixed(1)),
+            hours: horas(mins),
             percent: Math.min(100, Math.round((mins / maxSubMins) * 100)),
             color: DIST_COLORS[idx % DIST_COLORS.length],
-          }));
+          })),
+      );
+      setTopSubject(
+        Array.from(subMap.entries()).sort((x, y) => y[1] - x[1])[0]?.[0] ?? null,
+      );
 
-        setSubjectStats(subList);
-      } else {
-        setWeekHours(0);
-        setMonthHours(0);
-        setTotalHours(0);
-        setSubjectStats([]);
-      }
+      const stats = {
+        sessoesConcluidas: concluidas.length,
+        minutosEstudados: totalMins,
+        sessoesPorDisciplina,
+      };
 
       // 2. Fetch conquistas and user_conquistas
       const { data: allConq } = await supabase.from('conquistas').select('*');
@@ -105,7 +117,7 @@ export default function EstatisticasScreen() {
           allConq.map((c) => ({
             ...c,
             unlocked: unlockedSet.has(c.id),
-            progress: unlockedSet.has(c.id) ? 100 : Math.min(90, (c.pontos_recompensa % 40) + 30),
+            progress: unlockedSet.has(c.id) ? 100 : progressoConquista(c.criterio, stats).percentual,
           }))
         );
       }
@@ -124,19 +136,24 @@ export default function EstatisticasScreen() {
 
   const handleShareProgress = async () => {
     try {
+      const periodoAtual = period === 'semana' ? weekHours : period === 'mes' ? monthHours : totalHours;
+      const rotulo = period === 'semana' ? 'Semana' : period === 'mes' ? 'Mês' : 'Acumulado';
       await Share.share({
-        message: `🔥 Meu progresso no Study Flow:\n⏱️ Total de foco: ${totalHours} horas\n🏆 Nível: ${session?.nivel_atual || 1}\n⭐ XP acumulado: ${session?.xp || 0} XP\n\nVenha focar comigo no Study Flow! 🚀`,
+        message: textoCompartilhamento({
+          nivel: progressoNivel(session?.xp || 0).nivel,
+          periodo: rotulo,
+          horas: periodoAtual,
+          topico: topSubject,
+        }),
       });
     } catch (error: any) {
       Alert.alert('Compartilhamento', 'Não foi possível compartilhar o resumo.');
     }
   };
 
-  const currentLevel = session?.nivel_atual || 1;
+  const { nivel: currentLevel, faltam, progresso } = progressoNivel(session?.xp || 0);
   const currentXp = session?.xp || 0;
-  const nextLevelXp = currentLevel * 100;
-  const xpInCurrentLevel = currentXp % 100;
-  const levelProgress = Math.min(1, Math.max(0.05, xpInCurrentLevel / 100));
+  const levelProgress = Math.min(1, Math.max(0.05, progresso));
 
   return (
     <View style={styles.container}>
@@ -211,7 +228,7 @@ export default function EstatisticasScreen() {
             <View style={styles.levelInfo}>
               <Text style={styles.levelTitle}>Estudante Nível {currentLevel}</Text>
               <Text style={styles.levelSubtitle}>
-                {100 - xpInCurrentLevel} XP para o Nível {currentLevel + 1}
+                {faltam} XP para o Nível {currentLevel + 1}
               </Text>
               <View style={styles.levelBarBg}>
                 <View style={[styles.levelBarFill, { width: `${Math.round(levelProgress * 100)}%` }]} />
@@ -348,12 +365,12 @@ export default function EstatisticasScreen() {
                     <View
                       style={[
                         styles.achieveProgressFill,
-                        { width: `${a.progress || 20}%` },
+                        { width: `${a.progress ?? 0}%` },
                       ]}
                     />
                   </View>
                 </View>
-                <Text style={styles.progressPercent}>{a.progress || 20}%</Text>
+                <Text style={styles.progressPercent}>{a.progress ?? 0}%</Text>
               </View>
             ))}
         </View>

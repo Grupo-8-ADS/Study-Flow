@@ -12,7 +12,6 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Bell,
   User,
   Play,
   Pause,
@@ -21,9 +20,11 @@ import {
   ClipboardList,
   Gift,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface UserSession {
   email: string;
@@ -39,12 +40,6 @@ const TimerDashboard: NextPage = () => {
   const [user, setUser] = useState<UserSession | null>(null);
   const activeTab = "Timer";
   
-  // Notificações dropdown
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<string[]>([
-    "Bem-vindo ao Study Flow! Comece sua primeira sessão.",
-    "Dica: Faça pausas regulares para manter o foco."
-  ]);
 
   // Pomodoro Timer States
   const [timerType, setTimerType] = useState<"foco" | "pausa_curta" | "pausa_longa">("foco");
@@ -204,8 +199,6 @@ const TimerDashboard: NextPage = () => {
     const notificationMsg = timerType === "foco"
       ? `Sessão de foco em "${getSelectedDisciplineName()}" finalizada! Hora de uma pausa.`
       : "Sua pausa acabou! Pronto para voltar ao foco?";
-
-    setNotifications(prevNotif => [notificationMsg, ...prevNotif]);
     alert(notificationMsg);
   }, [getSelectedDisciplineName, recordStudySession, timerType]);
 
@@ -270,6 +263,7 @@ const TimerDashboard: NextPage = () => {
     { name: "Timer", href: "/timer", icon: TimerIcon },
     { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
     { name: "Recompensas", href: "/rewards", icon: Gift },
+    { name: "Integrações", href: "/integracoes", icon: Plug },
     { name: "Configurações", href: "/configuracoes", icon: Settings },
   ];
 
@@ -338,41 +332,7 @@ const TimerDashboard: NextPage = () => {
 
           <div className="flex items-center gap-4 relative">
             {/* ÍCONE DE NOTIFICAÇÕES */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowNotifications(!showNotifications);
-                }}
-                className="p-2.5 rounded-full bg-white border border-gray-100 shadow-sm text-gray-600 hover:text-[#29645e] hover:bg-[#eaf6f4] transition cursor-pointer relative"
-              >
-                <Bell size={20} />
-                {notifications.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white"></span>
-                )}
-              </button>
-
-              {/* Popover Notificações */}
-              {showNotifications && (
-                <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 py-3 z-50 animate-fade-in">
-                  <div className="px-4 pb-2 border-b border-gray-100 font-semibold text-gray-700 text-sm">
-                    Notificações
-                  </div>
-                  <div className="max-h-60 overflow-y-auto mt-2">
-                    {notifications.length === 0 ? (
-                      <div className="px-4 py-3 text-xs text-gray-400 text-center">
-                        Nenhuma notificação por enquanto.
-                      </div>
-                    ) : (
-                      notifications.map((notif, index) => (
-                        <div key={index} className="px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 border-b border-gray-50 last:border-0 leading-relaxed">
-                          {notif}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotificationBell />
 
             {/* AVATAR DO USUÁRIO */}
             <div className="relative">
