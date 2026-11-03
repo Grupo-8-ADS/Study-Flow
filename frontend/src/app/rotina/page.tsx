@@ -17,6 +17,7 @@ import {
   Timer,
   Trash2,
   User,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
@@ -44,6 +45,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 

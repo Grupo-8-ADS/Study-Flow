@@ -22,6 +22,7 @@ import {
   User,
   X,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { NotificationBell } from "@/components/notification-bell";
@@ -65,13 +66,13 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
 export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -276,20 +277,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 )}
               </button>
 
-              {showProfile ? (
-                <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md overflow-hidden">
-                    {user.avatar_url ? (
-                      <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
-                    ) : (
-                      user.nome.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <p className="font-semibold text-gray-800">{user.nome}</p>
-                  <p className="text-xs text-gray-500">@{user.username}</p>
-                  <p className="mt-1 break-all text-xs text-gray-400">{user.email}</p>
-                </div>
-              ) : null}
             </div>
           </div>
         </header>

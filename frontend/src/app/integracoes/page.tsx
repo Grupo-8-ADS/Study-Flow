@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type { LocalizacaoPalavra } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
+import { NotificationBell } from "@/components/notification-bell";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 
 type UserSession = { email: string; nome: string; username: string; avatar_url?: string | null };
@@ -208,7 +209,8 @@ function IntegracoesConteudo() {
       </aside>
 
       <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
-        <header className="mb-7 flex justify-end gap-4 border-b border-gray-100 pb-6">
+        <header className="mb-7 flex items-center justify-end gap-4 border-b border-gray-100 pb-6">
+          <NotificationBell />
           <button aria-label="Perfil" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-[#eaf6f4] text-[#29645e]" onClick={() => router.push("/perfil")} type="button">
             {user.avatar_url ? <img src={user.avatar_url} alt={user.nome || "Avatar"} className="h-full w-full object-cover" /> : <User size={22} />}
           </button>

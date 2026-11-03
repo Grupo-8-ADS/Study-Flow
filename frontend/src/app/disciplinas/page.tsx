@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, BarChart3, BookOpen, Calendar, CalendarClock, Edit2, Gift, LayoutDashboard, LogOut, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
+import { Activity, BarChart3, BookOpen, Calendar, CalendarClock, Edit2, Gift, LayoutDashboard, LogOut, Plug, Plus, Settings, Timer, Trash2, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
@@ -40,7 +40,7 @@ const menuItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard }, { name: "Calendário", href: "/calendario", icon: Calendar },
   { name: "Atividade", href: "/atividade", icon: Activity }, { name: "Disciplinas", href: "/disciplinas", icon: BookOpen }, { name: "Rotina", href: "/rotina", icon: CalendarClock },
   { name: "Timer", href: "/timer", icon: Timer }, { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
-  { name: "Recompensas", href: "/rewards", icon: Gift }, { name: "Configurações", href: "/configuracoes", icon: Settings },
+  { name: "Recompensas", href: "/rewards", icon: Gift }, { name: "Integrações", href: "/integracoes", icon: Plug }, { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 const emptySubject: Omit<Subject, "id"> = {
   date: "",

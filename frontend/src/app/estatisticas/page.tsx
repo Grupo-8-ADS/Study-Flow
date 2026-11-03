@@ -20,6 +20,7 @@ import {
   User,
   X,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -71,6 +72,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -143,7 +145,6 @@ export default function EstatisticasPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
-  const [showProfile, setShowProfile] = useState(false);
   const [shared, setShared] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
@@ -404,20 +405,6 @@ export default function EstatisticasPage() {
                 )}
               </button>
 
-              {showProfile ? (
-                <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.nome || "Avatar"} className="mx-auto mb-3 h-16 w-16 rounded-full object-cover shadow-md" />
-                  ) : (
-                    <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md">
-                      {user.nome.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <p className="font-semibold text-gray-800">{user.nome}</p>
-                  <p className="text-xs text-gray-500">@{user.username}</p>
-                  <p className="mt-1 break-all text-xs text-gray-400">{user.email}</p>
-                </div>
-              ) : null}
             </div>
           </div>
         </header>

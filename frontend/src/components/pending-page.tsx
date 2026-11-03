@@ -14,6 +14,7 @@ import {
   Timer,
   User,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { NotificationBell } from "./notification-bell";
 
@@ -31,6 +32,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 

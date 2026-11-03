@@ -31,6 +31,7 @@ import {
   Sparkles,
   Gift,
   CalendarClock,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -91,6 +92,7 @@ const menuItems = [
   { name: "Timer", href: "/timer", icon: Timer },
   { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
   { name: "Recompensas", href: "/rewards", icon: Gift },
+  { name: "Integrações", href: "/integracoes", icon: Plug },
   { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
@@ -109,8 +111,6 @@ export default function DashboardPage() {
   const [user, setUser] = useState<UserSession | null>(null);
 
 
-  /** Controla a visibilidade do tooltip de perfil */
-  const [showProfile, setShowProfile] = useState(false);
 
   // Estados do Dashboard
   /** Lista completa de tarefas carregadas do usuário atual */
@@ -437,30 +437,6 @@ export default function DashboardPage() {
                 )}
               </button>
 
-              {showProfile && (
-                <div className="absolute right-0 z-40 mt-3 w-64 rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-xl">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#29645e] text-xl font-bold text-white shadow-md overflow-hidden">
-                    {user.avatar_url ? (
-                      <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
-                    ) : (
-                      user.nome.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <div className="font-semibold text-gray-800 text-base">{user.nome}</div>
-                  <div className="text-xs text-gray-500 mb-1">@{user.username}</div>
-                  <div className="text-xs text-gray-400 break-all">{user.email}</div>
-                  <div className="mt-4 border-t border-gray-100 pt-3">
-                    <button
-                      className="flex w-full items-center justify-center gap-2 py-1.5 text-sm font-medium text-red-500 hover:text-red-700 cursor-pointer"
-                      onClick={logout}
-                      type="button"
-                    >
-                      <LogOut size={16} />
-                      Sair da Conta
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </header>
