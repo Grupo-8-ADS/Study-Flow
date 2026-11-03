@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,10 @@ import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
+import { cancelarLembretes } from '../lib/notifications';
 
 export default function ConfiguracoesScreen() {
   const router = useRouter();
@@ -32,6 +35,40 @@ export default function ConfiguracoesScreen() {
 
   // Toggles
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('recebe_notificacao_pref')
+        .eq('id', userRes.user.id)
+        .single();
+      if (ativo && data) setNotificationsEnabled(data.recebe_notificacao_pref !== false);
+    })().catch((e) => console.error('Error loading preference:', e));
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const handleToggleNotifications = async (value: boolean) => {
+    setNotificationsEnabled(value);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes.user) return;
+      const { error } = await supabase
+        .from('profiles')
+        .update({ recebe_notificacao_pref: value })
+        .eq('id', userRes.user.id);
+      if (error) throw error;
+      if (!value) await cancelarLembretes();
+    } catch (e: any) {
+      setNotificationsEnabled(!value);
+      Alert.alert('Erro', 'Não foi possível salvar a preferência: ' + (e?.message ?? e));
+    }
+  };
+
   const [publicProfile, setPublicProfile] = useState(true);
   const [showHours, setShowHours] = useState(true);
   const [showAchievements, setShowAchievements] = useState(true);
@@ -76,13 +113,26 @@ export default function ConfiguracoesScreen() {
   const handleDeleteAccount = () => {
     setDeleteModalVisible(false);
     Alert.alert(
-      'Conta Excluída',
-      'Sua conta e dados foram removidos com sucesso.',
+      'Excluir conta',
+      'Tem certeza? Sua conta e todos os seus dados serão removidos permanentemente.',
       [
+        { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'OK',
+          text: 'Excluir',
+          style: 'destructive',
           onPress: async () => {
+            const { error } = await supabase.rpc('delete_own_account');
+            if (error) {
+              Alert.alert('Erro', 'Não foi possível excluir a conta: ' + error.message);
+              return;
+            }
+            await cancelarLembretes();
             await signOut();
+            try {
+              await AsyncStorage.clear();
+            } catch (e) {
+              console.error('Error clearing storage:', e);
+            }
             router.replace('/(auth)/login');
           },
         },
@@ -128,7 +178,7 @@ export default function ConfiguracoesScreen() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={handleToggleNotifications}
               trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
               thumbColor={notificationsEnabled ? COLORS.primary : '#f4f3f4'}
             />

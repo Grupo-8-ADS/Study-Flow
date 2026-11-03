@@ -41,6 +41,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { supabase } from '../../lib/supabase';
+import { agendarLembretesDePrazos } from '../../lib/notifications';
 
 const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#a855f7'];
 
@@ -100,6 +101,14 @@ export default function DashboardScreen() {
         .order('data_fim', { ascending: true });
 
       setTasks(tasksData || []);
+
+      // RF010: lembretes locais (inclui atividades, que a lista acima omite)
+      const { data: pendentes } = await supabase
+        .from('itens_cronograma')
+        .select('id, nome, tipo, data_inicio, data_fim, completed')
+        .eq('user_id', uid)
+        .eq('completed', false);
+      void agendarLembretesDePrazos(pendentes || []);
 
       // 2. Fetch study sessions for metrics and distribution
       const { data: sessionsData } = await supabase

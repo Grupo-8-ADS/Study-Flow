@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { COLORS } from '@studyflow/shared';
 import { Avatar } from '../ui/Avatar';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { NotificationModal, NotificationItem } from './NotificationModal';
 
 interface HeaderProps {
@@ -23,37 +24,47 @@ export const Header: React.FC<HeaderProps> = ({
   const { session } = useAuth();
   const [notificationVisible, setNotificationVisible] = useState(false);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: '1',
-      title: 'Sessão de foco concluída! 🎉',
-      message: 'Você completou 25 minutos de estudo em História.',
-      time: 'Há 15 min',
-      type: 'focus',
-      read: false,
-    },
-    {
-      id: '2',
-      title: 'Prova chegando!',
-      message: 'Prova de Cálculo I marcada para daqui a 3 dias.',
-      time: 'Hoje, 08:30',
-      type: 'exam',
-      read: false,
-    },
-    {
-      id: '3',
-      title: 'Nova conquista desbloqueada! 🏆',
-      message: 'Parabéns! Você alcançou "Foco Inicial".',
-      time: 'Ontem',
-      type: 'achievement',
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read_at).length;
 
-  const handleClearAll = () => {
-    setNotifications([]);
+  const loadNotifications = useCallback(async (gerar: boolean) => {
+    try {
+      if (gerar) await supabase.rpc('gerar_notificacoes_prazos');
+      const { data } = await supabase
+        .from('notificacoes')
+        .select('id, mensagem, tipo_evento, read_at, created_at')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setNotifications((data as NotificationItem[]) || []);
+    } catch (e) {
+      console.error('Error loading notifications:', e);
+    }
+  }, []);
+
+  const userEmail = session?.email;
+  useEffect(() => {
+    if (!userEmail) return;
+    // Carga assíncrona: o setState ocorre após o await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadNotifications(false);
+  }, [userEmail, loadNotifications]);
+
+  const handleOpen = () => {
+    setNotificationVisible(true);
+    void loadNotifications(true);
+  };
+
+  const handleRead = async (id: string) => {
+    const now = new Date().toISOString();
+    setNotifications((prev) => prev.map((n) => (n.id === id && !n.read_at ? { ...n, read_at: now } : n)));
+    await supabase.from('notificacoes').update({ read_at: now }).eq('id', id).is('read_at', null);
+  };
+
+  const handleClearAll = async () => {
+    const now = new Date().toISOString();
+    setNotifications((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: now })));
+    await supabase.from('notificacoes').update({ read_at: now }).is('read_at', null);
   };
 
   return (
@@ -80,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.iconButton}
-            onPress={() => setNotificationVisible(true)}
+            onPress={handleOpen}
           >
             <Bell size={22} color="#ffffff" />
             {unreadCount > 0 && (
@@ -111,6 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => setNotificationVisible(false)}
         notifications={notifications}
         onClearAll={handleClearAll}
+        onRead={handleRead}
       />
     </>
   );

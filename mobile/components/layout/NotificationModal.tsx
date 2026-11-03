@@ -6,11 +6,10 @@ import { COLORS } from '@studyflow/shared';
 
 export interface NotificationItem {
   id: string;
-  title: string;
-  message: string;
-  time: string;
-  type?: 'focus' | 'exam' | 'achievement' | 'general';
-  read?: boolean;
+  mensagem: string;
+  tipo_evento: string | null;
+  read_at: string | null;
+  created_at: string;
 }
 
 interface NotificationModalProps {
@@ -18,15 +17,33 @@ interface NotificationModalProps {
   onClose: () => void;
   notifications: NotificationItem[];
   onClearAll?: () => void;
+  onRead?: (id: string) => void;
 }
+
+const formatTime = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+
+const getTitle = (tipo: string | null) => {
+  const t = (tipo ?? '').toLowerCase();
+  if (t.includes('prova') || t.includes('prazo') || t.includes('entrega') || t.includes('trabalho')) return 'Prazo próximo';
+  if (t.includes('conquista')) return 'Nova conquista';
+  if (t.includes('foco') || t.includes('sessao')) return 'Sessão de foco';
+  return 'Notificação';
+};
 
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   visible,
   onClose,
   notifications,
   onClearAll,
+  onRead,
 }) => {
-  const getIcon = (type?: string) => {
+  const getIcon = (tipo: string | null) => {
+    const t = (tipo ?? '').toLowerCase();
+    const type = t.includes('conquista') ? 'achievement' : t.includes('foco') || t.includes('sessao') ? 'focus' : t ? 'exam' : 'general';
     switch (type) {
       case 'focus':
         return <Clock size={18} color={COLORS.primary} />;
@@ -45,31 +62,33 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         {notifications.length === 0 ? (
           <View style={styles.empty}>
             <CheckCircle2 size={36} color={COLORS.success} />
-            <Text style={styles.emptyText}>Você está em dia! Nenhuma notificação pendente.</Text>
+            <Text style={styles.emptyText}>Você está em dia! Nenhuma notificação por aqui.</Text>
           </View>
         ) : (
           <>
             {notifications.map((item) => (
-              <View
+              <TouchableOpacity
                 key={item.id}
-                style={[styles.itemCard, !item.read && styles.itemUnread]}
+                activeOpacity={0.8}
+                onPress={() => onRead?.(item.id)}
+                style={[styles.itemCard, !item.read_at && styles.itemUnread]}
               >
-                <View style={styles.iconCircle}>{getIcon(item.type)}</View>
+                <View style={styles.iconCircle}>{getIcon(item.tipo_evento)}</View>
                 <View style={styles.textContainer}>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
-                  <Text style={styles.itemMessage}>{item.message}</Text>
-                  <Text style={styles.itemTime}>{item.time}</Text>
+                  <Text style={styles.itemTitle}>{getTitle(item.tipo_evento)}</Text>
+                  <Text style={styles.itemMessage}>{item.mensagem}</Text>
+                  <Text style={styles.itemTime}>{formatTime(item.created_at)}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
 
-            {onClearAll && (
+            {onClearAll && notifications.some((n) => !n.read_at) && (
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={onClearAll}
                 style={styles.clearButton}
               >
-                <Text style={styles.clearText}>Limpar todas as notificações</Text>
+                <Text style={styles.clearText}>Limpar tudo</Text>
               </TouchableOpacity>
             )}
           </>
