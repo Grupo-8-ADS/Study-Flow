@@ -106,6 +106,8 @@ export default function RotinaPage() {
   const [salvando, setSalvando] = useState(false);
   const [salvandoSlot, setSalvandoSlot] = useState(false);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  /** Dia (AAAA-MM-DD) do primeiro bloco salvo, para abrir o calendário direto nele. */
+  const [primeiroDiaSalvo, setPrimeiroDiaSalvo] = useState<string | null>(null);
 
   useEffect(() => {
     async function carregar() {
@@ -324,6 +326,8 @@ export default function RotinaPage() {
         localStorage.setItem(chave, JSON.stringify([...existentes, ...novos]));
       }
 
+      const primeiroInicio = Math.min(...previa.blocos.map((b) => new Date(b.data_inicio).getTime()));
+      setPrimeiroDiaSalvo(dataLocal(new Date(primeiroInicio)));
       setSucesso(`Cronograma salvo! ${previa.blocos.length} blocos de estudo adicionados.`);
       setPrevia(null);
     } finally {
@@ -490,7 +494,7 @@ export default function RotinaPage() {
             {sucesso ? (
               <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-700" role="status">
                 <span>{sucesso}</span>
-                <Link className="font-bold underline" href="/calendario">Ver no calendário</Link>
+                <Link className="font-bold underline" href={primeiroDiaSalvo ? `/calendario?data=${primeiroDiaSalvo}` : "/calendario"}>Ver no calendário</Link>
               </div>
             ) : null}
 

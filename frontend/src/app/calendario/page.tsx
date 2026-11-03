@@ -8,8 +8,8 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   BarChart3,
@@ -122,8 +122,9 @@ const disciplinesList = [
  * Componente principal da página de Calendário.
  * Renderiza o painel de gerenciamento de compromissos acadêmicos mensais e diários.
  */
-export default function CalendarioPage() {
+function CalendarioConteudo() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   /** Sessão do usuário logado ou null se não autenticado */
   const [user, setUser] = useState<UserSession | null>(null);
@@ -141,10 +142,18 @@ export default function CalendarioPage() {
 
   const [disciplineOptions, setDisciplineOptions] = useState<DisciplineOption[]>([]);
 
-  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(() => new Date());
+  // ?data=AAAA-MM-DD abre o calendário num dia específico (ex.: vindo da tela de rotina).
+  const dataInicial = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("data") ?? "") ? searchParams.get("data")! : null;
+
+  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(() => {
+    if (!dataInicial) return new Date();
+    const [ano, mes] = dataInicial.split("-").map(Number);
+    return new Date(ano, mes - 1, 1);
+  });
 
   /** Data atualmente selecionada no calendário (padrão dia de hoje) */
   const [selectedDate, setSelectedDate] = useState<string>(() => {
+    if (dataInicial) return dataInicial;
     const today = new Date();
     return `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
   });
@@ -899,3 +908,12 @@ export default function CalendarioPage() {
   );
 }
 
+
+// useSearchParams exige um limite de Suspense para a rota continuar pré-renderizada.
+export default function CalendarioPage() {
+  return (
+    <Suspense fallback={null}>
+      <CalendarioConteudo />
+    </Suspense>
+  );
+}
