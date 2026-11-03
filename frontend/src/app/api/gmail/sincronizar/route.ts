@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const iniciadoEm = new Date().toISOString();
   try {
     const accessToken = await renovarAcesso(config, token.refresh_token);
-    const emails = await buscarEmails(config, accessToken, consulta);
+    const { emails, completo } = await buscarEmails(config, accessToken, consulta);
     const eventos = emails.map(extrairEventoDoEmail).filter((e) => e !== null);
     const comData = eventos.filter((e) => e.data);
 
@@ -63,27 +63,41 @@ export async function POST(request: Request) {
     const jaImportados = new Set((existentes ?? []).map((i) => i.origem_externa_id));
     const novos = comData.filter((e) => !jaImportados.has(e.origemExternaId));
 
-    if (novos.length) {
-      const { error } = await db.from("itens_cronograma").insert(
-        novos.map((e) => ({
-          user_id: userId,
-          nome: e.nome,
-          tipo: e.tipo,
-          data_inicio: `${e.data}T09:00:00`,
-          data_fim: `${e.data}T10:00:00`,
-          descricao: `Importado do Gmail${status?.email_sinc ? ` (${status.email_sinc})` : ""}`,
-          origem_externa_id: e.origemExternaId,
-        })),
-      );
-      if (error) throw error;
+    const linhas = novos.map((e) => ({
+      user_id: userId,
+      nome: e.nome,
+      tipo: e.tipo,
+      data_inicio: `${e.data}T09:00:00`,
+      data_fim: `${e.data}T10:00:00`,
+      descricao: `Importado do Gmail${status?.email_sinc ? ` (${status.email_sinc})` : ""}`,
+      origem_externa_id: e.origemExternaId,
+    }));
+    let criados = 0;
+    if (linhas.length) {
+      const { error } = await db.from("itens_cronograma").insert(linhas);
+      if (!error) {
+        criados = linhas.length;
+      } else if (error.code === "23505") {
+        // Outra sincronização simultânea importou parte dos itens: insere um a um e ignora os repetidos.
+        for (const linha of linhas) {
+          const unitario = await db.from("itens_cronograma").insert(linha);
+          if (!unitario.error) criados++;
+          else if (unitario.error.code !== "23505") throw unitario.error;
+        }
+      } else {
+        throw error;
+      }
     }
 
-    await db.from("sinc_gmail").update({ data_ultima_sinc: iniciadoEm }).eq("user_id", userId);
+    // Só avança a janela quando todas as mensagens da busca foram lidas; senão a próxima sincronização continua dela.
+    if (completo) {
+      await db.from("sinc_gmail").update({ data_ultima_sinc: iniciadoEm }).eq("user_id", userId);
+    }
 
     return NextResponse.json({
       encontrados: emails.length,
-      criados: novos.length,
-      jaImportados: comData.length - novos.length,
+      criados,
+      jaImportados: comData.length - criados,
       semData: eventos.length - comData.length,
     });
   } catch (err: unknown) {

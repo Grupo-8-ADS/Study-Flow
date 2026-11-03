@@ -72,6 +72,12 @@ const server = setupServer(
     const linhas = Array.isArray(corpo) ? corpo : [corpo];
     const upsert = (request.headers.get("prefer") ?? "").includes("resolution=merge-duplicates");
     banco[tabela] ??= [];
+    // Índice único parcial (user_id, origem_externa_id) de itens_cronograma
+    const duplicada = linhas.some((linha) =>
+      linha.origem_externa_id != null &&
+      banco[tabela].some((l) => l.user_id === linha.user_id && l.origem_externa_id === linha.origem_externa_id)
+    );
+    if (duplicada) return HttpResponse.json({ code: "23505", message: "duplicate key value" }, { status: 409 });
     for (const linha of linhas) {
       const existente = upsert ? banco[tabela].find((l) => l.user_id === linha.user_id) : undefined;
       if (existente) Object.assign(existente, linha);
@@ -186,6 +192,36 @@ describe("Integração com API externa: Gmail (RF012)", () => {
       expect(banco.itens_cronograma).toHaveLength(3);
     });
 
+    it("deve ler todas as páginas da busca do Gmail", async () => {
+      server.use(
+        http.get(`${ENV.GOOGLE_API_BASE}/gmail/v1/users/me/messages`, ({ request }) => {
+          const pagina = new URL(request.url).searchParams.get("pageToken");
+          return HttpResponse.json(
+            pagina === "p2"
+              ? { messages: [{ id: "m2" }, { id: "m3" }, { id: "m4" }] }
+              : { messages: [{ id: "m1" }], nextPageToken: "p2" }
+          );
+        })
+      );
+
+      const resposta = await sincronizar(requisicao("http://localhost/api/gmail/sincronizar"));
+
+      expect(await resposta.json()).toEqual({ encontrados: 4, criados: 2, jaImportados: 1, semData: 1 });
+    });
+
+    it("não deve falhar quando outra sincronização simultânea já importou parte dos itens", async () => {
+      // A checagem de duplicados não vê m1, mas outra requisição o insere antes deste insert.
+      server.use(http.get("*/rest/v1/itens_cronograma", () => HttpResponse.json([])));
+      banco.itens_cronograma.push({ user_id: USER_ID, nome: "Outra aba", origem_externa_id: "gmail:m1" });
+
+      const resposta = await sincronizar(requisicao("http://localhost/api/gmail/sincronizar"));
+
+      expect(resposta.status).toBe(200);
+      expect(await resposta.json()).toMatchObject({ criados: 1 });
+      expect(banco.itens_cronograma.filter((i) => i.origem_externa_id === "gmail:m1")).toHaveLength(1);
+      expect(banco.itens_cronograma.some((i) => i.origem_externa_id === "gmail:m2")).toBe(true);
+    });
+
     it("deve responder 409 GMAIL_DESCONECTADO quando não há token guardado", async () => {
       banco.sinc_gmail_tokens = [];
 
@@ -282,6 +318,9 @@ describe("Integração com API externa: Gmail (RF012)", () => {
       expect(verificarEstado(estado, ENV.GOOGLE_CLIENT_SECRET, agora + 11 * 60 * 1000)).toBeNull();
       expect(verificarEstado(estado, "outro-segredo", agora)).toBeNull();
       expect(verificarEstado(estado, ENV.GOOGLE_CLIENT_SECRET, agora + 60 * 1000)).toBe(USER_ID);
+      // Assinatura com caracteres multibyte (mesmo número de caracteres, mais bytes) não deve lançar erro
+      const [dados, assinatura] = estado.split(".");
+      expect(verificarEstado(`${dados}.${"é".repeat(assinatura.length)}`, ENV.GOOGLE_CLIENT_SECRET, agora)).toBeNull();
     });
   });
 });

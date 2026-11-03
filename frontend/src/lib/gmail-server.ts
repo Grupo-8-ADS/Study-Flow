@@ -71,8 +71,9 @@ export function assinarEstado(userId: string, segredo: string, agora = Date.now(
 export function verificarEstado(estado: string, segredo: string, agora = Date.now()): string | null {
   const [dados, recebida] = estado.split(".");
   if (!dados || !recebida) return null;
-  const esperada = assinatura(dados, segredo);
-  if (recebida.length !== esperada.length || !timingSafeEqual(Buffer.from(recebida), Buffer.from(esperada))) {
+  const recebidaBytes = Buffer.from(recebida);
+  const esperadaBytes = Buffer.from(assinatura(dados, segredo));
+  if (recebidaBytes.length !== esperadaBytes.length || !timingSafeEqual(recebidaBytes, esperadaBytes)) {
     return null;
   }
   try {
@@ -153,23 +154,37 @@ interface MensagemGmail {
 }
 
 /** Busca até `limite` e-mails da consulta e devolve assunto, trecho e data de cada um. */
-export async function buscarEmails(config: GmailConfig, accessToken: string, consulta: string, limite = 25): Promise<EmailResumo[]> {
-  const lista = await getGmail<{ messages?: Array<{ id: string }> }>(
-    config,
-    accessToken,
-    `messages?${new URLSearchParams({ q: consulta, maxResults: String(limite) })}`,
-  );
+/**
+ * Lista as mensagens da busca, página a página, até `limite`.
+ * `completo` é false quando sobraram mensagens além do limite.
+ */
+export async function buscarEmails(
+  config: GmailConfig,
+  accessToken: string,
+  consulta: string,
+  limite = 100,
+): Promise<{ emails: EmailResumo[]; completo: boolean }> {
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ q: consulta, maxResults: String(Math.min(limite - ids.length, 100)) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const lista = await getGmail<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(config, accessToken, `messages?${params}`);
+    ids.push(...(lista.messages ?? []).map((m) => m.id));
+    pageToken = lista.nextPageToken;
+  } while (pageToken && ids.length < limite);
 
   const mensagens = await Promise.all(
-    (lista.messages ?? []).map((m) =>
-      getGmail<MensagemGmail>(config, accessToken, `messages/${encodeURIComponent(m.id)}?format=metadata&metadataHeaders=Subject`),
+    ids.map((id) =>
+      getGmail<MensagemGmail>(config, accessToken, `messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=Subject`),
     ),
   );
 
-  return mensagens.map((m) => ({
+  const emails = mensagens.map((m) => ({
     id: m.id,
     assunto: m.payload?.headers?.find((h) => h.name.toLowerCase() === "subject")?.value ?? "",
     trecho: m.snippet ?? null,
     recebidoEm: new Date(Number(m.internalDate) || Date.now()),
   }));
+  return { emails, completo: !pageToken };
 }
