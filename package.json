@@ -17,7 +17,8 @@
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:mutation": "stryker run",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "release:mobile": "node scripts/release-mobile.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.11",
