@@ -117,6 +117,8 @@ export default function EstatisticasScreen() {
   };
 
   useEffect(() => {
+    // Carga assíncrona: os setState ocorrem após o await, não em cascata.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStats();
   }, [session]);
 
