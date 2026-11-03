@@ -105,7 +105,7 @@ export default function TimerScreen() {
       try {
         const { data: userRes } = await supabase.auth.getUser();
         if (userRes.user) {
-          // 1. Record study session in Supabase
+          // XP, nível e conquistas são calculados pelo trigger on_sessao_concluida no banco.
           await supabase.from('sessoes_estudo').insert({
             user_id: userRes.user.id,
             disciplina_id: selectedSubject.id,
@@ -114,16 +114,6 @@ export default function TimerScreen() {
             exp: 25,
             notas: notes.trim() || null,
           });
-
-          // 2. Increment XP in profiles
-          const currentXp = session?.xp || 0;
-          const newXp = currentXp + 25;
-          const newNivel = Math.floor(newXp / 100) + 1;
-
-          await supabase
-            .from('profiles')
-            .update({ xp: newXp, nivel_atual: newNivel })
-            .eq('id', userRes.user.id);
 
           await refreshProfile();
         }
