@@ -154,6 +154,11 @@ export default function TimerScreen() {
   });
 
   const toggleTimer = () => {
+    // Ciclo já terminado: recomeça do tempo cheio em vez de concluir de novo em 1s.
+    if (!isActive && secondsLeftRef.current === 0) {
+      secondsLeftRef.current = POMODORO_TIMES[mode];
+      setTimeLeft(POMODORO_TIMES[mode]);
+    }
     setIsActive((prev) => !prev);
   };
 
