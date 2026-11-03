@@ -73,22 +73,24 @@ export function classificarTipo(texto: string): TipoEventoEmail {
 }
 
 /**
- * Primeira data DD/MM ou DD/MM/AAAA (também com "-" ou ".") do texto.
+ * Primeira data DD/MM, DD/MM/AAAA (também com "-" ou ".") ou AAAA-MM-DD do texto.
  * Sem ano, usa a próxima ocorrência a partir do recebimento do e-mail.
  */
 export function extrairData(texto: string, referencia: Date): string | null {
-  const re = /\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?\b/g;
+  const re = /(?<![\d/.-])(?:(\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?)(?!\d)/g;
   for (const m of texto.matchAll(re)) {
-    const dia = Number(m[1]);
-    const mes = Number(m[2]);
-    let ano = m[3] ? Number(m[3]) : referencia.getFullYear();
-    if (m[3] && m[3].length === 2) ano += 2000;
+    const iso = m[1] !== undefined;
+    const dia = Number(iso ? m[3] : m[4]);
+    const mes = Number(iso ? m[2] : m[5]);
+    const anoTexto = iso ? m[1] : m[6];
+    let ano = anoTexto ? Number(anoTexto) : referencia.getFullYear();
+    if (anoTexto && anoTexto.length === 2) ano += 2000;
 
     const data = new Date(ano, mes - 1, dia);
     if (data.getMonth() !== mes - 1 || data.getDate() !== dia) continue;
 
     const base = new Date(referencia.getFullYear(), referencia.getMonth(), referencia.getDate());
-    if (!m[3] && data < base) data.setFullYear(ano + 1);
+    if (!anoTexto && data < base) data.setFullYear(ano + 1);
 
     const dois = (n: number) => String(n).padStart(2, '0');
     return `${data.getFullYear()}-${dois(data.getMonth() + 1)}-${dois(data.getDate())}`;
