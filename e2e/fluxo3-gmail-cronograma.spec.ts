@@ -8,9 +8,8 @@ import { IntegracoesPage } from "./pages/integracoes.page";
  * O Google é substituído por um servidor falso (e2e/support/google-mock.mjs); o Supabase é o real.
  */
 
-/** Mesma data do e-mail falso: 5 dias à frente, em AAAA-MM-DD (horário de Brasília). */
-const dataDaProvaISO = () =>
-  new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+/** Mesma data do e-mail falso (AAAA-MM-DD), definida uma vez no playwright.config. */
+const dataDaProvaISO = () => String(process.env.E2E_DATA_PROVA);
 
 test.describe("Fluxo 3: e-mails do Gmail viram itens do cronograma", () => {
   test.beforeEach(async ({ page, usuario }) => {

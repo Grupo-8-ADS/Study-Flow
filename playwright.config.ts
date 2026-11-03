@@ -18,6 +18,10 @@ try {
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const isCI = !!process.env.CI;
 const GOOGLE_MOCK_PORT = Number(process.env.GOOGLE_MOCK_PORT ?? 4010);
+// Data da prova do e-mail falso (fluxo 3), calculada uma vez e compartilhada com o mock e os testes.
+process.env.E2E_DATA_PROVA ??= new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString("sv-SE", {
+  timeZone: "America/Sao_Paulo",
+});
 
 export default defineConfig({
   testDir: "./e2e",
@@ -48,8 +52,8 @@ export default defineConfig({
       {
         // Google falso (OAuth + Gmail API) para o fluxo 3 (RF012).
         command: `node e2e/support/google-mock.mjs`,
-        url: `http://localhost:${GOOGLE_MOCK_PORT}`,
-        env: { GOOGLE_MOCK_PORT: String(GOOGLE_MOCK_PORT) },
+        url: `http://127.0.0.1:${GOOGLE_MOCK_PORT}`,
+        env: { GOOGLE_MOCK_PORT: String(GOOGLE_MOCK_PORT), E2E_DATA_PROVA: process.env.E2E_DATA_PROVA },
         reuseExistingServer: !isCI,
       },
       {
@@ -68,9 +72,9 @@ export default defineConfig({
         env: {
           GOOGLE_CLIENT_ID: "studyflow-e2e",
           GOOGLE_CLIENT_SECRET: "studyflow-e2e-segredo",
-          GOOGLE_OAUTH_URL: `http://localhost:${GOOGLE_MOCK_PORT}/auth`,
-          GOOGLE_TOKEN_URL: `http://localhost:${GOOGLE_MOCK_PORT}/token`,
-          GOOGLE_API_BASE: `http://localhost:${GOOGLE_MOCK_PORT}`,
+          GOOGLE_OAUTH_URL: `http://127.0.0.1:${GOOGLE_MOCK_PORT}/auth`,
+          GOOGLE_TOKEN_URL: `http://127.0.0.1:${GOOGLE_MOCK_PORT}/token`,
+          GOOGLE_API_BASE: `http://127.0.0.1:${GOOGLE_MOCK_PORT}`,
         },
       },
     ],

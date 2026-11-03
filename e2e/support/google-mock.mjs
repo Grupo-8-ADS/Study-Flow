@@ -4,10 +4,9 @@ import http from "node:http";
 
 const PORT = Number(process.env.GOOGLE_MOCK_PORT ?? 4010);
 
-/** Data do e-mail falso: 5 dias à frente, em DD/MM/AAAA (horário de Brasília). */
+/** Data do e-mail falso em DD/MM/AAAA, a partir de E2E_DATA_PROVA (AAAA-MM-DD, definida no playwright.config). */
 function dataDaProva() {
-  const data = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-  const [ano, mes, dia] = data.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }).split("-");
+  const [ano, mes, dia] = String(process.env.E2E_DATA_PROVA).split("-");
   return `${dia}/${mes}/${ano}`;
 }
 
@@ -18,7 +17,7 @@ const json = (res, status, corpo) => {
 
 http
   .createServer(async (req, res) => {
-    const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${PORT}`);
 
     if (url.pathname === "/") return json(res, 200, { ok: true });
 
@@ -57,4 +56,4 @@ http
 
     json(res, 404, { error: "not_found" });
   })
-  .listen(PORT, () => console.log(`[google-mock] ouvindo em http://localhost:${PORT}`));
+  .listen(PORT, "127.0.0.1", () => console.log(`[google-mock] ouvindo em http://127.0.0.1:${PORT}`));
