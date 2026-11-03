@@ -148,11 +148,21 @@ jobs:
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
 
+    - name: Aviso se o fluxo 3 (Gmail) vai ser pulado
+      env:
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      run: |
+        if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+          echo "::warning::Secret SUPABASE_SERVICE_ROLE_KEY ausente; o caminho feliz do fluxo 3 (Gmail) será pulado."
+        fi
+
     - name: Run E2E Tests (Playwright)
       run: npx playwright test
       env:
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        # Fluxo 3 (Gmail): sem este secret o caminho feliz é pulado.
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     - name: Upload Playwright report
       if: ${{ !cancelled() }}
