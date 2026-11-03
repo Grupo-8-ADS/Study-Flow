@@ -69,12 +69,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
   }
 
   beforeAll(async () => {
-    // Espelha os privilégios padrão do Supabase (o RLS é quem isola os dados).
-    await pool().query(`
-      GRANT USAGE ON SCHEMA public TO anon, authenticated;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
-      REVOKE ALL ON public.sinc_gmail_tokens FROM anon, authenticated;
-    `);
+    // Os privilégios padrão do Supabase vêm do stub do setup global (antes do schema.sql).
     await cleanTables(tabelas);
   });
 
@@ -97,6 +92,12 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       });
 
       expect(email).toBe("ana@unifei.edu.br");
+    });
+
+    it("deve recusar username que só difere por maiúsculas de um já existente (23505)", async () => {
+      await criarUsuario("ana1@unifei.edu.br", "Ana");
+
+      await expect(criarUsuario("ana2@unifei.edu.br", "ana")).rejects.toMatchObject({ code: "23505" });
     });
 
     it("deve devolver null para username inexistente ou perfil marcado como excluído", async () => {
@@ -196,7 +197,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       expect(await conquistasDe(id)).toContain("Especialista em História I");
     });
 
-    it("não deve dar XP para sessão cancelada, e deve dar ao mudar o status para concluída", async () => {
+    it("não deve dar XP para sessão ainda ativa, e deve dar ao mudar o status para concluída", async () => {
       const id = await criarUsuario("status@unifei.edu.br");
       const { rows } = await pool().query(
         "INSERT INTO public.sessoes_estudo (user_id, duracao_efetiva_min, status, exp) VALUES ($1, 25, 'ativa', 25) RETURNING id",
@@ -208,6 +209,59 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       await pool().query("UPDATE public.sessoes_estudo SET notas = 'revisão' WHERE id = $1", [rows[0].id]);
 
       expect((await perfil(id)).xp).toBe(75);
+    });
+
+    it("pela API (papel authenticated) a sessão concluída credita XP mesmo com EXECUTE revogado no trigger", async () => {
+      const id = await criarUsuario("api@unifei.edu.br");
+
+      await comoUsuario(
+        id,
+        (c) => c.query("INSERT INTO public.sessoes_estudo (user_id, duracao_efetiva_min, status) VALUES ($1, 30, 'concluida')", [id]),
+        true
+      );
+
+      expect(await perfil(id)).toMatchObject({ xp: 80, nivel_atual: 1 }); // 30 + 50 de "Foco inicial"
+    });
+
+    it("deve ignorar o exp enviado pelo cliente: 1 XP por minuto, no máximo 240 por sessão", async () => {
+      const id = await criarUsuario("exp@unifei.edu.br");
+
+      await concluirSessao(id, 25, 9999);
+      await concluirSessao(id, 600, 0);
+
+      // 25 + 240 + 50 ("Foco inicial") + 250 ("Mestre do Tempo": 625 min)
+      expect((await perfil(id)).xp).toBe(565);
+    });
+
+    it("não deve creditar XP de novo quando o status vai de concluída para ativa e volta", async () => {
+      const id = await criarUsuario("farm@unifei.edu.br");
+      const { rows } = await pool().query(
+        "INSERT INTO public.sessoes_estudo (user_id, duracao_efetiva_min, status) VALUES ($1, 25, 'concluida') RETURNING id",
+        [id]
+      );
+
+      for (const status of ["ativa", "concluida", "pausada", "concluida"]) {
+        await pool().query("UPDATE public.sessoes_estudo SET status = $2, xp_creditado = false WHERE id = $1", [rows[0].id, status]);
+      }
+
+      expect((await perfil(id)).xp).toBe(75);
+    });
+
+    it("o usuário não deve conseguir alterar o próprio XP, nível ou conquistas pela API", async () => {
+      const id = await criarUsuario("trapaca@unifei.edu.br");
+      const { rows } = await pool().query("SELECT id FROM public.conquistas LIMIT 1");
+
+      await expect(
+        comoUsuario(id, (c) => c.query("UPDATE public.profiles SET xp = 99999, nivel_atual = 99 WHERE id = $1", [id]))
+      ).rejects.toMatchObject({ code: "42501" });
+      await expect(
+        comoUsuario(id, (c) => c.query("INSERT INTO public.user_conquistas (user_id, conquista_id) VALUES ($1, $2)", [id, rows[0].id]))
+      ).rejects.toMatchObject({ code: "42501" });
+
+      // Os dados de perfil continuam editáveis.
+      await comoUsuario(id, (c) => c.query("UPDATE public.profiles SET nome = 'Novo Nome' WHERE id = $1", [id]), true);
+      const { rows: perfilAtual } = await pool().query("SELECT nome, xp FROM public.profiles WHERE id = $1", [id]);
+      expect(perfilAtual[0]).toEqual({ nome: "Novo Nome", xp: 0 });
     });
 
     it("deve notificar a conquista apenas quando o usuário aceita notificações", async () => {
