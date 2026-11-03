@@ -94,6 +94,14 @@ jobs:
         EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
 
+    - name: Prebuild Android (assinatura de release injetada)
+      working-directory: mobile
+      run: |
+        npx expo prebuild --platform android --clean --no-install
+        grep -q "STUDYFLOW_UPLOAD_STORE_FILE" android/app/build.gradle || {
+          echo "::error::O plugin withReleaseSigning não alterou o build.gradle"; exit 1;
+        }
+
   integration:
     runs-on: ubuntu-24.04
 
