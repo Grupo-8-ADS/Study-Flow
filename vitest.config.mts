@@ -21,7 +21,14 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'text-summary', 'json-summary', 'html'],
+      // Piso de regressão: a CI falha se a cobertura cair abaixo destes valores.
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 75,
+        lines: 85,
+      },
       include: [
         'packages/shared/src/**/*.ts',
         'frontend/src/lib/**/*.ts',

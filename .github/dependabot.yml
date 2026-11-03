@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # O Expo exige versões casadas do SDK; atualizações dele são feitas com `npx expo install --fix`.
+      expo:
+        patterns: ["expo", "expo-*", "react-native", "react-native-*", "@expo/*"]
+    ignore:
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

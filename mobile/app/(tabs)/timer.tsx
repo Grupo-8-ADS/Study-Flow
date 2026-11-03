@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,10 @@ export default function TimerScreen() {
   const [subjectsList, setSubjectsList] = useState<Array<{ id: string; nome: string }>>([]);
   const [notes, setNotes] = useState<string>('');
   const [subjectModalVisible, setSubjectModalVisible] = useState<boolean>(false);
+  // Fonte da verdade do contador: efeitos colaterais ficam fora do updater do setState,
+  // evitando gravar a sessão duas vezes.
+  const secondsLeftRef = useRef<number>(POMODORO_TIMES.foco);
+  const finishCycleRef = useRef<() => void>(() => {});
 
   const totalDuration = POMODORO_TIMES[mode];
   const progress = (totalDuration - timeLeft) / totalDuration;
@@ -67,19 +71,18 @@ export default function TimerScreen() {
 
   // Timer interval handling
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     if (isActive) {
       interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval!);
-            setIsActive(false);
-            handleTimerCompleted();
-            return 0;
-          }
-          return prev - 1;
-        });
+        const next = Math.max(secondsLeftRef.current - 1, 0);
+        secondsLeftRef.current = next;
+        setTimeLeft(next);
+        if (next === 0) {
+          clearInterval(interval!);
+          setIsActive(false);
+          finishCycleRef.current();
+        }
       }, 1000);
     } else if (interval) {
       clearInterval(interval);
@@ -89,6 +92,13 @@ export default function TimerScreen() {
       if (interval) clearInterval(interval);
     };
   }, [isActive, mode]);
+
+  const changeMode = (newMode: TimerMode) => {
+    setIsActive(false);
+    setMode(newMode);
+    secondsLeftRef.current = POMODORO_TIMES[newMode];
+    setTimeLeft(POMODORO_TIMES[newMode]);
+  };
 
   const handleTimerCompleted = async () => {
     if (mode === 'foco') {
@@ -137,11 +147,11 @@ export default function TimerScreen() {
     }
   };
 
-  const changeMode = (newMode: TimerMode) => {
-    setIsActive(false);
-    setMode(newMode);
-    setTimeLeft(POMODORO_TIMES[newMode]);
-  };
+  useEffect(() => {
+    finishCycleRef.current = () => {
+      void handleTimerCompleted();
+    };
+  });
 
   const toggleTimer = () => {
     setIsActive((prev) => !prev);
@@ -149,6 +159,7 @@ export default function TimerScreen() {
 
   const resetTimer = () => {
     setIsActive(false);
+    secondsLeftRef.current = POMODORO_TIMES[mode];
     setTimeLeft(POMODORO_TIMES[mode]);
   };
 

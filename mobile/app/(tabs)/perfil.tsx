@@ -48,6 +48,8 @@ export default function PerfilScreen() {
 
   useEffect(() => {
     if (session) {
+      // Sincroniza o formulário quando o perfil termina de carregar.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNome(session.nome || '');
       setUsername(session.username || '');
       setEmail(session.email || '');

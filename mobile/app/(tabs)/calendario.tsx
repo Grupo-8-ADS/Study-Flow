@@ -174,6 +174,8 @@ export default function CalendarioScreen() {
   };
 
   useEffect(() => {
+    // Carga assíncrona: os setState ocorrem após o await, não em cascata.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadEvents();
   }, [session]);
 

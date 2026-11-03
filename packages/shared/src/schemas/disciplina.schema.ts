@@ -8,7 +8,10 @@ import { isValidDateString, toDatabaseDate } from "../validation";
 export const CreateDisciplinaInputSchema = z
   .object({
     nome: z
-      .string({ required_error: "Nome da disciplina é obrigatório" })
+      .string({
+        error: (issue) =>
+          issue.input === undefined ? "Nome da disciplina é obrigatório" : undefined,
+      })
       .trim()
       .min(2, "Nome deve ter no mínimo 2 caracteres")
       .max(100, "Nome deve ter no máximo 100 caracteres"),
@@ -35,7 +38,7 @@ export const CreateDisciplinaInputSchema = z
       .optional()
       .nullable(),
     anotacoes: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .default({}),
   })
@@ -55,7 +58,7 @@ export const DisciplinaOutputSchema = z
     professor: z.string().nullable().optional(),
     data_inicio: z.string().nullable().optional(),
     data_fim: z.string().nullable().optional(),
-    anotacoes: z.record(z.any()).default({}),
+    anotacoes: z.record(z.string(), z.any()).default({}),
     created_at: z.string(),
     updated_at: z.string(),
   })

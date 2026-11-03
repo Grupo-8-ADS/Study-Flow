@@ -149,6 +149,8 @@ export default function DashboardScreen() {
   };
 
   useEffect(() => {
+    // Carga assíncrona: os setState ocorrem após o await, não em cascata.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [session]);
 
