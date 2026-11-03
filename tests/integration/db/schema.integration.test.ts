@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { DisciplinaBuilder } from "@studyflow/shared";
+import { DisciplinaBuilder } from "@studyflow/shared/testing/disciplina.builder";
 import { getTestPool, cleanTables, closeTestPool } from "../setup/db-helper";
 
 describe("Testes de Integração do Schema PostgreSQL (triggers, constraints e cascade)", () => {

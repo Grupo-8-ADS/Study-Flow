@@ -98,3 +98,6 @@ Docs/Relatorio_Artefato_Web_e_Testes.*
 Docs/assets/e2e/
 Docs/assets/diagramas/
 .claude/settings.local.json
+
+# Cache do Vitest/Stryker
+.vitest/
