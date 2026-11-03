@@ -57,7 +57,8 @@ test.describe("Fluxo 1: cronograma automatizado", () => {
       await evidencia(page, testInfo, "fluxo1-05-salvo");
       await page.getByRole("link", { name: "Ver no calendário" }).click();
       await expect(page).toHaveURL(/\/calendario/);
-      // O primeiro bloco gerado cai no dia selecionado por padrão ou em um dia seguinte da semana.
+      // O link abre o calendário no dia do primeiro bloco gerado (independe do dia da semana de hoje).
+      await expect(page).toHaveURL(/\/calendario\?data=\d{4}-\d{2}-\d{2}/);
       const primeiroBloco = page.getByText(/Estudo: (Banco de Dados|Redes de Computadores)/).first();
       await expect(primeiroBloco).toBeVisible();
       await evidencia(page, testInfo, "fluxo1-06-calendario");

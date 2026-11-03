@@ -25,7 +25,6 @@
     "plugins": [
       "expo-router",
       "expo-image",
-      "expo-splash-screen",
       [
         "expo-splash-screen",
         {
