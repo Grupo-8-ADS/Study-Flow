@@ -21,16 +21,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
+    # Só valores públicos no nível do job. As credenciais da keystore entram apenas
+    # nos passos que precisam delas (nunca no npm ci nem em actions de terceiros).
     env:
-      STUDYFLOW_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      STUDYFLOW_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      STUDYFLOW_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      NODE_ENV: production
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Garantir que o commit já está na main
+      run: |
+        git fetch --quiet origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::Releases só são geradas a partir de commits que já estão na main."
+          exit 1
+        fi
 
     - name: Definir versão
       id: version
@@ -49,6 +57,9 @@ jobs:
     - name: Conferir secrets de assinatura
       env:
         ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        STUDYFLOW_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        STUDYFLOW_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        STUDYFLOW_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: |
         missing=0
         for name in ANDROID_KEYSTORE_BASE64 STUDYFLOW_UPLOAD_STORE_PASSWORD STUDYFLOW_UPLOAD_KEY_ALIAS STUDYFLOW_UPLOAD_KEY_PASSWORD; do
@@ -87,6 +98,10 @@ jobs:
 
     - name: Build APK (release)
       working-directory: mobile/android
+      env:
+        STUDYFLOW_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        STUDYFLOW_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        STUDYFLOW_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: ./gradlew assembleRelease --no-daemon
 
     - name: Verificar assinatura e versão
@@ -128,7 +143,12 @@ jobs:
         TAG: ${{ steps.version.outputs.tag }}
         APK: ${{ steps.apk.outputs.file }}
       run: |
-        gh release create "$TAG" "$APK" "$APK.sha256" \
-          --target "$GITHUB_SHA" \
-          --title "Study Flow mobile ${TAG#mobile-}" \
-          --generate-notes
+        # Re-execução do job: a release já existe, então só substitui os arquivos.
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          gh release upload "$TAG" "$APK" "$APK.sha256" --clobber
+        else
+          gh release create "$TAG" "$APK" "$APK.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "Study Flow mobile ${TAG#mobile-}" \
+            --generate-notes
+        fi

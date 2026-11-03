@@ -43,6 +43,13 @@ updateJson('mobile/app.json', (app) => {
 git('add', 'mobile/package.json', 'mobile/app.json');
 git('commit', '-m', `chore(mobile): release v${version}`);
 git('tag', '-a', tag, '-m', `Study Flow mobile v${version}`);
-git('push', 'origin', 'HEAD', tag);
+try {
+  git('push', 'origin', 'HEAD', tag);
+} catch (error) {
+  console.error(`✖ O push falhou: ${error.message}`);
+  console.error('  O commit e a tag ficaram só na sua máquina. Para desfazer e tentar de novo:');
+  console.error(`    git tag -d ${tag} && git reset --hard HEAD~1`);
+  process.exit(1);
+}
 
 console.log(`✔ ${tag} enviada. Acompanhe o build em: gh run watch`);
