@@ -38,6 +38,8 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/index.ts',
+        // Coberto pela suíte de integração (tests/integration/api/gmail), com Google e Supabase mockados via MSW.
+        'frontend/src/lib/gmail-server.ts',
       ],
     },
     alias: {
