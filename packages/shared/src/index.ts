@@ -3,7 +3,6 @@ export * from './constants';
 export * from './validation';
 export * from './scheduler';
 export * from './schemas/disciplina.schema';
-export * from './testing/disciplina.builder';
 export * from './gamificacao';
 export * from './relatorios';
 export * from './gmail';

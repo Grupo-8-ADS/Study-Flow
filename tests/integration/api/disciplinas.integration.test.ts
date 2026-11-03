@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { POST, GET } from "@/app/api/disciplinas/route";
 import { createRouteServer } from "../setup/http-adapter";
-import { DisciplinaBuilder, DisciplinaOutputSchema } from "@studyflow/shared";
+import { DisciplinaOutputSchema } from "@studyflow/shared";
+import { DisciplinaBuilder } from "@studyflow/shared/testing/disciplina.builder";
 import { getTestPool, cleanTables, seedProfile, closeTestPool } from "../setup/db-helper";
 
 describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
