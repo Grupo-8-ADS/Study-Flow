@@ -589,3 +589,6 @@ begin
   end if;
 end;
 $$;
+
+-- Remove a versão antiga (não versionada) de get_email_by_username com dois parâmetros.
+drop function if exists public.get_email_by_username(text, text);
