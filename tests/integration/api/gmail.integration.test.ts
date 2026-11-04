@@ -333,6 +333,19 @@ describe("Integração com API externa: Gmail (RF012)", () => {
       expect(resposta.headers.get("location")).toBe(`studyflow://integracoes?gmail=${resultado}`);
     });
 
+    it("estado do app expirado deve voltar ao app com erro, e adulterado deve cair no site", async () => {
+      banco.sinc_gmail_tokens = [];
+      const expirado = assinarEstado(USER_ID, ENV.GOOGLE_CLIENT_SECRET, Date.now() - 11 * 60 * 1000, "app");
+      const respostaExpirado = await callback(new Request(`http://localhost:3000/api/gmail/callback?code=codigo-valido&state=${expirado}`));
+      expect(respostaExpirado.headers.get("location")).toBe("studyflow://integracoes?gmail=erro");
+
+      const [dados, assinatura] = assinarEstado(USER_ID, ENV.GOOGLE_CLIENT_SECRET, Date.now(), "app").split(".");
+      const adulterado = `${dados}.${assinatura.slice(0, -2)}xx`;
+      const respostaAdulterado = await callback(new Request(`http://localhost:3000/api/gmail/callback?code=codigo-valido&state=${adulterado}`));
+      expect(respostaAdulterado.headers.get("location")).toBe("http://localhost:3000/integracoes?gmail=erro");
+      expect(banco.sinc_gmail_tokens).toEqual([]);
+    });
+
     it("estado expirado ou assinado com outro segredo deve ser rejeitado", () => {
       const agora = Date.now();
       const estado = assinarEstado(USER_ID, ENV.GOOGLE_CLIENT_SECRET, agora);

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { EmailResumo } from "@studyflow/shared";
+import { APP_RETORNO_GMAIL, type EmailResumo } from "@studyflow/shared";
 import { supabase, SUPABASE_FALLBACK_URL } from "@/lib/supabase";
 
 /**
@@ -65,8 +65,7 @@ const assinatura = (dados: string, segredo: string) =>
 /** De onde a conexão foi iniciada: o site (padrão) ou o app mobile. */
 export type OrigemConexao = "web" | "app";
 
-/** Endereço do app (scheme do Expo) para onde o callback devolve quem conectou pelo celular. */
-export const APP_RETORNO_GMAIL = "studyflow://integracoes";
+export { APP_RETORNO_GMAIL };
 
 /**
  * Estado do OAuth: amarra o callback ao usuário que iniciou a conexão, com validade curta.
@@ -82,12 +81,16 @@ export function verificarEstado(estado: string, segredo: string, agora = Date.no
   return lerEstado(estado, segredo, agora)?.userId ?? null;
 }
 
-/** Valida o estado e devolve o usuário e a origem da conexão (null se inválido ou expirado). */
+/**
+ * Valida a assinatura do estado e devolve o usuário e a origem da conexão.
+ * Retorna null se a assinatura for inválida. Se o estado estiver expirado, `userId` vem null,
+ * mas a origem (assinada) continua valendo, para devolver ao app quem demorou no consentimento.
+ */
 export function lerEstado(
   estado: string,
   segredo: string,
   agora = Date.now(),
-): { userId: string; origem: OrigemConexao } | null {
+): { userId: string | null; origem: OrigemConexao } | null {
   const [dados, recebida] = estado.split(".");
   if (!dados || !recebida) return null;
   const recebidaBytes = Buffer.from(recebida);
@@ -97,8 +100,8 @@ export function lerEstado(
   }
   try {
     const { u, e, o } = JSON.parse(Buffer.from(dados, "base64url").toString("utf8")) as { u?: string; e?: number; o?: string };
-    if (typeof u !== "string" || typeof e !== "number" || e <= agora) return null;
-    return { userId: u, origem: o === "app" ? "app" : "web" };
+    if (typeof u !== "string" || typeof e !== "number") return null;
+    return { userId: e > agora ? u : null, origem: o === "app" ? "app" : "web" };
   } catch {
     return null;
   }

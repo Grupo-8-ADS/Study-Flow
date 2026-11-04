@@ -167,6 +167,8 @@ O app mobile lê `EXPO_PUBLIC_SUPABASE_URL` e `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 
 > Em modo de teste o Google expira o acesso a cada 7 dias; o app pede para reconectar.
 
+No app mobile, **Conta › Integrações** usa as mesmas rotas do site: o consentimento abre no navegador do celular e volta ao app pelo endereço `studyflow://integracoes`. Esse retorno só funciona no APK (ou num development build); no **Expo Go** o scheme `studyflow://` não existe e o usuário fica no navegador.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## 🧪 Tests <a name="tests"></a>

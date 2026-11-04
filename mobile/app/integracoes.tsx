@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacit
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Mail, Plus, RefreshCw, Tags, Trash2 } from 'lucide-react-native';
-import { COLORS, RADII, type LocalizacaoPalavra } from '@studyflow/shared';
+import { APP_RETORNO_GMAIL, COLORS, RADII, type LocalizacaoPalavra } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -13,8 +13,6 @@ import { supabase } from '../lib/supabase';
 
 /** Site do Study Flow: as rotas /api/gmail/* (OAuth e sincronização) rodam lá. */
 const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL ?? 'https://study-flow-ten-olive.vercel.app';
-/** Para onde o callback do site devolve o usuário (scheme "studyflow" do app.json). */
-const RETORNO_APP = 'studyflow://integracoes';
 
 const LOCALIZACOES: { valor: LocalizacaoPalavra; rotulo: string }[] = [
   { valor: 'assunto', rotulo: 'Assunto' },
@@ -97,7 +95,7 @@ export default function IntegracoesScreen() {
       }
       // Abre o consentimento no navegador do sistema (o Google bloqueia login em WebView).
       // O callback do site redireciona para studyflow://integracoes?gmail=..., que fecha a sessão.
-      const resultado = await WebBrowser.openAuthSessionAsync(corpo.url, RETORNO_APP);
+      const resultado = await WebBrowser.openAuthSessionAsync(corpo.url, APP_RETORNO_GMAIL);
       if (resultado.type === 'success') {
         const valor = Linking.parse(resultado.url).queryParams?.gmail;
         const retorno = typeof valor === 'string' ? valor : 'erro';
@@ -180,7 +178,11 @@ export default function IntegracoesScreen() {
 
   const removerPalavra = async (id: string) => {
     if (!userId) return;
-    await supabase.from('palavras_chave').delete().eq('id', id);
+    const { error } = await supabase.from('palavras_chave').delete().eq('id', id);
+    if (error) {
+      setAviso({ tipo: 'erro', texto: 'Não foi possível remover a palavra-chave.' });
+      return;
+    }
     await carregar();
   };
 
