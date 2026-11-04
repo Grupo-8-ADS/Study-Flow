@@ -322,7 +322,7 @@ const TimerDashboard: NextPage = () => {
           </Card>
 
           <Card className="flex min-h-[300px] flex-col">
-            <CardHeader icon={<NotebookPen size={18} />} title="Notas de estudo" description="Salvas automaticamente neste navegador." />
+            <CardHeader icon={<NotebookPen size={18} />} title="Notas de estudo"/>
             <Textarea
               aria-label="Notas de estudo"
               className="min-h-[180px] flex-1 resize-none"
