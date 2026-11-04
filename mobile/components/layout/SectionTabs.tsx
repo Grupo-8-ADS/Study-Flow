@@ -1,12 +1,13 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname } from 'expo-router';
+import { useIrPara } from '../../lib/navigation';
 import { COLORS } from '@studyflow/shared';
 import { SECTIONS, type SectionKey } from '../../constants/navigation';
 
 /** Abas internas de uma seção (Agenda, Progresso ou Conta), como no site. */
 export const SectionTabs: React.FC<{ section: SectionKey }> = ({ section }) => {
-  const router = useRouter();
+  const irPara = useIrPara();
   const pathname = usePathname();
 
   return (
@@ -25,7 +26,7 @@ export const SectionTabs: React.FC<{ section: SectionKey }> = ({ section }) => {
             accessibilityState={{ selected: active }}
             activeOpacity={0.8}
             onPress={() => {
-              if (!active) router.navigate(tab.href);
+              if (!active) irPara(tab.href);
             }}
             style={[styles.tab, active && styles.tabActive]}
           >

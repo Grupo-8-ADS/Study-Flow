@@ -29,6 +29,7 @@ export default function IntegracoesScreen() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusGmail>(null);
   const [palavras, setPalavras] = useState<Palavra[]>([]);
+  const [erroCarga, setErroCarga] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,9 @@ export default function IntegracoesScreen() {
       ]);
       setStatus((sinc.data as StatusGmail) ?? null);
       setPalavras((lista.data ?? []) as Palavra[]);
+      setErroCarga(Boolean(sinc.error || lista.error));
+    } catch {
+      setErroCarga(true);
     } finally {
       setLoading(false);
     }
@@ -60,6 +64,11 @@ export default function IntegracoesScreen() {
         <ActivityIndicator color={COLORS.primary} style={{ marginTop: 48 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
+          {erroCarga ? (
+            <View accessibilityLiveRegion="polite" style={styles.error}>
+              <Text style={styles.errorText}>Não foi possível carregar o status. Verifique a conexão e tente novamente.</Text>
+            </View>
+          ) : null}
           <Text style={styles.intro}>
             Conecte seu Gmail e o Study Flow transforma e-mails sobre provas, trabalhos e entregas em itens do seu cronograma.
           </Text>
@@ -138,6 +147,8 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, lineHeight: 20, color: COLORS.textSecondary },
   note: { backgroundColor: COLORS.primarySoft, borderRadius: RADII.control, padding: 12 },
   noteText: { fontSize: 13, lineHeight: 19, color: COLORS.primaryDark },
+  error: { backgroundColor: COLORS.dangerLight, borderRadius: RADII.control, padding: 12 },
+  errorText: { color: COLORS.danger, fontSize: 14 },
   empty: { fontSize: 14, color: COLORS.textMuted },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {

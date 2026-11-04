@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { NotificationModal, NotificationItem } from './NotificationModal';
 import { SectionTabs } from './SectionTabs';
+import { useIrPara } from '../../lib/navigation';
 import type { SectionKey } from '../../constants/navigation';
 
 interface HeaderProps {
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const irPara = useIrPara();
   const showBrand = showLogo && !title;
   const { session } = useAuth();
   const [notificationVisible, setNotificationVisible] = useState(false);
@@ -87,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
                 accessibilityRole="button"
                 activeOpacity={0.7}
                 hitSlop={8}
-                onPress={() => (router.canGoBack() ? router.back() : router.navigate('/dashboard'))}
+                onPress={() => (router.canGoBack() ? router.back() : irPara('/dashboard'))}
                 style={styles.backButton}
               >
                 <ChevronLeft size={24} color={COLORS.text} />
@@ -131,12 +133,14 @@ export const Header: React.FC<HeaderProps> = ({
               accessibilityLabel="Abrir conta e perfil"
               accessibilityRole="button"
               activeOpacity={0.8}
-              onPress={() => router.navigate('/perfil')}
+              onPress={() => irPara('/perfil')}
               style={styles.avatarButton}
             >
               <Avatar
                 name={session?.nome || 'Usuário'}
                 size={34}
+                level={session?.nivel_atual || 1}
+                showLevel
                 uri={session?.avatar_url}
               />
             </TouchableOpacity>

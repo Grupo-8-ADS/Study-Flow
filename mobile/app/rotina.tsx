@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
+import { useIrPara } from '../lib/navigation';
 import { Clock, Plus, Sparkles, Trash2 } from 'lucide-react-native';
 import {
   COLORS,
@@ -61,9 +62,10 @@ function proximaProvaDe(anotacoes: unknown): string | null {
 
 /** Rotina semanal e geração de cronograma (mesmas regras do site, via @studyflow/shared). */
 export default function RotinaScreen() {
-  const router = useRouter();
+  const irPara = useIrPara();
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [disciplinas, setDisciplinas] = useState<DisciplinaPlanejamento[]>([]);
 
@@ -103,16 +105,20 @@ export default function RotinaScreen() {
         ),
       );
       setDisciplinas((disciplinasRes.data ?? []).map((d) => ({ id: d.id, nome: d.nome, proximaProva: proximaProvaDe(d.anotacoes) })));
+      setErroCarga(rotinaRes.error || disciplinasRes.error ? 'Não foi possível carregar seus dados. Verifique a conexão e tente novamente.' : null);
+    } catch {
+      setErroCarga('Não foi possível carregar seus dados. Verifique a conexão e tente novamente.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    // Carga assíncrona: o setState ocorre após o await.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void carregar();
-  }, [carregar]);
+  // Recarrega ao voltar para a tela (ex.: depois de cadastrar uma disciplina).
+  useFocusEffect(
+    useCallback(() => {
+      void carregar();
+    }, [carregar]),
+  );
 
   const adicionar = async () => {
     setSucesso(null);
@@ -225,10 +231,15 @@ export default function RotinaScreen() {
   return (
     <View style={styles.container}>
       <Header title="Agenda" section="agenda" showBack />
-      {loading ? (
+      {loading && slots.length === 0 && disciplinas.length === 0 ? (
         <ActivityIndicator color={COLORS.primary} style={{ marginTop: 48 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {erroCarga ? (
+            <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertDanger]}>
+              <Text style={styles.alertDangerText}>{erroCarga}</Text>
+            </View>
+          ) : null}
           <Text style={styles.intro}>
             Diga quando você pode estudar na semana e o Study Flow distribui blocos de estudo entre as suas disciplinas.
           </Text>
@@ -342,7 +353,7 @@ export default function RotinaScreen() {
               <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertDanger]}>
                 <Text style={styles.alertDangerText}>{erroGeracao}</Text>
                 {semDisciplinas ? (
-                  <Text accessibilityRole="link" onPress={() => router.navigate('/disciplinas')} style={styles.alertLink}>
+                  <Text accessibilityRole="link" onPress={() => irPara('/disciplinas')} style={styles.alertLink}>
                     Ir para Disciplinas
                   </Text>
                 ) : null}
@@ -352,7 +363,7 @@ export default function RotinaScreen() {
             {sucesso ? (
               <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertSuccess]}>
                 <Text style={styles.alertSuccessText}>{sucesso}</Text>
-                <Text accessibilityRole="link" onPress={() => router.navigate('/calendario')} style={styles.alertLink}>
+                <Text accessibilityRole="link" onPress={() => irPara('/calendario')} style={styles.alertLink}>
                   Ver no calendário
                 </Text>
               </View>

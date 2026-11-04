@@ -8,7 +8,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+
+import { useIrPara } from '../lib/navigation';
 import {
   Plus,
   Activity as ActivityIcon,
@@ -39,7 +40,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function AtividadeScreen() {
-  const router = useRouter();
+  const irPara = useIrPara();
   const { session } = useAuth();
   const [atividades, setAtividades] = useState<ItemCronograma[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,7 +260,7 @@ export default function AtividadeScreen() {
               title="Calendário"
               variant="outline"
               size="sm"
-              onPress={() => router.push('/(tabs)/calendario')}
+              onPress={() => irPara('/calendario')}
               icon={<Calendar size={15} color={COLORS.primary} />}
             />
             <Button

@@ -8,7 +8,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+
+import { useIrPara } from '../../lib/navigation';
 import {
   Plus,
   BookOpen,
@@ -41,7 +42,7 @@ import { useAuth } from '../../context/AuthContext';
 type AssessmentItem = { id: string; nome: string; data: string };
 
 export default function DisciplinasScreen() {
-  const router = useRouter();
+  const irPara = useIrPara();
   const { session } = useAuth();
   const [disciplinas, setDisciplinas] = useState<Disciplina[]>([]);
   const [loading, setLoading] = useState(true);
@@ -324,7 +325,7 @@ export default function DisciplinasScreen() {
               title="Calendário"
               variant="outline"
               size="sm"
-              onPress={() => router.push('/(tabs)/calendario')}
+              onPress={() => irPara('/calendario')}
               icon={<Calendar size={15} color={COLORS.primary} />}
             />
             <Button
