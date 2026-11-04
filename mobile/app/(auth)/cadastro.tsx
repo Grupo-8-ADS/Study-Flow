@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontSize: 26,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#ffffff',
   },
   card: {

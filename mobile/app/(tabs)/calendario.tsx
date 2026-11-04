@@ -314,7 +314,7 @@ export default function CalendarioScreen() {
 
   return (
     <View style={styles.container}>
-      <Header title="Calendário & Agenda" />
+      <Header title="Agenda" section="agenda" />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
   },
   monthTitle: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   weekdaysRow: {
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   },
   dayTextSelected: {
     color: '#ffffff',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   dotsRow: {
     flexDirection: 'row',
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
   },
   agendaDateTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
   },
   agendaSubtitle: {

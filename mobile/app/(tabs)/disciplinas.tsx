@@ -29,13 +29,14 @@ import {
   toDatabaseDate,
   formatDisplayDate,
 } from '@studyflow/shared';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
-import { Input } from '../components/ui/Input';
-import { EmptyState } from '../components/ui/EmptyState';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { Header } from '../../components/layout/Header';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 type AssessmentItem = { id: string; nome: string; data: string };
 
@@ -305,13 +306,14 @@ export default function DisciplinasScreen() {
 
   return (
     <View style={styles.container}>
+      <Header title="Disciplinas" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.pageTitle}>Minhas Matérias</Text>
+            <Text style={styles.pageTitle}>Minhas disciplinas</Text>
             <Text style={styles.pageSubtitle}>
               {disciplinas.length} {disciplinas.length === 1 ? 'disciplina cadastrada' : 'disciplinas cadastradas'}
             </Text>
@@ -658,7 +660,7 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   pageSubtitle: {

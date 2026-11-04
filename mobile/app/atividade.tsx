@@ -29,6 +29,7 @@ import {
   toDatabaseDate,
   formatDisplayDate,
 } from '@studyflow/shared';
+import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -240,13 +241,14 @@ export default function AtividadeScreen() {
 
   return (
     <View style={styles.container}>
+      <Header title="Agenda" section="agenda" showBack />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.pageTitle}>Atividades & Rotina</Text>
+            <Text style={styles.pageTitle}>Atividades</Text>
             <Text style={styles.pageSubtitle}>
               {atividades.length} {atividades.length === 1 ? 'compromisso registrado' : 'compromissos registrados'}
             </Text>
@@ -472,7 +474,7 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   pageSubtitle: {
@@ -540,7 +542,7 @@ const styles = StyleSheet.create({
   },
   viewDetailTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 12,
   },

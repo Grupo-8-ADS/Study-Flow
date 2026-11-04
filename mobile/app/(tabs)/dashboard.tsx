@@ -16,7 +16,7 @@ import {
   Flame,
   Play,
   Plus,
-  BookOpen,
+  CalendarClock,
   Activity,
   Gift,
   Settings,
@@ -324,17 +324,17 @@ export default function DashboardScreen() {
         </View>
 
         {/* Quick Menu Shortcuts */}
-        <Text style={styles.sectionTitle}>Acesso Rápido</Text>
+        <Text style={styles.sectionTitle}>Acesso rápido</Text>
         <View style={styles.shortcutsGrid}>
           <TouchableOpacity
             activeOpacity={0.75}
             style={styles.shortcutItem}
-            onPress={() => router.push('/disciplinas')}
+            onPress={() => router.push('/rotina')}
           >
-            <View style={[styles.shortcutIconCircle, { backgroundColor: '#eaf6f4' }]}>
-              <BookOpen size={22} color={COLORS.primary} />
+            <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.primaryMuted }]}>
+              <CalendarClock size={22} color={COLORS.primary} />
             </View>
-            <Text style={styles.shortcutLabel}>Disciplinas</Text>
+            <Text style={styles.shortcutLabel}>Rotina</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -342,8 +342,8 @@ export default function DashboardScreen() {
             style={styles.shortcutItem}
             onPress={() => router.push('/atividade')}
           >
-            <View style={[styles.shortcutIconCircle, { backgroundColor: '#e0f2fe' }]}>
-              <Activity size={22} color="#0284c7" />
+            <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.infoLight }]}>
+              <Activity size={22} color={COLORS.info} />
             </View>
             <Text style={styles.shortcutLabel}>Atividades</Text>
           </TouchableOpacity>
@@ -353,8 +353,8 @@ export default function DashboardScreen() {
             style={styles.shortcutItem}
             onPress={() => router.push('/rewards')}
           >
-            <View style={[styles.shortcutIconCircle, { backgroundColor: '#fef3c7' }]}>
-              <Gift size={22} color="#d97706" />
+            <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.goldLight }]}>
+              <Gift size={22} color={COLORS.gold} />
             </View>
             <Text style={styles.shortcutLabel}>Recompensas</Text>
           </TouchableOpacity>
@@ -364,16 +364,16 @@ export default function DashboardScreen() {
             style={styles.shortcutItem}
             onPress={() => router.push('/configuracoes')}
           >
-            <View style={[styles.shortcutIconCircle, { backgroundColor: '#f1f5f9' }]}>
+            <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.borderStrong }]}>
               <Settings size={22} color={COLORS.textSecondary} />
             </View>
-            <Text style={styles.shortcutLabel}>Configurações</Text>
+            <Text style={styles.shortcutLabel}>Preferências</Text>
           </TouchableOpacity>
         </View>
 
         {/* Tasks and Deadlines Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Próximos Prazos & Entregas</Text>
+          <Text style={styles.sectionTitle}>Próximos prazos</Text>
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.addButton}
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
   heroContent: {},
   greetingText: {
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#ffffff',
     marginBottom: 4,
   },
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 2,
   },
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 10,
   },

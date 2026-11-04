@@ -171,7 +171,7 @@ export default function TimerScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
-      <Header title="Pomodoro & Foco" />
+      <Header title="Timer" />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   },
   timerDigits: {
     fontSize: 44,
-    fontWeight: '900',
+    fontWeight: '700',
     color: COLORS.primary,
     fontVariant: ['tabular-nums'],
   },
