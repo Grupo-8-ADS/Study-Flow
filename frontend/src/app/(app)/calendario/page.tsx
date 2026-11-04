@@ -10,29 +10,15 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Activity,
-  BarChart3,
-  BookOpen,
-  Calendar as CalendarIcon,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  Timer,
-  User,
-  Plus,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  RefreshCw,
-  Info,
-  Gift,
-  CalendarClock,
-  Plug,
-} from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
-import { NotificationBell } from "@/components/notification-bell";
+import { Button } from "@/components/ui/button";
+import { Badge, Card } from "@/components/ui/card";
+import { EmptyState, PageLoading } from "@/components/ui/feedback";
+import { Field, Input, Select } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
+import { PageHeader } from "@/components/ui/page-header";
 
 /**
  * Representa a sessão ativa do usuário autenticado no sistema.
@@ -93,21 +79,6 @@ type DisciplinaLocal = {
   trabalhos?: ProvaNota[];
 };
 
-/**
- * Lista de itens de navegação do menu lateral (Sidebar).
- */
-const menuItems = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Calendário", href: "/calendario", icon: CalendarIcon },
-  { name: "Atividade", href: "/atividade", icon: Activity },
-  { name: "Disciplinas", href: "/disciplinas", icon: BookOpen },
-  { name: "Rotina", href: "/rotina", icon: CalendarClock },
-  { name: "Timer", href: "/timer", icon: Timer },
-  { name: "Estatísticas", href: "/estatisticas", icon: BarChart3 },
-  { name: "Recompensas", href: "/rewards", icon: Gift },
-  { name: "Integrações", href: "/integracoes", icon: Plug },
-  { name: "Configurações", href: "/configuracoes", icon: Settings },
-];
 
 /**
  * Lista de disciplinas pré-cadastradas para seleção ao criar compromissos.
@@ -494,26 +465,14 @@ function CalendarioConteudo() {
     saveEvents(updatedEvents);
   };
 
-  /**
-   * Encerra a sessão ativa do usuário limpando o localStorage e redireciona para a tela de login.
-   */
-  const logout = () => {
-    localStorage.removeItem("studyflow_session");
-    router.push("/");
-  };
-
   if (!user) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#f2fcfb]">
-        <div className="text-xl font-medium text-[#29645e] animate-pulse">Carregando painel...</div>
-      </div>
-    );
+    return <PageLoading label="Carregando calendário..." />;
   }
 
-  // Geração Dinâmica do Grid do Calendário
+  // Geração dinâmica da grade do calendário
   const monthNames = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
   ];
 
   const year = currentMonthDate.getFullYear();
@@ -530,336 +489,253 @@ function CalendarioConteudo() {
   for (let day = 1; day <= totalDaysInMonth; day++) {
     calendarCells.push(day);
   }
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
 
-  // Filtra eventos para a data selecionada atualmente
+  // Eventos da data selecionada
   const selectedDateEvents = events.filter((e) => e.date === selectedDate);
 
-  // Mapeamento de Cores por Tipo de Evento
-  const typeColors: Record<string, string> = {
-    Prova: "bg-red-500",
-    Trabalho: "bg-amber-500",
-    Estudo: "bg-emerald-500",
-    Atividade: "bg-teal-600",
-  };
+  const selectedLabel = (() => {
+    const parts = selectedDate.split("-");
+    if (parts.length !== 3) return "Dia selecionado";
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const weekday = date.toLocaleDateString("pt-BR", { weekday: "long" });
+    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${Number(parts[2])} de ${monthNames[Number(parts[1]) - 1]?.toLowerCase() ?? ""}`;
+  })();
 
-  const typeLabels: Record<string, string> = {
-    Prova: "text-red-600 bg-red-50 border-red-200",
-    Trabalho: "text-amber-700 bg-amber-50 border-amber-200",
-    Estudo: "text-emerald-700 bg-emerald-50 border-emerald-200",
-    Atividade: "text-teal-700 bg-teal-50 border-teal-200",
-  };
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f7fdfd] lg:flex-row font-[Roboto]">
-      {/* SIDEBAR LATERAL */}
-      <aside className="flex w-full select-none flex-col justify-between bg-[#29645e] px-4 py-6 text-white shrink-0 shadow-lg lg:w-[260px]">
-        <div className="flex flex-col gap-8">
-          <div className="flex items-center gap-3 px-2">
-            <h1 className="text-2xl font-normal font-['Rubik_Bubbles'] tracking-wider">
-              Study Flow
-            </h1>
+    <>
+      <PageHeader
+        actions={
+          <>
+            <Button onClick={() => void loadCalendar()} title="Buscar compromissos atualizados" variant="secondary">
+              <RefreshCw aria-hidden size={16} />
+              Atualizar
+            </Button>
+            <Button onClick={() => setShowAddModal(true)}>
+              <Plus aria-hidden size={18} />
+              Novo compromisso
+            </Button>
+          </>
+        }
+        description="Provas, trabalhos, atividades e blocos de estudo do cronograma em um só lugar."
+        title="Calendário"
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Grade do mês */}
+        <Card className="!p-3 sm:!p-5 lg:col-span-8">
+          <div className="mb-4 flex items-center justify-between gap-3 px-1">
+            <h2 className="text-lg font-semibold text-ink-900" aria-live="polite">
+              {monthNames[month]} <span className="font-normal text-ink-500">{year}</span>
+            </h2>
+            <div className="flex items-center gap-1">
+              <Button
+                onClick={() => {
+                  setCurrentMonthDate(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setSelectedDate(todayStr);
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                Hoje
+              </Button>
+              <Button aria-label="Mês anterior" onClick={prevMonth} size="icon-sm" variant="secondary">
+                <ChevronLeft size={16} />
+              </Button>
+              <Button aria-label="Próximo mês" onClick={nextMonth} size="icon-sm" variant="secondary">
+                <ChevronRight size={16} />
+              </Button>
+            </div>
           </div>
 
-          <nav className="flex flex-col gap-1.5">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = item.name === "Calendário";
+          <div className="grid grid-cols-7 border-b border-line pb-2 text-center text-xs font-medium text-ink-500" aria-hidden>
+            {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((label) => (
+              <div key={label}>{label}</div>
+            ))}
+          </div>
+
+          <div className="mt-1 grid grid-cols-7 gap-px">
+            {calendarCells.map((day, idx) => {
+              if (day === null) {
+                return <div className="h-14 sm:h-20 lg:h-24" key={`empty-${idx}`} />;
+              }
+
+              const dateStr = `${year}-${(month + 1).toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+              const isSelected = selectedDate === dateStr;
+              const isToday = dateStr === todayStr;
+              const dayEvents = events.filter((e) => e.date === dateStr);
+
               return (
                 <button
-                  className={`flex w-full cursor-pointer items-center gap-3 rounded-[15px] py-3 px-4 text-base font-medium transition duration-200 ${
-                    isActive
-                      ? "bg-white text-[#29645e] shadow-md scale-[1.02]"
-                      : "text-gray-100 hover:bg-[#347871] hover:text-white"
+                  aria-label={`${day} de ${monthNames[month]}${dayEvents.length ? `, ${dayEvents.length} ${dayEvents.length === 1 ? "compromisso" : "compromissos"}` : ""}`}
+                  aria-pressed={isSelected}
+                  className={`flex h-14 flex-col items-center gap-1 rounded-[10px] p-1 text-left transition-colors sm:h-20 sm:items-stretch sm:p-1.5 lg:h-24 ${
+                    isSelected ? "bg-primary-50 ring-2 ring-inset ring-primary-500" : "hover:bg-ink-50"
                   }`}
-                  key={item.name}
-                  onClick={() => router.push(item.href)}
+                  key={`day-${day}`}
+                  onClick={() => setSelectedDate(dateStr)}
                   type="button"
                 >
-                  <Icon className="shrink-0" size={20} />
-                  <span>{item.name}</span>
+                  <span
+                    className={`tabular flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] font-medium ${
+                      isToday ? "bg-primary-700 text-white" : isSelected ? "text-primary-800" : "text-ink-700"
+                    }`}
+                  >
+                    {day}
+                  </span>
+
+                  {/* Celular: pontinhos */}
+                  <span className="flex flex-wrap justify-center gap-0.5 sm:hidden" aria-hidden>
+                    {dayEvents.slice(0, 3).map((event) => (
+                      <span className={`h-1.5 w-1.5 rounded-full ${styleFor(event.type).dot ?? "bg-primary-600"}`} key={event.id} />
+                    ))}
+                  </span>
+
+                  {/* Tablet e desktop: títulos */}
+                  <span className="hidden min-w-0 flex-col gap-0.5 sm:flex" aria-hidden>
+                    {dayEvents.slice(0, 2).map((event) => (
+                      <span
+                        className={`truncate rounded-[4px] px-1.5 py-px text-[11px] font-medium leading-4 ${styleFor(event.type).chip ?? "bg-primary-100 text-primary-800"}`}
+                        key={event.id}
+                      >
+                        {event.title}
+                      </span>
+                    ))}
+                    {dayEvents.length > 2 ? <span className="px-1.5 text-[11px] font-medium text-ink-500">+{dayEvents.length - 2} mais</span> : null}
+                  </span>
                 </button>
               );
             })}
-          </nav>
-        </div>
-
-        <button
-          className="mt-8 flex w-full cursor-pointer items-center gap-3 rounded-[15px] px-4 py-3 text-base font-medium text-red-200 transition duration-200 hover:bg-[#a83232] hover:text-white"
-          onClick={logout}
-          type="button"
-        >
-          <LogOut className="shrink-0" size={20} />
-          <span>Sair</span>
-        </button>
-      </aside>
-
-      {/* CONTEÚDO PRINCIPAL */}
-      <main className="flex min-h-screen flex-1 flex-col overflow-y-auto px-4 py-6 lg:px-8">
-        {/* HEADER DE AÇÕES */}
-        <header className="relative flex items-center justify-between border-b border-gray-100 pb-6">
-          <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[#5f8d87]">Seu cronograma</p>
-            <h2 className="text-2xl font-bold text-gray-800 lg:text-3xl">Calendário</h2>
           </div>
 
-          <div className="relative flex items-center gap-4">
-            {/* Notificações */}
-            <NotificationBell />
+          <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-1 pt-3 text-xs text-ink-500">
+            {Object.entries(typeStyles).map(([type, style]) => (
+              <li className="flex items-center gap-1.5" key={type}>
+                <span className={`h-2 w-2 rounded-full ${style.dot}`} aria-hidden />
+                {type}
+              </li>
+            ))}
+          </ul>
+        </Card>
 
-            {/* Perfil */}
-            <div className="relative">
-              <button
-                aria-label="Abrir perfil"
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-[#eaf6f4] text-[#29645e] shadow-sm transition hover:border-[#29645e] overflow-hidden"
-                onClick={() => router.push("/perfil")}
-                type="button"
-              >
-                {user.avatar_url ? (
-                  <img src={user.avatar_url} alt={user.nome} className="h-full w-full object-cover" />
-                ) : (
-                  <User size={22} />
-                )}
-              </button>
-
-            </div>
-          </div>
-        </header>
-
-        {/* CONTROLES DO MÊS E SINCRONIZAÇÃO */}
-        <section className="mt-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-          <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
-            <div className="flex gap-1">
-              <button
-                aria-label="Mês anterior"
-                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-[#eaf6f4] transition text-gray-600 hover:text-[#29645e] cursor-pointer shadow-sm"
-                onClick={prevMonth}
-                type="button"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                aria-label="Próximo mês"
-                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-[#eaf6f4] transition text-gray-600 hover:text-[#29645e] cursor-pointer shadow-sm"
-                onClick={nextMonth}
-                type="button"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+        {/* Detalhes do dia */}
+        <Card className="flex flex-col lg:col-span-4">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-ink-900">{selectedLabel}</h2>
+            <p className="mt-0.5 text-sm text-ink-500">
+              {selectedDateEvents.length === 0
+                ? "Nada marcado"
+                : `${selectedDateEvents.length} ${selectedDateEvents.length === 1 ? "compromisso" : "compromissos"}`}
+            </p>
           </div>
 
-          <button
-            className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#29645e] hover:bg-[#eaf6f4] transition cursor-pointer shadow-sm border border-[#cbe4e0] select-none"
-            onClick={() => void loadCalendar()}
-            title="Atualizar eventos sincronizados"
-            type="button"
-          >
-            <RefreshCw size={16} />
-            Sincronizado
-          </button>
-        </section>
-
-        {/* GRID DO CALENDÁRIO & DETALHES DO DIA */}
-        <section className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-12">
-          
-          {/* PAINEL ESQUERDO: Grade do Calendário */}
-          <div className="lg:col-span-8 rounded-[30px] border border-gray-100 bg-white p-6 shadow-[0px_4px_25px_rgba(0,0,0,0.02)]">
-            {/* Dias da semana */}
-            <div className="grid grid-cols-7 gap-1 text-center font-bold text-[#5f8d87] text-xs uppercase tracking-wider mb-4">
-              <div>Seg</div>
-              <div>Ter</div>
-              <div>Qua</div>
-              <div>Qui</div>
-              <div>Sex</div>
-              <div>Sáb</div>
-              <div>Dom</div>
-            </div>
-
-            {/* Dias do mês */}
-            <div className="grid grid-cols-7 gap-2">
-              {calendarCells.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`empty-${idx}`} className="h-16 lg:h-24 bg-transparent" />;
-                }
-
-                const dateStr = `${year}-${(month + 1).toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-                const isSelected = selectedDate === dateStr;
-                const now = new Date();
-                const isToday = now.getFullYear() === year && now.getMonth() === month && now.getDate() === day;
-                const dayEvents = events.filter((e) => e.date === dateStr);
-
-                return (
-                  <button
-                    key={`day-${day}`}
-                    onClick={() => setSelectedDate(dateStr)}
-                    className={`h-16 lg:h-24 rounded-2xl border flex flex-col justify-between p-2 cursor-pointer transition select-none ${
-                      isSelected
-                        ? "border-[#29645e] bg-[#eaf6f4]"
-                        : isToday
-                        ? "border-[#348e83] bg-teal-50/30"
-                        : "border-gray-50 hover:border-gray-200 bg-white"
-                    }`}
-                  >
-                    <span className={`text-xs font-bold ${
-                      isToday ? "text-[#29645e] bg-teal-100 rounded-full w-5 h-5 flex items-center justify-center" : "text-gray-500"
-                    }`}>
-                      {day}
-                    </span>
-
-                    {/* Pontinhos para indicar eventos */}
-                    <div className="flex gap-1 flex-wrap mt-1">
-                      {dayEvents.slice(0, 3).map((event) => (
-                        <span
-                          key={event.id}
-                          className={`w-1.5 h-1.5 rounded-full ${typeColors[event.type] || "bg-[#29645e]"}`}
-                          title={`${event.title} (${event.type})`}
-                        />
-                      ))}
-                      {dayEvents.length > 3 && (
-                        <span className="text-[9px] text-[#29645e] font-bold leading-none">+{dayEvents.length - 3}</span>
-                      )}
+          {selectedDateEvents.length === 0 ? (
+            <EmptyState
+              className="flex-1 !py-8"
+              description="Use o botão abaixo para marcar uma prova, trabalho ou sessão de estudo."
+              icon={<CalendarDays size={22} />}
+              title="Dia livre"
+            />
+          ) : (
+            <ul className="flex max-h-[420px] flex-col gap-2 overflow-y-auto">
+              {selectedDateEvents.map((event) => (
+                <li className="flex items-start gap-3 rounded-control border border-line p-3" key={event.id}>
+                  <span className={`mt-1 h-8 w-1 shrink-0 rounded-full ${styleFor(event.type).dot ?? "bg-primary-600"}`} aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium leading-snug text-ink-900">{event.title}</p>
+                    {event.time ? <p className="tabular mt-0.5 text-xs text-ink-500">{event.time}</p> : null}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge tone={styleFor(event.type).tone ?? "neutral"}>{labelFor(event.type)}</Badge>
+                      <Badge>{event.discipline}</Badge>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* PAINEL DIREITO: Detalhes do Dia Selecionado */}
-          <div className="lg:col-span-4 rounded-[30px] border border-gray-100 bg-white p-6 shadow-[0px_4px_25px_rgba(0,0,0,0.02)] flex flex-col gap-6">
-            <div>
-              <h3 className="text-lg font-bold text-gray-800">
-                {(() => {
-                  const parts = selectedDate.split("-");
-                  if (parts.length === 3) {
-                    const selDay = parseInt(parts[2], 10);
-                    const selMonth = parseInt(parts[1], 10) - 1;
-                    return `Dia ${selDay} de ${monthNames[selMonth] || "Mês"}`;
-                  }
-                  return "Dia Selecionado";
-                })()}
-              </h3>
-              <p className="text-xs text-gray-400 mt-1 font-semibold">
-                Eventos e compromissos marcados
-              </p>
-            </div>
-
-            {/* Listagem de eventos do dia */}
-            <div className="flex-1 flex flex-col gap-3 overflow-y-auto max-h-[300px]">
-              {selectedDateEvents.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center py-8 text-center">
-                  <Info size={24} className="text-gray-300 mb-2" />
-                  <p className="text-xs text-gray-400 max-w-[180px] leading-relaxed">
-                    Nenhum compromisso marcado para este dia.
-                  </p>
-                </div>
-              ) : (
-                selectedDateEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-2xl border border-gray-100 p-4 bg-white flex justify-between items-start"
-                  >
-                    <div>
-                      <p className="text-sm font-bold text-gray-700 leading-snug">
-                        {event.title}
-                      </p>
-                      {event.time ? <p className="mt-0.5 text-xs text-gray-500">{event.time}</p> : null}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className="text-[10px] bg-gray-100 text-gray-500 rounded font-semibold px-2 py-0.5 uppercase">
-                          {event.discipline}
-                        </span>
-                        <span className={`text-[10px] border rounded font-bold px-2 py-0.5 ${typeLabels[event.type] || "text-gray-700 bg-gray-50 border-gray-200"}`}>
-                          {event.type}
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleDeleteEvent(event.id)}
-                      className="text-gray-300 hover:text-red-500 transition cursor-pointer p-1"
-                      type="button"
-                    >
-                      <Trash2 size={15} />
-                    </button>
                   </div>
-                ))
-              )}
+                  <Button aria-label={`Excluir ${event.title}`} onClick={() => handleDeleteEvent(event.id)} size="icon-sm" variant="danger-ghost">
+                    <Trash2 size={15} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <Button className="mt-4 w-full" onClick={() => setShowAddModal(true)} variant="secondary">
+            <Plus aria-hidden size={18} />
+            Adicionar neste dia
+          </Button>
+        </Card>
+      </div>
+
+      {showAddModal ? (
+        <Modal
+          description={selectedLabel}
+          footer={
+            <>
+              <Button onClick={() => setShowAddModal(false)} variant="secondary">
+                Cancelar
+              </Button>
+              <Button form="form-compromisso" type="submit">
+                Salvar
+              </Button>
+            </>
+          }
+          onClose={() => setShowAddModal(false)}
+          title="Novo compromisso"
+        >
+          <form className="grid gap-4" id="form-compromisso" onSubmit={handleAddEvent}>
+            <Field htmlFor="evento-titulo" label="Nome">
+              <Input
+                id="evento-titulo"
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                placeholder="Ex.: Prova P1"
+                required
+                type="text"
+                value={newEventTitle}
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field htmlFor="evento-tipo" label="Tipo">
+                <Select id="evento-tipo" onChange={(e) => setNewEventType(e.target.value as "Prova" | "Trabalho" | "Estudo")} value={newEventType}>
+                  <option value="Prova">Prova</option>
+                  <option value="Trabalho">Trabalho</option>
+                  <option value="Estudo">Estudo</option>
+                </Select>
+              </Field>
+              <Field htmlFor="evento-disciplina" label="Disciplina">
+                <Select id="evento-disciplina" onChange={(e) => setNewEventDiscipline(e.target.value)} value={newEventDiscipline}>
+                  <option value="">Sem disciplina</option>
+                  {disciplineOptions.map((disc) => (
+                    <option key={disc.id} value={disc.id}>
+                      {disc.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
-
-            {/* Botão / Form para Adicionar Evento */}
-            {showAddModal ? (
-              <form onSubmit={handleAddEvent} className="border-t border-gray-100 pt-4 flex flex-col gap-3">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Novo Compromisso</p>
-                
-                <input
-                  type="text"
-                  placeholder="Nome do evento/prova..."
-                  value={newEventTitle}
-                  onChange={(e) => setNewEventTitle(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none focus:border-[#29645e] transition"
-                  required
-                />
-
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={newEventDiscipline}
-                    onChange={(e) => setNewEventDiscipline(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 outline-none focus:border-[#29645e] cursor-pointer transition bg-white"
-                  >
-                    <option value="">Sem disciplina</option>
-                    {disciplineOptions.map((disc) => (
-                      <option key={disc.id} value={disc.id}>
-                        {disc.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={newEventType}
-                    onChange={(e) => setNewEventType(e.target.value as "Prova" | "Trabalho" | "Estudo")}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 outline-none focus:border-[#29645e] cursor-pointer transition bg-white"
-                  >
-                    <option value="Prova">Prova</option>
-                    <option value="Trabalho">Trabalho</option>
-                    <option value="Estudo">Estudo</option>
-                  </select>
-                </div>
-
-                <div className="flex gap-2 mt-1">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-xl bg-[#29645e] py-2.5 text-white hover:bg-[#1e4b47] transition duration-200 text-xs font-semibold cursor-pointer active:scale-95"
-                  >
-                    Salvar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="flex-1 rounded-xl border border-gray-200 py-2.5 text-gray-500 hover:bg-gray-50 transition duration-200 text-xs font-semibold cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="w-full rounded-xl bg-[#29645e] py-3 text-white hover:bg-[#1e4b47] transition duration-200 flex items-center justify-center gap-1.5 text-sm font-semibold cursor-pointer active:scale-95"
-                type="button"
-              >
-                <Plus size={18} />
-                Adicionar Evento para Dia {selectedDate.split("-")[2]}
-              </button>
-            )}
-          </div>
-          
-        </section>
-      </main>
-    </div>
+            <Field htmlFor="evento-data" label="Data">
+              <Input id="evento-data" onChange={(e) => {
+                  const value = e.target.value;
+                  if (!value) return;
+                  setSelectedDate(value);
+                  const [y, m] = value.split("-").map(Number);
+                  setCurrentMonthDate(new Date(y, m - 1, 1));
+                }} required type="date" value={selectedDate} />
+            </Field>
+          </form>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 
+/** Cores por tipo de compromisso (mesmas famílias no app mobile). */
+const typeStyles: Record<string, { dot: string; chip: string; tone: "danger" | "gold" | "success" | "primary" }> = {
+  Prova: { dot: "bg-danger", chip: "bg-danger-soft text-[#9b2a24]", tone: "danger" },
+  Trabalho: { dot: "bg-gold", chip: "bg-gold-soft text-[#7a5408]", tone: "gold" },
+  Estudo: { dot: "bg-success", chip: "bg-success-soft text-[#0b6b4a]", tone: "success" },
+  Atividade: { dot: "bg-primary-600", chip: "bg-primary-100 text-primary-800", tone: "primary" },
+};
 
 // useSearchParams exige um limite de Suspense para a rota continuar pré-renderizada.
 export default function CalendarioPage() {
@@ -868,4 +744,22 @@ export default function CalendarioPage() {
       <CalendarioConteudo />
     </Suspense>
   );
+}
+
+/** Normaliza o tipo vindo do banco ("entrega", "prova"...) para as categorias exibidas. */
+function labelFor(type: string) {
+  const value = String(type).toLowerCase();
+  if (value === "prova") return "Prova";
+  if (value === "trabalho" || value === "entrega") return value === "entrega" ? "Entrega" : "Trabalho";
+  if (value === "estudo") return "Estudo";
+  if (value === "atividade") return "Atividade";
+  return type ? `${String(type).charAt(0).toUpperCase()}${String(type).slice(1)}` : "Compromisso";
+}
+
+function styleFor(type: string) {
+  const value = String(type).toLowerCase();
+  if (value === "prova") return typeStyles.Prova;
+  if (value === "trabalho" || value === "entrega") return typeStyles.Trabalho;
+  if (value === "estudo") return typeStyles.Estudo;
+  return typeStyles.Atividade;
 }
