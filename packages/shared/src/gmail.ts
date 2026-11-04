@@ -111,3 +111,6 @@ export function extrairEventoDoEmail(email: EmailResumo): EventoEmail | null {
     origemExternaId: `gmail:${email.id}`,
   };
 }
+
+/** Endereço do app (scheme "studyflow" do app.json) para onde o callback do OAuth devolve quem conectou pelo celular. */
+export const APP_RETORNO_GMAIL = 'studyflow://integracoes';

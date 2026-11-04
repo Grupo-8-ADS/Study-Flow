@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { EmailResumo } from "@studyflow/shared";
+import { APP_RETORNO_GMAIL, type EmailResumo } from "@studyflow/shared";
 import { supabase, SUPABASE_FALLBACK_URL } from "@/lib/supabase";
 
 /**
@@ -62,13 +62,35 @@ export async function usuarioDaRequisicao(request: Request): Promise<string | nu
 const assinatura = (dados: string, segredo: string) =>
   createHmac("sha256", segredo).update(dados).digest("base64url");
 
-/** Estado do OAuth: amarra o callback ao usuário que iniciou a conexão, com validade curta. */
-export function assinarEstado(userId: string, segredo: string, agora = Date.now()): string {
-  const dados = Buffer.from(JSON.stringify({ u: userId, e: agora + ESTADO_VALIDADE_MS })).toString("base64url");
+/** De onde a conexão foi iniciada: o site (padrão) ou o app mobile. */
+export type OrigemConexao = "web" | "app";
+
+export { APP_RETORNO_GMAIL };
+
+/**
+ * Estado do OAuth: amarra o callback ao usuário que iniciou a conexão, com validade curta.
+ * A origem vai dentro do estado assinado, então não pode ser trocada por quem intercepta o link.
+ */
+export function assinarEstado(userId: string, segredo: string, agora = Date.now(), origem: OrigemConexao = "web"): string {
+  const conteudo = origem === "app" ? { u: userId, e: agora + ESTADO_VALIDADE_MS, o: "app" } : { u: userId, e: agora + ESTADO_VALIDADE_MS };
+  const dados = Buffer.from(JSON.stringify(conteudo)).toString("base64url");
   return `${dados}.${assinatura(dados, segredo)}`;
 }
 
 export function verificarEstado(estado: string, segredo: string, agora = Date.now()): string | null {
+  return lerEstado(estado, segredo, agora)?.userId ?? null;
+}
+
+/**
+ * Valida a assinatura do estado e devolve o usuário e a origem da conexão.
+ * Retorna null se a assinatura for inválida. Se o estado estiver expirado, `userId` vem null,
+ * mas a origem (assinada) continua valendo, para devolver ao app quem demorou no consentimento.
+ */
+export function lerEstado(
+  estado: string,
+  segredo: string,
+  agora = Date.now(),
+): { userId: string | null; origem: OrigemConexao } | null {
   const [dados, recebida] = estado.split(".");
   if (!dados || !recebida) return null;
   const recebidaBytes = Buffer.from(recebida);
@@ -77,8 +99,9 @@ export function verificarEstado(estado: string, segredo: string, agora = Date.no
     return null;
   }
   try {
-    const { u, e } = JSON.parse(Buffer.from(dados, "base64url").toString("utf8")) as { u?: string; e?: number };
-    return typeof u === "string" && typeof e === "number" && e > agora ? u : null;
+    const { u, e, o } = JSON.parse(Buffer.from(dados, "base64url").toString("utf8")) as { u?: string; e?: number; o?: string };
+    if (typeof u !== "string" || typeof e !== "number") return null;
+    return { userId: e > agora ? u : null, origem: o === "app" ? "app" : "web" };
   } catch {
     return null;
   }
