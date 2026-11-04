@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 
-import { ConfiguracoesView } from "@/app/configuracoes/page";
+import { ConfiguracoesView } from "@/app/(app)/configuracoes/page";
 
 /**
  * Componente padrão da página de Configurações Básicas.

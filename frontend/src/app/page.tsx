@@ -8,13 +8,15 @@
 "use client";
 
 import type { NextPage } from "next";
-import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useEffect } from "react";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+import { AuthLayout } from "@/components/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/feedback";
+import { Field, Input } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 
 /**
  * Interface que representa a estrutura de um usuário autenticado.
@@ -42,11 +44,12 @@ const Login: NextPage = () => {
   /** Estado do campo de entrada da senha */
   const [senha, setSenha] = useState("");
 
-  /** Estado para controlar a visibilidade da senha (exibir/ocultar texto) */
-  const [showSenha, setShowSenha] = useState(false);
 
   /** Estado do checkbox "Me manter conectado" para estender a sessão */
   const [rememberMe, setRememberMe] = useState(false);
+
+  /** Exibe a orientação de "Problemas para logar?" */
+  const [showHelp, setShowHelp] = useState(false);
 
   /** Estado indicador de erro de autenticação (credenciais inválidas ou campos vazios) */
   const [error, setError] = useState("");
@@ -169,142 +172,71 @@ const Login: NextPage = () => {
     }
   }, [email, senha, rememberMe, resolveLoginEmail, router]);
 
-  /**
-   * Navega para a página de cadastro de novas contas.
-   */
-  const navigateToCadastro = useCallback(() => {
-    router.push("/cadastro");
-  }, [router]);
-
   return (
-    <div className="w-full min-h-screen bg-[#29645e] lg:bg-[#f2fcfb] flex flex-col lg:flex-row leading-[normal] tracking-[normal] font-[Roboto]">
-      
-      {/* PAINEL ESQUERDO: Identidade Visual (Verde) */}
-      <section className="w-full lg:w-[45%] bg-[#29645e] flex flex-col justify-center items-center py-10 lg:py-0 px-6 box-border text-white lg:min-h-screen select-none">
-        <div className="flex flex-row items-center justify-center gap-4 max-w-full">
-          <h1 className="m-0 text-5xl lg:text-7xl font-normal font-['Rubik_Bubbles'] tracking-wider drop-shadow-md">
-            Study Flow
-          </h1>
-          <Image
-            className="w-[120px] lg:w-[190px] h-auto object-cover filter drop-shadow-lg"
-            priority
-            width={190}
-            height={255}
-            style={{ height: "auto" }}
-            alt="Study Flow Logo"
-            src={`${basePath}/logo.png`}
+    <AuthLayout description="Entre para continuar de onde parou." title="Entrar">
+      <form className="flex flex-col gap-4" noValidate onSubmit={handleLogin}>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+
+        <Field htmlFor="login-usuario" label="E-mail ou usuário">
+          <Input
+            autoComplete="username"
+            id="login-usuario"
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email ou usuário"
+            required
+            type="text"
+            value={email}
           />
+        </Field>
+
+        <Field htmlFor="login-senha" label="Senha">
+          <PasswordInput
+            autoComplete="current-password"
+            id="login-senha"
+            onChange={(e) => setSenha(e.target.value)}
+            placeholder="Senha"
+            required
+            value={senha}
+          />
+        </Field>
+
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-ink-700">
+            <input
+              checked={rememberMe}
+              className="h-4 w-4 cursor-pointer rounded accent-primary-700"
+              onChange={(e) => setRememberMe(e.target.checked)}
+              type="checkbox"
+            />
+            Me manter conectado
+          </label>
+          <button
+            aria-expanded={showHelp}
+            className="text-sm font-medium text-primary-700 underline-offset-2 hover:underline"
+            onClick={() => setShowHelp((current) => !current)}
+            type="button"
+          >
+            Problemas para logar?
+          </button>
         </div>
-      </section>
 
-      {/* PAINEL DIREITO: Formulário de Login (Branco) */}
-      <section className="flex-1 bg-white rounded-t-[30px] lg:rounded-t-none lg:rounded-l-[40px] shadow-[-10px_0px_30px_rgba(0,0,0,0.05)] flex flex-col justify-center items-center py-12 px-6 lg:px-16 box-border min-h-[60vh] lg:min-h-screen">
-        <div className="w-full max-w-[480px] flex flex-col gap-8">
-          
-          {/* Título do formulário */}
-          <div className="text-center">
-            <h2 className="m-0 text-4xl lg:text-5xl font-medium text-[#29645e] tracking-tight">
-              Study Flow
-            </h2>
-          </div>
+        {showHelp ? (
+          <Alert tone="info">Para redefinir sua senha, entre em contato com o suporte: suporte@studyflow.com</Alert>
+        ) : null}
 
-          {/* Formulário de Login */}
-          <form onSubmit={handleLogin} className="flex flex-col gap-6">
-            
-            {/* Banner de Erro Figma (Desktop - 38) */}
-            {error && (
-              <div className="w-full border border-red-500 rounded-[10px] bg-red-50 text-red-600 px-4 py-2 text-sm flex items-center justify-center gap-2 animate-fade-in font-medium">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+        <Button className="mt-2 w-full" disabled={isLoading} size="lg" type="submit">
+          {isLoading ? "Entrando..." : "Entrar"}
+        </Button>
+      </form>
 
-            {/* Campo E-mail */}
-            <div className="relative w-full shadow-[0px_4px_10px_rgba(0,0,0,0.1)] rounded-[20px] bg-white border border-gray-100 focus-within:border-[#29645e] focus-within:ring-1 focus-within:ring-[#29645e] transition duration-200">
-              <input
-                className="w-full bg-transparent border-none outline-none text-lg lg:text-xl py-4 px-6 text-center text-gray-800 placeholder-gray-400"
-                placeholder="Email ou usuário"
-                type="text"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Campo Senha */}
-            <div className="relative w-full shadow-[0px_4px_10px_rgba(0,0,0,0.1)] rounded-[20px] bg-white border border-gray-100 focus-within:border-[#29645e] focus-within:ring-1 focus-within:ring-[#29645e] transition duration-200 flex items-center">
-              <input
-                className="w-full bg-transparent border-none outline-none text-lg lg:text-xl py-4 pl-6 pr-12 text-center text-gray-800 placeholder-gray-400"
-                placeholder="Senha"
-                type={showSenha ? "text" : "password"}
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-4 text-gray-400 hover:text-[#29645e] focus:outline-none"
-                onClick={() => setShowSenha(!showSenha)}
-              >
-                {showSenha ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-
-            {/* Checkbox Me manter conectado */}
-            <div className="flex items-center gap-3 px-2">
-              <label className="flex items-center gap-2 cursor-pointer text-gray-600 hover:text-gray-800 select-none text-base">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-5 h-5 accent-[#29645e] cursor-pointer rounded"
-                />
-                <span>Me manter conectado</span>
-              </label>
-            </div>
-
-            {/* Ações (Botões) */}
-            <div className="flex flex-col sm:flex-row gap-4 w-full mt-2">
-              {/* Botão Entrar */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="cursor-pointer border-none bg-[#29645e] text-white hover:bg-[#1e4b47] transition duration-300 font-medium text-xl py-4 px-8 rounded-[20px] flex-1 shadow-[0px_4px_10px_rgba(0,0,0,0.15)] flex justify-center items-center active:scale-95"
-              >
-                {isLoading ? "Entrando..." : "Entrar"}
-              </button>
-
-              {/* Botão Criar Cadastro */}
-              <button
-                type="button"
-                onClick={navigateToCadastro}
-                className="cursor-pointer border border-[#29645e] bg-[#fafffe] text-[#29645e] hover:bg-[#e0f2f0] transition duration-300 font-medium text-xl py-4 px-6 rounded-[20px] flex-1 shadow-[0px_4px_10px_rgba(0,0,0,0.1)] flex justify-center items-center active:scale-95"
-              >
-                Criar cadastro
-              </button>
-            </div>
-
-            {/* Link Problemas para Logar */}
-            <div className="text-center mt-2">
-              <a 
-                href="#" 
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert("Para redefinir sua senha, entre em contato com o suporte: suporte@studyflow.com");
-                }}
-                className="text-gray-500 hover:text-[#29645e] text-sm transition font-normal underline decoration-dotted"
-              >
-                Problemas para logar?
-              </a>
-            </div>
-
-          </form>
-        </div>
-      </section>
-
-    </div>
+      <p className="mt-8 border-t border-line pt-6 text-center text-sm text-ink-500">
+        Ainda não tem conta?{" "}
+        <Link className="font-semibold text-primary-700 underline-offset-2 hover:underline" href="/cadastro">
+          Criar cadastro
+        </Link>
+      </p>
+    </AuthLayout>
   );
 };
 
 export default Login;
-

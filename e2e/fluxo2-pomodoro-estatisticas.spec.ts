@@ -57,7 +57,7 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
 
     await test.step("5. Ver as horas contabilizadas nas estatísticas", async () => {
       await estatisticas.abrir();
-      await expect(estatisticas.horasDaSemana()).toContainText("0.4H");
+      await expect(estatisticas.horasDaSemana()).toContainText("0,4 h");
       await expect(page.getByText("Engenharia de Software").first()).toBeVisible();
       await evidencia(page, testInfo, "fluxo2-04-estatisticas");
     });
@@ -82,7 +82,7 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
     await expect(timer.relogio()).toHaveText("25:00");
 
     await new EstatisticasPage(page).abrir();
-    await expect(new EstatisticasPage(page).horasDaSemana()).toContainText("0.0H");
+    await expect(new EstatisticasPage(page).horasDaSemana()).toContainText(/(^|\D)0 h/);
   });
 
   test("alternativo: credenciais inválidas bloqueiam o acesso", async ({ page, usuario }, testInfo) => {
