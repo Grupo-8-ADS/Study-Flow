@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#ffffff',
     letterSpacing: -0.5,
     marginBottom: 6,
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 20,
     textAlign: 'center',

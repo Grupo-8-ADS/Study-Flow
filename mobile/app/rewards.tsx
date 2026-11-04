@@ -13,6 +13,7 @@ import {
   HelpCircle,
 } from 'lucide-react-native';
 import { COLORS } from '@studyflow/shared';
+import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../context/AuthContext';
@@ -80,6 +81,7 @@ export default function RewardsScreen() {
 
   return (
     <View style={styles.container}>
+      <Header title="Progresso" section="progresso" showBack />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -217,7 +219,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#ffffff',
     marginBottom: 6,
   },
@@ -244,7 +246,7 @@ const styles = StyleSheet.create({
   },
   progressPercent: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#ffffff',
   },
   progressBarBg: {
@@ -285,7 +287,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 12,
   },

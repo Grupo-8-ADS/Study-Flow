@@ -100,6 +100,6 @@ const styles = StyleSheet.create({
   levelText: {
     color: '#ffffff',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

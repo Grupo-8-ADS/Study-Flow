@@ -8,7 +8,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+
+import { useIrPara } from '../lib/navigation';
 import {
   Plus,
   Activity as ActivityIcon,
@@ -29,6 +30,7 @@ import {
   toDatabaseDate,
   formatDisplayDate,
 } from '@studyflow/shared';
+import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -38,7 +40,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function AtividadeScreen() {
-  const router = useRouter();
+  const irPara = useIrPara();
   const { session } = useAuth();
   const [atividades, setAtividades] = useState<ItemCronograma[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,13 +242,14 @@ export default function AtividadeScreen() {
 
   return (
     <View style={styles.container}>
+      <Header title="Agenda" section="agenda" showBack />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.pageTitle}>Atividades & Rotina</Text>
+            <Text style={styles.pageTitle}>Atividades</Text>
             <Text style={styles.pageSubtitle}>
               {atividades.length} {atividades.length === 1 ? 'compromisso registrado' : 'compromissos registrados'}
             </Text>
@@ -257,7 +260,7 @@ export default function AtividadeScreen() {
               title="Calendário"
               variant="outline"
               size="sm"
-              onPress={() => router.push('/(tabs)/calendario')}
+              onPress={() => irPara('/calendario')}
               icon={<Calendar size={15} color={COLORS.primary} />}
             />
             <Button
@@ -472,7 +475,7 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   pageSubtitle: {
@@ -540,7 +543,7 @@ const styles = StyleSheet.create({
   },
   viewDetailTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 12,
   },

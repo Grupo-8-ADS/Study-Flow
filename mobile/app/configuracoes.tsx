@@ -20,6 +20,7 @@ import {
   User,
 } from 'lucide-react-native';
 import { COLORS } from '@studyflow/shared';
+import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
 import { Modal } from '../components/ui/Modal';
@@ -142,6 +143,7 @@ export default function ConfiguracoesScreen() {
 
   return (
     <View style={styles.container}>
+      <Header title="Conta" section="conta" showBack />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -429,7 +431,7 @@ const styles = StyleSheet.create({
   },
   accountName: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 2,
   },
@@ -445,7 +447,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 10,
   },
@@ -548,7 +550,7 @@ const styles = StyleSheet.create({
   },
   deleteModalTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     textAlign: 'center',
     marginBottom: 8,

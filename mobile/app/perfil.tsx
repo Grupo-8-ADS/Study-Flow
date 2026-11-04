@@ -19,14 +19,14 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { COLORS } from '@studyflow/shared';
-import { Header } from '../../components/layout/Header';
-import { Card } from '../../components/ui/Card';
-import { Avatar } from '../../components/ui/Avatar';
-import { Input } from '../../components/ui/Input';
-import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { Header } from '../components/layout/Header';
+import { Card } from '../components/ui/Card';
+import { Avatar } from '../components/ui/Avatar';
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export default function PerfilScreen() {
   const router = useRouter();
@@ -249,7 +249,7 @@ export default function PerfilScreen() {
 
   return (
     <View style={styles.container}>
-      <Header title="Meu Perfil" />
+      <Header title="Conta" section="conta" showBack />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -541,7 +541,7 @@ const styles = StyleSheet.create({
   },
   profileName: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 2,
   },
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
   },
   statPillValue: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginTop: 1,
   },
@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
   },
   cardSectionTitle: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 16,
   },

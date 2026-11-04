@@ -157,7 +157,7 @@ export default function EstatisticasScreen() {
 
   return (
     <View style={styles.container}>
-      <Header title="Estatísticas & Métricas" />
+      <Header title="Progresso" section="progresso" />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 12,
   },
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   },
   ringValue: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
   },
   ringSub: {
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
   },
   levelNumber: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: COLORS.gold,
   },
   levelXpText: {
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   },
   levelTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 2,
   },
@@ -586,13 +586,13 @@ const styles = StyleSheet.create({
   },
   pointsText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.gold,
     marginLeft: 2,
   },
   modalCategoryTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
     marginBottom: 10,
   },
