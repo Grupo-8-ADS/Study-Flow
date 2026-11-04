@@ -570,7 +570,7 @@ function CalendarioConteudo() {
 
               return (
                 <button
-                  aria-label={`${day} de ${monthNames[month]}${dayEvents.length ? `, ${dayEvents.length} ${dayEvents.length === 1 ? "compromisso" : "compromissos"}` : ""}`}
+                  aria-label={`${day} de ${monthNames[month]}${dayEvents.length ? `: ${dayEvents.map((e) => e.title).join(", ")}` : ""}`}
                   aria-pressed={isSelected}
                   className={`flex h-14 flex-col items-center gap-1 rounded-[10px] p-1 text-left transition-colors sm:h-20 sm:items-stretch sm:p-1.5 lg:h-24 ${
                     isSelected ? "bg-primary-50 ring-2 ring-inset ring-primary-500" : "hover:bg-ink-50"
