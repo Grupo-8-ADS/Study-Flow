@@ -100,14 +100,14 @@ export function NotificationBell() {
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="Notificações"
-        className="relative cursor-pointer rounded-full border border-gray-100 bg-white p-2.5 text-gray-600 shadow-sm transition hover:bg-[#eaf6f4] hover:text-[#29645e]"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900"
         onClick={toggle}
         type="button"
       >
-        <Bell size={20} />
+        <Bell size={19} />
         {unread > 0 ? (
           <span
-            className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white"
+            className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white ring-2 ring-surface"
             data-testid="notification-badge"
           >
             {unread > 9 ? "9+" : unread}
@@ -118,14 +118,14 @@ export function NotificationBell() {
       {open ? (
         <div
           aria-label="Notificações"
-          className="absolute right-0 z-50 mt-3 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-100 bg-white p-4 shadow-xl"
+          className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface p-4 shadow-overlay"
           role="dialog"
         >
-          <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
-            <p className="text-sm font-semibold text-gray-700">Notificações</p>
+          <div className="flex items-center justify-between gap-2 border-b border-line pb-2">
+            <p className="text-sm font-semibold text-ink-900">Notificações</p>
             {unread > 0 ? (
               <button
-                className="flex cursor-pointer items-center gap-1 text-xs font-medium text-[#29645e] hover:underline"
+                className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
                 onClick={markAllAsRead}
                 type="button"
               >
@@ -136,27 +136,27 @@ export function NotificationBell() {
           </div>
 
           <div className="mt-2 flex max-h-72 flex-col overflow-y-auto">
-            {error ? <p className="py-3 text-center text-xs text-red-500">{error}</p> : null}
+            {error ? <p className="py-3 text-center text-xs text-danger">{error}</p> : null}
             {!error && items.length === 0 ? (
-              <p className="py-4 text-center text-xs text-gray-400">Nenhuma notificação por enquanto</p>
+              <p className="py-4 text-center text-xs text-ink-500">Nenhuma notificação por enquanto</p>
             ) : null}
             {items.map((item) => (
               <div
-                className={`flex items-start gap-2 border-b border-gray-50 py-2 text-xs leading-relaxed last:border-0 ${
-                  item.read_at ? "text-gray-400" : "text-gray-700"
+                className={`flex items-start gap-2 border-b border-line py-2 text-xs leading-relaxed last:border-0 ${
+                  item.read_at ? "text-ink-500" : "text-ink-800"
                 }`}
                 key={item.id}
               >
                 <div className="flex-1">
                   <p className={item.read_at ? "" : "font-medium"}>{item.mensagem}</p>
-                  <p className="mt-0.5 text-[10px] text-gray-400">
+                  <p className="mt-0.5 text-[11px] text-ink-500">
                     {new Date(item.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                   </p>
                 </div>
                 {!item.read_at ? (
                   <button
                     aria-label="Marcar como lida"
-                    className="shrink-0 cursor-pointer rounded-full p-1 text-[#29645e] hover:bg-[#eaf6f4]"
+                    className="shrink-0 rounded-full p-1.5 text-primary-700 hover:bg-primary-50"
                     onClick={() => markAsRead(item.id)}
                     type="button"
                   >

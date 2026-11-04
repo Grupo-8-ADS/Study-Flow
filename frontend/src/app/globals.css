@@ -1,55 +1,138 @@
-@import url("https://fonts.googleapis.com/css2?family=Rubik+Bubbles:ital,wght@0,400&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400&display=swap");
 @import "tailwindcss";
 
-body {
-  @apply leading-[normal] m-0;
-}
+/*
+ * Sistema de design do Study Flow.
+ * Cores, tipografia, raios e sombras ficam centralizados aqui como tokens do Tailwind v4:
+ * use `bg-primary`, `text-ink-700`, `rounded-card`, `shadow-card` etc. em vez de valores soltos.
+ */
+@theme {
+  /* Marca (verde Study Flow). O tom principal é o primary-700 (#29645e). */
+  --color-primary-50: #f2faf8;
+  --color-primary-100: #e3f3f0;
+  --color-primary-200: #c5e5df;
+  --color-primary-300: #97cdc3;
+  --color-primary-400: #5fae9f;
+  --color-primary-500: #348e83;
+  --color-primary-600: #2d7770;
+  --color-primary-700: #29645e;
+  --color-primary-800: #1f4d48;
+  --color-primary-900: #173a37;
+  --color-primary: #29645e;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Texto e neutros levemente esverdeados (contraste AA sobre branco a partir do ink-500). */
+  --color-ink-900: #12201e;
+  --color-ink-800: #1f2e2c;
+  --color-ink-700: #344542;
+  --color-ink-600: #4a5b58;
+  --color-ink-500: #5c6d6a;
+  --color-ink-400: #8a9996;
+  --color-ink-300: #b9c5c3;
+  --color-ink-200: #dde6e4;
+  --color-ink-100: #edf2f1;
+  --color-ink-50: #f6f9f9;
+
+  /* Superfícies */
+  --color-canvas: #f5f9f8;
+  --color-surface: #ffffff;
+  --color-line: #e3ebe9;
+
+  /* Estados (mesmas famílias do app mobile) */
+  --color-success: #0f8a5f;
+  --color-success-soft: #e7f6ef;
+  --color-warning: #b45309;
+  --color-warning-soft: #fdf3e2;
+  --color-danger: #c2362f;
+  --color-danger-soft: #fdecea;
+  --color-info: #2563eb;
+  --color-info-soft: #e8f0fe;
+  --color-gold: #b57d0b;
+  --color-gold-soft: #fff4d6;
+
+  /* Raios */
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+
+  /* Sombras */
+  --shadow-card: 0 1px 2px rgb(18 32 30 / 0.04), 0 1px 3px rgb(18 32 30 / 0.04);
+  --shadow-raised: 0 4px 12px rgb(18 32 30 / 0.06), 0 1px 3px rgb(18 32 30 / 0.05);
+  --shadow-overlay: 0 24px 48px -12px rgb(18 32 30 / 0.25);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-brand: var(--font-rubik-bubbles), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-ink-800);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--color-ink-900);
+    letter-spacing: -0.01em;
+  }
+
+  input,
+  select,
+  textarea {
+    color: var(--color-ink-800);
+    background-color: #ffffff;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-ink-400);
+    opacity: 1;
+  }
+
+  input[type="date"]:invalid,
+  input[type="time"]:invalid {
+    color: var(--color-ink-500);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Foco sempre visível para quem navega pelo teclado. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-input,
-select,
-textarea {
-  color: #1f2937;
-  background-color: #ffffff;
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: #6b7280;
-  opacity: 1;
-}
-
-input[type="date"],
-input[type="time"] {
-  color: #1f2937;
-}
-
-input[type="date"]:invalid,
-input[type="time"]:invalid {
-  color: #6b7280;
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
