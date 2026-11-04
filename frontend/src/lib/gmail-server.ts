@@ -62,13 +62,32 @@ export async function usuarioDaRequisicao(request: Request): Promise<string | nu
 const assinatura = (dados: string, segredo: string) =>
   createHmac("sha256", segredo).update(dados).digest("base64url");
 
-/** Estado do OAuth: amarra o callback ao usuário que iniciou a conexão, com validade curta. */
-export function assinarEstado(userId: string, segredo: string, agora = Date.now()): string {
-  const dados = Buffer.from(JSON.stringify({ u: userId, e: agora + ESTADO_VALIDADE_MS })).toString("base64url");
+/** De onde a conexão foi iniciada: o site (padrão) ou o app mobile. */
+export type OrigemConexao = "web" | "app";
+
+/** Endereço do app (scheme do Expo) para onde o callback devolve quem conectou pelo celular. */
+export const APP_RETORNO_GMAIL = "studyflow://integracoes";
+
+/**
+ * Estado do OAuth: amarra o callback ao usuário que iniciou a conexão, com validade curta.
+ * A origem vai dentro do estado assinado, então não pode ser trocada por quem intercepta o link.
+ */
+export function assinarEstado(userId: string, segredo: string, agora = Date.now(), origem: OrigemConexao = "web"): string {
+  const conteudo = origem === "app" ? { u: userId, e: agora + ESTADO_VALIDADE_MS, o: "app" } : { u: userId, e: agora + ESTADO_VALIDADE_MS };
+  const dados = Buffer.from(JSON.stringify(conteudo)).toString("base64url");
   return `${dados}.${assinatura(dados, segredo)}`;
 }
 
 export function verificarEstado(estado: string, segredo: string, agora = Date.now()): string | null {
+  return lerEstado(estado, segredo, agora)?.userId ?? null;
+}
+
+/** Valida o estado e devolve o usuário e a origem da conexão (null se inválido ou expirado). */
+export function lerEstado(
+  estado: string,
+  segredo: string,
+  agora = Date.now(),
+): { userId: string; origem: OrigemConexao } | null {
   const [dados, recebida] = estado.split(".");
   if (!dados || !recebida) return null;
   const recebidaBytes = Buffer.from(recebida);
@@ -77,8 +96,9 @@ export function verificarEstado(estado: string, segredo: string, agora = Date.no
     return null;
   }
   try {
-    const { u, e } = JSON.parse(Buffer.from(dados, "base64url").toString("utf8")) as { u?: string; e?: number };
-    return typeof u === "string" && typeof e === "number" && e > agora ? u : null;
+    const { u, e, o } = JSON.parse(Buffer.from(dados, "base64url").toString("utf8")) as { u?: string; e?: number; o?: string };
+    if (typeof u !== "string" || typeof e !== "number" || e <= agora) return null;
+    return { userId: u, origem: o === "app" ? "app" : "web" };
   } catch {
     return null;
   }

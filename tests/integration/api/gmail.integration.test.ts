@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import { POST as sincronizar } from "@/app/api/gmail/sincronizar/route";
 import { POST as conectar } from "@/app/api/gmail/conectar/route";
 import { GET as callback } from "@/app/api/gmail/callback/route";
-import { assinarEstado, verificarEstado } from "@/lib/gmail-server";
+import { assinarEstado, lerEstado, verificarEstado } from "@/lib/gmail-server";
 
 /**
  * Integração com API externa (RF012): as rotas reais do Next conversam por HTTP com o
@@ -309,6 +309,28 @@ describe("Integração com API externa: Gmail (RF012)", () => {
 
       expect(resposta.headers.get("location")).toBe(`http://localhost:3000/integracoes?gmail=${resultado}`);
       expect(banco.sinc_gmail_tokens).toEqual([]);
+    });
+
+    it("conectar com ?origem=app deve marcar a origem no estado assinado", async () => {
+      const resposta = await conectar(requisicao("http://localhost:3000/api/gmail/conectar?origem=app"));
+      const url = new URL(((await resposta.json()) as { url: string }).url);
+
+      expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3000/api/gmail/callback");
+      expect(lerEstado(url.searchParams.get("state")!, ENV.GOOGLE_CLIENT_SECRET)).toEqual({ userId: USER_ID, origem: "app" });
+    });
+
+    it.each([
+      ["sucesso", "code=codigo-valido", "conectado"],
+      ["cancelamento", "error=access_denied", "cancelado"],
+      ["código recusado", "code=codigo-invalido", "erro"],
+    ])("callback de conexão iniciada no app deve voltar ao app em caso de %s", async (_caso, query, resultado) => {
+      banco.sinc_gmail_tokens = [];
+      banco.sinc_gmail = [];
+      const estado = assinarEstado(USER_ID, ENV.GOOGLE_CLIENT_SECRET, Date.now(), "app");
+
+      const resposta = await callback(new Request(`http://localhost:3000/api/gmail/callback?${query}&state=${estado}`));
+
+      expect(resposta.headers.get("location")).toBe(`studyflow://integracoes?gmail=${resultado}`);
     });
 
     it("estado expirado ou assinado com outro segredo deve ser rejeitado", () => {

@@ -1,17 +1,26 @@
 import { NextResponse } from "next/server";
-import { clienteServico, emailDaConta, lerConfigGmail, trocarCodigo, verificarEstado } from "@/lib/gmail-server";
+import { APP_RETORNO_GMAIL, clienteServico, emailDaConta, lerConfigGmail, lerEstado, trocarCodigo } from "@/lib/gmail-server";
 
-/** RF012: retorno do consentimento do Google. Guarda o refresh token e volta para /integracoes. */
+/**
+ * RF012: retorno do consentimento do Google. Guarda o refresh token e volta para /integracoes
+ * no site, ou para o app (studyflow://integracoes) quando a conexão foi iniciada pelo celular.
+ */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const voltar = (resultado: string) => NextResponse.redirect(new URL(`/integracoes?gmail=${resultado}`, url.origin));
-
   const config = lerConfigGmail();
+  const estado = config ? lerEstado(url.searchParams.get("state") ?? "", config.clientSecret) : null;
+  const voltar = (resultado: string) =>
+    NextResponse.redirect(
+      estado?.origem === "app"
+        ? `${APP_RETORNO_GMAIL}?gmail=${resultado}`
+        : new URL(`/integracoes?gmail=${resultado}`, url.origin),
+    );
+
   if (!config) return voltar("nao-configurado");
   if (url.searchParams.get("error")) return voltar("cancelado");
 
   const code = url.searchParams.get("code");
-  const userId = verificarEstado(url.searchParams.get("state") ?? "", config.clientSecret);
+  const userId = estado?.userId;
   if (!code || !userId) return voltar("erro");
 
   try {
