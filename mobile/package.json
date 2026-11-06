@@ -47,5 +47,18 @@
     "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo",
+        "expo-asset",
+        "expo-constants",
+        "expo-image-picker",
+        "expo-notifications",
+        "expo-router",
+        "expo-splash-screen"
+      ]
+    }
+  }
 }
