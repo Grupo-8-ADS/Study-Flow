@@ -38,7 +38,7 @@ export const SECTIONS: Array<{ label: string; tabs: SectionTab[] }> = [
     label: "Agenda",
     tabs: [
       { label: "Calendário", href: "/calendario" },
-      { label: "Atividades", href: "/atividade" },
+      { label: "Compromissos", href: "/atividade" },
       { label: "Rotina e cronograma", href: "/rotina" },
     ],
   },

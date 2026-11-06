@@ -67,14 +67,7 @@ const TimerDashboard: NextPage = () => {
         return;
       }
 
-      const [{ data }, { data: profile }] = await Promise.all([
-        supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at"),
-        supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
-      ]);
-
-      if (profile?.avatar_url) {
-        setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
-      }
+      const { data } = await supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at");
 
       const remoteDisciplines = (data ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
       setDisciplines(remoteDisciplines);
@@ -239,7 +232,6 @@ const TimerDashboard: NextPage = () => {
   return (
     <>
       <PageHeader
-        description="Use ciclos Pomodoro: 25 minutos de foco e pausas curtas. Ao terminar um ciclo de foco, a sessão entra nas suas estatísticas."
         title="Timer"
       />
 
@@ -310,7 +302,7 @@ const TimerDashboard: NextPage = () => {
 
         <div className="flex w-full flex-col gap-6 lg:col-span-5">
           <Card>
-            <CardHeader icon={<BookOpen size={18} />} title="Disciplina" description="A sessão será registrada nesta disciplina." />
+            <CardHeader icon={<BookOpen size={18} />} title="Disciplina" />
             <Select aria-label="Disciplina da sessão" onChange={(e) => setSelectedDiscipline(e.target.value)} value={selectedDiscipline}>
               <option value="">Sem disciplina</option>
               {disciplines.map((discipline) => (

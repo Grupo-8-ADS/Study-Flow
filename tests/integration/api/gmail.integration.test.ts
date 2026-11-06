@@ -161,8 +161,8 @@ describe("Integração com API externa: Gmail (RF012)", () => {
 
       const criados = banco.itens_cronograma.filter((i) => i.origem_externa_id !== "gmail:m4");
       expect(criados).toEqual([
-        expect.objectContaining({ user_id: USER_ID, nome: "Prova de Cálculo dia 12/11", tipo: "prova", data_inicio: "2026-11-12T09:00:00", origem_externa_id: "gmail:m1" }),
-        expect.objectContaining({ user_id: USER_ID, nome: "Entrega do trabalho de Redes", tipo: "trabalho", data_inicio: "2026-11-20T09:00:00", origem_externa_id: "gmail:m2" }),
+        expect.objectContaining({ user_id: USER_ID, nome: "Prova de Cálculo dia 12/11", tipo: "prova", data_inicio: "2026-11-12T00:00:00-03:00", origem_externa_id: "gmail:m1" }),
+        expect.objectContaining({ user_id: USER_ID, nome: "Entrega do trabalho de Redes", tipo: "trabalho", data_inicio: "2026-11-20T00:00:00-03:00", origem_externa_id: "gmail:m2" }),
       ]);
       expect(criados[0].descricao).toBe("Importado do Gmail (aluno@gmail.com)");
     });

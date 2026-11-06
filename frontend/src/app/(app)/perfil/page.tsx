@@ -243,6 +243,8 @@ export default function PerfilPage() {
           })
         );
         localStorage.setItem(`studyflow_profile_${profile.email}`, JSON.stringify(profile));
+        // Avisa o shell (menu lateral e avatar) para reler nome e foto.
+        window.dispatchEvent(new Event("studyflow:sessao"));
       }
 
       setSaveSuccess(true);
@@ -333,7 +335,7 @@ export default function PerfilPage() {
 
   return (
     <>
-      <PageHeader description="Como você aparece no Study Flow e os dados de acesso da conta." title="Perfil" />
+      <PageHeader title="Perfil" />
 
       <div className="grid max-w-4xl gap-6">
         <Card className="overflow-hidden" padded={false}>
@@ -401,7 +403,6 @@ export default function PerfilPage() {
 
         <Card aria-labelledby="titulo-dados">
           <CardHeader
-            description="Clique no lápis para editar. As alterações só valem depois de salvar."
             icon={<UserRound size={18} />}
             id="titulo-dados"
             title="Dados pessoais"

@@ -17,7 +17,7 @@ test.describe("Fluxo 3: e-mails do Gmail viram itens do cronograma", () => {
     const login = new LoginPage(page);
     await login.abrir();
     await login.entrar(usuario.email, usuario.senha);
-    await expect(page).toHaveURL(/\/timer/);
+    await expect(page).toHaveURL(/\/dashboard/);
   });
 
   test("caminho feliz: prova encontrada no Gmail aparece no calendário", async ({ page }, testInfo) => {

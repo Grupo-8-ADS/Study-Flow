@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -20,28 +19,30 @@ import {
   Activity,
   Gift,
   Settings,
-  Trash2,
   Check,
 } from 'lucide-react-native';
 import {
   COLORS,
-  ItemCronograma,
+  ROTULO_TIPO,
   StudyDistribution,
-  isValidDateString,
-  applyDateMask,
-  toDatabaseDate,
-  formatDisplayDate,
+  dataStr,
+  formatarData,
+  formatarHorario,
+  hojeStr,
+  intervaloDe,
+  type Compromisso,
+  type CompromissoForm,
 } from '@studyflow/shared';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
-import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { supabase } from '../../lib/supabase';
 import { agendarLembretesDePrazos } from '../../lib/notifications';
+import { CompromissoEditor } from '../../components/CompromissoEditor';
+import { COR_TIPO, alternarConcluido, useAgenda } from '../../lib/agenda';
 
 const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#a855f7'];
 
@@ -50,27 +51,23 @@ export default function DashboardScreen() {
   const { session } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [streak, setStreak] = useState(0);
   const [totalHours, setTotalHours] = useState(0);
-  const [tasks, setTasks] = useState<ItemCronograma[]>([]);
   const [distribution, setDistribution] = useState<StudyDistribution[]>([]);
 
-  // Modal new task state
-  const [modalVisible, setModalVisible] = useState(false);
-  const [taskName, setTaskName] = useState('');
-  const [taskType, setTaskType] = useState('Trabalho');
-  const [taskDueDate, setTaskDueDate] = useState('');
+  const { dados: agenda, carregando: carregandoAgenda, recarregar: recarregarAgenda } = useAgenda();
+  const [editor, setEditor] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
 
   const calculateStreakFromDates = (dates: string[]) => {
-    const uniqueDays = new Set(dates.filter(Boolean).map((d) => d.slice(0, 10)));
+    // Dias no fuso local (as sessões são gravadas como instantes reais).
+    const uniqueDays = new Set(dates.filter(Boolean).map((d) => dataStr(new Date(d))));
     if (uniqueDays.size === 0) return 0;
 
     let count = 0;
     const cursor = new Date();
 
     while (true) {
-      const key = cursor.toISOString().slice(0, 10);
+      const key = dataStr(cursor);
       if (!uniqueDays.has(key)) break;
       count += 1;
       cursor.setDate(cursor.getDate() - 1);
@@ -79,42 +76,23 @@ export default function DashboardScreen() {
     return count;
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const { data: userRes } = await supabase.auth.getUser();
-      if (!userRes.user) {
-        setTasks([]);
+      const { data: sessaoRes } = await supabase.auth.getSession();
+      const uid = sessaoRes.session?.user?.id;
+      if (!uid) {
         setDistribution([]);
         setTotalHours(0);
         setStreak(0);
         return;
       }
 
-      const uid = userRes.user.id;
-
-      // 1. Fetch deadlines/tasks
-      const { data: tasksData } = await supabase
-        .from('itens_cronograma')
-        .select('*')
-        .eq('user_id', uid)
-        .neq('tipo', 'atividade')
-        .order('data_fim', { ascending: true });
-
-      setTasks(tasksData || []);
-
-      // RF010: lembretes locais (inclui atividades, que a lista acima omite)
-      const { data: pendentes } = await supabase
-        .from('itens_cronograma')
-        .select('id, nome, tipo, data_inicio, data_fim, completed')
-        .eq('user_id', uid)
-        .eq('completed', false);
-      void agendarLembretesDePrazos(pendentes || []);
-
       // 2. Fetch study sessions for metrics and distribution
       const { data: sessionsData } = await supabase
         .from('sessoes_estudo')
         .select('duracao_efetiva_min, data_inicio, disciplina_id, disciplinas(nome)')
-        .eq('user_id', uid);
+        .eq('user_id', uid)
+        .eq('status', 'concluida');
 
       if (sessionsData && sessionsData.length > 0) {
         const totalMinutes = sessionsData.reduce((acc, s) => acc + (s.duracao_efetiva_min || 0), 0);
@@ -152,113 +130,40 @@ export default function DashboardScreen() {
     } catch (e) {
       console.error('Error fetching dashboard data:', e);
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Carga assíncrona: os setState ocorrem após o await, não em cascata.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, [session]);
+    void loadData();
+  }, [session, loadData]);
+
+  // RF010: lembretes locais dos prazos pendentes (provas, trabalhos e atividades).
+  useEffect(() => {
+    if (!agenda) return;
+    void agendarLembretesDePrazos(
+      agenda.compromissos
+        .filter((c) => !c.concluido && c.tipo !== 'estudo')
+        .map((c) => ({ id: c.id, nome: c.titulo, tipo: c.tipo, data_fim: intervaloDe(c).fim.toISOString(), completed: c.concluido })),
+    );
+  }, [agenda]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    void recarregarAgenda();
+    void loadData();
   };
 
-  const handleToggleTask = async (id: string, currentCompleted: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('itens_cronograma')
-        .update({ completed: !currentCompleted })
-        .eq('id', id);
+  // Prazos: provas, trabalhos e atividades pendentes até 14 dias à frente (e os atrasados).
+  const hoje = hojeStr();
+  const agora = new Date();
+  const limite = dataStr(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 14));
+  const tasks = (agenda?.compromissos ?? []).filter((c) => c.tipo !== 'estudo' && !c.concluido && c.data <= limite);
+  const nomeDisciplina = (id: string | null) => agenda?.disciplinas.find((d) => d.id === id)?.nome;
 
-      if (error) {
-        Alert.alert('Erro', 'Não foi possível atualizar o status da tarefa.');
-        return;
-      }
-
-      setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, completed: !currentCompleted } : t))
-      );
-    } catch (e) {
-      console.error('Error toggling task:', e);
-    }
-  };
-
-  const handleDeleteTask = (id: string) => {
-    Alert.alert('Excluir Tarefa', 'Deseja realmente remover esta tarefa?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const { error } = await supabase.from('itens_cronograma').delete().eq('id', id);
-            if (error) {
-              Alert.alert('Erro', 'Não foi possível excluir a tarefa.');
-              return;
-            }
-            setTasks((prev) => prev.filter((t) => t.id !== id));
-          } catch (e) {
-            console.error('Error deleting task:', e);
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleAddTask = async () => {
-    if (!taskName.trim()) {
-      Alert.alert('Atenção', 'Informe o título da tarefa.');
-      return;
-    }
-
-    if (taskDueDate.trim() && !isValidDateString(taskDueDate.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data válida no formato DD/MM/AAAA (ex: 15/09/2026).');
-      return;
-    }
-
-    try {
-      const { data: userRes } = await supabase.auth.getUser();
-      if (!userRes.user) {
-        Alert.alert('Sessão expirada', 'Faça login novamente.');
-        return;
-      }
-
-      const dbDate = toDatabaseDate(taskDueDate.trim());
-
-      const { data, error } = await supabase
-        .from('itens_cronograma')
-        .insert({
-          user_id: userRes.user.id,
-          nome: taskName.trim(),
-          tipo: taskType,
-          prioridade: taskType === 'Prova' ? 2 : taskType === 'Trabalho' ? 1 : 0,
-          data_fim: dbDate ? `${dbDate}T23:59:00` : new Date().toISOString(),
-          completed: false,
-        })
-        .select()
-        .single();
-
-      if (error || !data) {
-        Alert.alert('Erro', error?.message || 'Não foi possível salvar a tarefa.');
-        return;
-      }
-
-      setTasks((prev) => [data, ...prev]);
-      setTaskName('');
-      setTaskDueDate('');
-      setModalVisible(false);
-    } catch (e) {
-      console.error('Error creating task:', e);
-      Alert.alert('Erro', 'Ocorreu um erro ao salvar a tarefa.');
-    }
-  };
-
-  const pendingCount = tasks.filter((t) => !t.completed).length;
+  const pendingCount = tasks.length;
 
   return (
     <View style={styles.container}>
@@ -345,7 +250,7 @@ export default function DashboardScreen() {
             <View style={[styles.shortcutIconCircle, { backgroundColor: COLORS.infoLight }]}>
               <Activity size={22} color={COLORS.info} />
             </View>
-            <Text style={styles.shortcutLabel}>Atividades</Text>
+            <Text style={styles.shortcutLabel}>Compromissos</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -377,81 +282,57 @@ export default function DashboardScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.addButton}
-            onPress={() => setModalVisible(true)}
+            onPress={() => setEditor({ tipo: 'prova' })}
           >
             <Plus size={16} color={COLORS.primary} />
             <Text style={styles.addButtonText}>Nova</Text>
           </TouchableOpacity>
         </View>
 
-        {loading ? (
+        {carregandoAgenda || !agenda ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={COLORS.primary} />
           </View>
         ) : tasks.length === 0 ? (
           <EmptyState
-            title="Nenhum prazo cadastrado"
-            description="Adicione suas próximas provas e entregas para não perder as datas."
-            actionTitle="+ Adicionar Tarefa"
-            onAction={() => setModalVisible(true)}
+            title="Nada para as próximas duas semanas"
+            actionTitle="+ Novo prazo"
+            onAction={() => setEditor({ tipo: 'prova' })}
           />
         ) : (
-          tasks.map((task) => (
-            <Card key={task.id} style={styles.taskCard}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={[
-                  styles.checkbox,
-                  task.completed && styles.checkboxChecked,
-                ]}
-                onPress={() => handleToggleTask(task.id, task.completed)}
-              >
-                {task.completed && <Check size={14} color="#ffffff" />}
-              </TouchableOpacity>
-
-              <View style={styles.taskInfo}>
-                <Text
-                  style={[
-                    styles.taskTitle,
-                    task.completed && styles.taskTitleCompleted,
-                  ]}
+          tasks.map((task) => {
+            const atrasado = task.data < hoje;
+            const disciplina = nomeDisciplina(task.disciplinaId);
+            return (
+              <Card key={task.id} style={styles.taskCard}>
+                <TouchableOpacity
+                  accessibilityLabel={`Marcar ${task.titulo} como feito`}
+                  activeOpacity={0.7}
+                  style={styles.checkbox}
+                  onPress={() => void alternarConcluido(task.id)}
                 >
-                  {task.nome}
-                </Text>
-                {Boolean(task.descricao) && (
-                  <Text style={styles.taskDesc} numberOfLines={2}>
-                    {task.descricao}
-                  </Text>
-                )}
-                <View style={styles.taskMeta}>
-                  <Badge
-                    label={task.tipo}
-                    variant={
-                      task.tipo === 'Prova'
-                        ? 'danger'
-                        : task.tipo === 'Trabalho'
-                        ? 'warning'
-                        : 'primary'
-                    }
-                    size="sm"
-                  />
-                  {Boolean(task.data_fim) && (
-                    <Text style={styles.taskDueDate}>
-                      📅 {formatDisplayDate(task.data_fim)}
-                    </Text>
-                  )}
-                </View>
-              </View>
+                  {task.concluido && <Check size={14} color="#ffffff" />}
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => handleDeleteTask(task.id)}
-                style={styles.deleteTaskButton}
-              >
-                <Trash2 size={16} color={COLORS.danger} />
-              </TouchableOpacity>
-            </Card>
-          ))
+                <TouchableOpacity activeOpacity={0.7} style={styles.taskInfo} onPress={() => setEditor(task)}>
+                  <Text style={styles.taskTitle}>{task.titulo}</Text>
+                  {disciplina ? (
+                    <Text style={styles.taskDesc} numberOfLines={1}>
+                      {disciplina}
+                    </Text>
+                  ) : null}
+                  <View style={styles.taskMeta}>
+                    <Badge label={ROTULO_TIPO[task.tipo]} variant={COR_TIPO[task.tipo].badge} size="sm" />
+                    <Text style={[styles.taskDueDate, atrasado && { color: COLORS.danger }]}>
+                      {task.data === hoje ? 'Hoje' : formatarData(task.data, true)}
+                      {task.horaInicio ? ` · ${formatarHorario(task)}` : ''}
+                      {atrasado ? ' · atrasado' : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </Card>
+            );
+          })
         )}
 
         {/* Study Distribution Section */}
@@ -485,57 +366,7 @@ export default function DashboardScreen() {
         )}
       </ScrollView>
 
-      {/* Add Task Modal */}
-      <Modal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        title="Adicionar Novo Prazo"
-        variant="bottom"
-      >
-        <Input
-          label="Título da Tarefa ou Entrega"
-          placeholder="ex: Prova de Estruturas de Dados"
-          value={taskName}
-          onChangeText={setTaskName}
-        />
-
-        <Text style={styles.modalFieldLabel}>Tipo</Text>
-        <View style={styles.typeSelector}>
-          {['Trabalho', 'Prova', 'Estudo'].map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={[
-                styles.typeOption,
-                taskType === type && styles.typeOptionActive,
-              ]}
-              onPress={() => setTaskType(type)}
-            >
-              <Text
-                style={[
-                  styles.typeOptionText,
-                  taskType === type && styles.typeOptionTextActive,
-                ]}
-              >
-                {type}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Input
-          label="Data Prevista (DD/MM/AAAA)"
-          placeholder="ex: 15/09/2026"
-          value={taskDueDate}
-          onChangeText={(val) => setTaskDueDate(applyDateMask(val))}
-        />
-
-        <Button
-          title="Salvar Tarefa"
-          onPress={handleAddTask}
-          size="lg"
-          style={{ marginTop: 12 }}
-        />
-      </Modal>
+      <CompromissoEditor visible={Boolean(editor)} disciplinas={agenda?.disciplinas ?? []} inicial={editor} onClose={() => setEditor(null)} />
     </View>
   );
 }

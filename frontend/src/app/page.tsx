@@ -33,7 +33,7 @@ interface SessionUser {
 /**
  * Componente da página de Login.
  * Gerencia o formulário de credenciais, tratamento de erros, lembrança de sessão
- * e redirecionamento para o dashboard/timer.
+ * e redirecionamento para o Início (dashboard).
  */
 const Login: NextPage = () => {
   const router = useRouter();
@@ -48,8 +48,6 @@ const Login: NextPage = () => {
   /** Estado do checkbox "Me manter conectado" para estender a sessão */
   const [rememberMe, setRememberMe] = useState(false);
 
-  /** Exibe a orientação de "Problemas para logar?" */
-  const [showHelp, setShowHelp] = useState(false);
 
   /** Estado indicador de erro de autenticação (credenciais inválidas ou campos vazios) */
   const [error, setError] = useState("");
@@ -95,12 +93,12 @@ const Login: NextPage = () => {
 
   /**
    * Efeito de inicialização para verificar se o usuário já possui uma sessão ativa.
-   * Caso sim, redireciona-o automaticamente para a tela do Timer.
+   * Caso sim, redireciona-o automaticamente para o Início.
    */
   useEffect(() => {
     const session = localStorage.getItem("studyflow_session");
     if (session) {
-      router.push("/timer");
+      router.replace("/dashboard");
     }
   }, [router]);
 
@@ -163,7 +161,7 @@ const Login: NextPage = () => {
           rememberMe,
         })
       );
-      router.push("/timer");
+      router.replace("/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
       setError(message);
@@ -173,7 +171,7 @@ const Login: NextPage = () => {
   }, [email, senha, rememberMe, resolveLoginEmail, router]);
 
   return (
-    <AuthLayout description="Entre para continuar de onde parou." title="Entrar">
+    <AuthLayout title="Entrar">
       <form className="flex flex-col gap-4" noValidate onSubmit={handleLogin}>
         {error ? <Alert tone="danger">{error}</Alert> : null}
 
@@ -210,19 +208,10 @@ const Login: NextPage = () => {
             />
             Me manter conectado
           </label>
-          <button
-            aria-expanded={showHelp}
-            className="text-sm font-medium text-primary-700 underline-offset-2 hover:underline"
-            onClick={() => setShowHelp((current) => !current)}
-            type="button"
-          >
-            Problemas para logar?
-          </button>
+          <Link className="text-sm font-medium text-primary-700 underline-offset-2 hover:underline" href="/recuperar-senha">
+            Esqueci minha senha
+          </Link>
         </div>
-
-        {showHelp ? (
-          <Alert tone="info">Para redefinir sua senha, entre em contato com o suporte: suporte@studyflow.com</Alert>
-        ) : null}
 
         <Button className="mt-2 w-full" disabled={isLoading} size="lg" type="submit">
           {isLoading ? "Entrando..." : "Entrar"}

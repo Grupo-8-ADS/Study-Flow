@@ -67,8 +67,9 @@ export async function POST(request: Request) {
       user_id: userId,
       nome: e.nome,
       tipo: e.tipo,
-      data_inicio: `${e.data}T09:00:00`,
-      data_fim: `${e.data}T10:00:00`,
+      // Prazo do e-mail vira compromisso de dia inteiro no horário de Brasília (sem horário de verão desde 2019).
+      data_inicio: `${e.data}T00:00:00-03:00`,
+      data_fim: `${e.data}T23:59:00-03:00`,
       descricao: `Importado do Gmail${status?.email_sinc ? ` (${status.email_sinc})` : ""}`,
       origem_externa_id: e.origemExternaId,
     }));

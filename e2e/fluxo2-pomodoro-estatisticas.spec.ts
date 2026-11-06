@@ -19,7 +19,7 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
     await test.step("1. Login com usuário criado via API (data seeding)", async () => {
       await login.abrir();
       await login.entrar(usuario.email, usuario.senha);
-      await expect(page).toHaveURL(/\/timer/);
+      await expect(page).toHaveURL(/\/dashboard/);
       await evidencia(page, testInfo, "fluxo2-01-login");
     });
 
@@ -70,7 +70,7 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
 
     await login.abrir();
     await login.entrar(usuario.email, usuario.senha);
-    await expect(page).toHaveURL(/\/timer/);
+    await expect(page).toHaveURL(/\/dashboard/);
 
     await page.clock.install();
     await timer.abrir();

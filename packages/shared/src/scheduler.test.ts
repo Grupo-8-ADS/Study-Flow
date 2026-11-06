@@ -587,4 +587,51 @@ describe('scheduler.ts - Suíte de Testes Unitários', () => {
       expect(e2.code).toBe('ROTINA_VAZIA');
     });
   });
+
+  describe('gerarCronograma - horários ocupados e passado', () => {
+    it('gerarCronograma_quandoBlocoBateComCompromisso_deveDescartarSoEsseBloco', () => {
+      // Arrange (19:00-21:00 gera 19:00 e 20:00; aula 20:15-21:00 ocupa o segundo)
+      const rotina = [slot(1, '19:00', '21:00')];
+      const ocupados = [{ inicio: new Date(2026, 9, 26, 20, 15), fim: new Date(2026, 9, 26, 21, 0) }];
+
+      // Act
+      const blocos = gerarCronograma({ disciplinas: [disc('A')], rotina, dataInicio: SEGUNDA, semanas: 1, ocupados });
+
+      // Assert
+      expect(blocos).toHaveLength(1);
+      expect(hhmm(blocos[0].data_inicio)).toBe('19:00');
+    });
+
+    it('gerarCronograma_quandoOcupadoApenasEncostaNoBloco_naoDeveDescartar', () => {
+      const rotina = [slot(1, '19:00', '19:50')];
+      const ocupados = [{ inicio: new Date(2026, 9, 26, 18, 0), fim: new Date(2026, 9, 26, 19, 0) }];
+      const blocos = gerarCronograma({ disciplinas: [disc('A')], rotina, dataInicio: SEGUNDA, semanas: 1, ocupados });
+      expect(blocos).toHaveLength(1);
+    });
+
+    it('gerarCronograma_quandoNaoAntesDeInformado_naoDeveAgendarNoPassado', () => {
+      // Arrange (segunda 19:00 e 20:00; agora = segunda 19:30)
+      const rotina = [slot(1, '19:00', '21:00')];
+
+      // Act
+      const blocos = gerarCronograma({
+        disciplinas: [disc('A')],
+        rotina,
+        dataInicio: SEGUNDA,
+        semanas: 1,
+        naoAntesDe: new Date(2026, 9, 26, 19, 30),
+      });
+
+      // Assert
+      expect(blocos).toHaveLength(1);
+      expect(hhmm(blocos[0].data_inicio)).toBe('20:00');
+    });
+
+    it('gerarCronograma_quandoTodosOsBlocosOcupados_deveLancarSemBlocos', () => {
+      const rotina = [slot(1, '19:00', '19:50')];
+      const ocupados = [{ inicio: new Date(2026, 9, 26, 0, 0), fim: new Date(2026, 9, 27, 0, 0) }];
+      const erro = capturar(() => gerarCronograma({ disciplinas: [disc('A')], rotina, dataInicio: SEGUNDA, semanas: 1, ocupados }));
+      expect(erro.code).toBe('SEM_BLOCOS');
+    });
+  });
 });

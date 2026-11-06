@@ -1,584 +1,157 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-
-import { useIrPara } from '../lib/navigation';
-import {
-  Plus,
-  Activity as ActivityIcon,
-  Clock,
-  Calendar,
-  Edit2,
-  Trash2,
-  FileText,
-} from 'lucide-react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { CheckCircle2, Circle, ListChecks } from 'lucide-react-native';
 import {
   COLORS,
-  ItemCronograma,
-  isValidDateString,
-  isValidTimeString,
-  isTimeIntervalValid,
-  applyDateMask,
-  applyTimeMask,
-  toDatabaseDate,
-  formatDisplayDate,
+  ROTULO_TIPO,
+  formatarData,
+  formatarHorario,
+  hojeStr,
+  type Compromisso,
+  type CompromissoForm,
+  type TipoCompromisso,
 } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
-import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { Chip, CompromissoEditor } from '../components/CompromissoEditor';
+import { COR_TIPO, alternarConcluido, useAgenda } from '../lib/agenda';
 
-export default function AtividadeScreen() {
-  const irPara = useIrPara();
-  const { session } = useAuth();
-  const [atividades, setAtividades] = useState<ItemCronograma[]>([]);
-  const [loading, setLoading] = useState(true);
+type Visao = 'proximos' | 'atrasados' | 'concluidos' | 'todos';
+const VISOES: Array<[Visao, string]> = [
+  ['proximos', 'Próximos'],
+  ['atrasados', 'Atrasados'],
+  ['concluidos', 'Concluídos'],
+  ['todos', 'Todos'],
+];
+const TIPOS: TipoCompromisso[] = ['prova', 'trabalho', 'atividade', 'estudo'];
 
-  // Modal Create/Edit State
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [nome, setNome] = useState('');
-  const [dataAtividade, setDataAtividade] = useState(new Date().toISOString().slice(0, 10));
-  const [horarioInicio, setHorarioInicio] = useState('09:00');
-  const [horarioFim, setHorarioFim] = useState('10:00');
-  const [anotacoes, setAnotacoes] = useState('');
+/** Lista de compromissos (mesmos dados e formulário do calendário). */
+export default function CompromissosScreen() {
+  const { dados, carregando, atualizando, recarregar } = useAgenda();
+  const [visao, setVisao] = useState<Visao>('proximos');
+  const [tipos, setTipos] = useState<Set<TipoCompromisso>>(() => new Set<TipoCompromisso>(['prova', 'trabalho', 'atividade']));
+  const [editor, setEditor] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
 
-  // View Details Modal State
-  const [selectedAtividade, setSelectedAtividade] = useState<ItemCronograma | null>(null);
+  const hoje = hojeStr();
+  const lista = (dados?.compromissos ?? []).filter((c) => {
+    if (!tipos.has(c.tipo)) return false;
+    if (visao === 'proximos') return !c.concluido && c.data >= hoje;
+    if (visao === 'atrasados') return !c.concluido && c.data < hoje;
+    if (visao === 'concluidos') return c.concluido;
+    return true;
+  });
+  if (visao === 'atrasados' || visao === 'concluidos') lista.reverse();
+  const grupos = new Map<string, Compromisso[]>();
+  lista.forEach((c) => grupos.set(c.data, [...(grupos.get(c.data) ?? []), c]));
 
-  const loadAtividades = async () => {
-    setLoading(true);
-    try {
-      const { data: userRes } = await supabase.auth.getUser();
-      if (!userRes.user) {
-        setAtividades([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('itens_cronograma')
-        .select('*')
-        .eq('user_id', userRes.user.id)
-        .eq('tipo', 'atividade')
-        .order('data_inicio', { ascending: true });
-
-      if (error) {
-        console.error('Error loading atividades:', error);
-      } else {
-        setAtividades(data || []);
-      }
-    } catch (e) {
-      console.error('Failed to load atividades:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    // Carga assíncrona: os setState ocorrem após o await, não em cascata.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadAtividades();
-  }, [session]);
-
-  const openCreateModal = () => {
-    setEditingId(null);
-    setNome('');
-    const now = new Date();
-    setDataAtividade(`${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`);
-    setHorarioInicio('09:00');
-    setHorarioFim('10:00');
-    setAnotacoes('');
-    setModalVisible(true);
-  };
-
-  const openEditModal = (a: ItemCronograma) => {
-    setEditingId(a.id);
-    setNome(a.nome);
-    setDataAtividade(formatDisplayDate(a.data_inicio));
-    setHorarioInicio(a.data_inicio?.slice(11, 16) || '09:00');
-    setHorarioFim(a.data_fim?.slice(11, 16) || '10:00');
-    setAnotacoes(a.descricao || '');
-    if (selectedAtividade) setSelectedAtividade(null);
-    setModalVisible(true);
-  };
-
-  const handleSave = async () => {
-    if (!nome.trim()) {
-      Alert.alert('Atenção', 'Informe o nome da atividade.');
-      return;
-    }
-
-    if (dataAtividade.trim() && !isValidDateString(dataAtividade.trim())) {
-      Alert.alert('Data Inválida', 'Informe uma data válida no formato DD/MM/AAAA (ex: 15/09/2026).');
-      return;
-    }
-
-    if (horarioInicio.trim() && !isValidTimeString(horarioInicio.trim())) {
-      Alert.alert('Horário Inválido', 'Informe um horário de início válido no formato HH:MM (ex: 09:00).');
-      return;
-    }
-
-    if (horarioFim.trim() && !isValidTimeString(horarioFim.trim())) {
-      Alert.alert('Horário Inválido', 'Informe um horário de término válido no formato HH:MM (ex: 10:00).');
-      return;
-    }
-
-    if (
-      horarioInicio.trim() &&
-      horarioFim.trim() &&
-      !isTimeIntervalValid(horarioInicio.trim(), horarioFim.trim())
-    ) {
-      Alert.alert('Horário Inconsistente', 'O horário de término deve ser posterior ao horário de início.');
-      return;
-    }
-
-    try {
-      const { data: userRes } = await supabase.auth.getUser();
-      if (!userRes.user) {
-        Alert.alert('Sessão expirada', 'Faça login novamente.');
-        return;
-      }
-
-      const dbDate = toDatabaseDate(dataAtividade.trim()) || new Date().toISOString().slice(0, 10);
-      const cleanStart = horarioInicio.trim() || '09:00';
-      const cleanEnd = horarioFim.trim() || '10:00';
-
-      const payload = {
-        nome: nome.trim(),
-        tipo: 'atividade',
-        prioridade: 1,
-        data_inicio: `${dbDate}T${cleanStart}:00`,
-        data_fim: `${dbDate}T${cleanEnd}:00`,
-        descricao: anotacoes.trim() || null,
-      };
-
-      if (editingId) {
-        const { error } = await supabase
-          .from('itens_cronograma')
-          .update(payload)
-          .eq('id', editingId)
-          .eq('user_id', userRes.user.id);
-
-        if (error) {
-          Alert.alert('Erro', error.message || 'Não foi possível atualizar a atividade.');
-          return;
-        }
-
-        setAtividades((prev) =>
-          prev.map((item) =>
-            item.id === editingId
-              ? {
-                  ...item,
-                  ...payload,
-                }
-              : item
-          )
-        );
-      } else {
-        const { data, error } = await supabase
-          .from('itens_cronograma')
-          .insert({
-            user_id: userRes.user.id,
-            completed: false,
-            ...payload,
-          })
-          .select()
-          .single();
-
-        if (error || !data) {
-          Alert.alert('Erro', error?.message || 'Não foi possível criar a atividade.');
-          return;
-        }
-
-        setAtividades((prev) => [data, ...prev]);
-      }
-
-      setModalVisible(false);
-    } catch (e: any) {
-      console.error('Error saving activity:', e);
-      Alert.alert('Erro', e.message || 'Ocorreu um erro ao salvar a atividade.');
-    }
-  };
-
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert(
-      'Excluir Atividade',
-      `Deseja realmente apagar a atividade "${name}"?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase.from('itens_cronograma').delete().eq('id', id);
-              if (error) {
-                Alert.alert('Erro', 'Não foi possível excluir a atividade.');
-                return;
-              }
-              setAtividades((prev) => prev.filter((a) => a.id !== id));
-              if (selectedAtividade?.id === id) {
-                setSelectedAtividade(null);
-              }
-            } catch (e) {
-              console.error('Error deleting activity:', e);
-            }
-          },
-        },
-      ]
-    );
-  };
+  const nomeDisciplina = (id: string | null) => dados?.disciplinas.find((d) => d.id === id)?.nome;
+  const alternarTipo = (t: TipoCompromisso) =>
+    setTipos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(t)) novo.delete(t);
+      else novo.add(t);
+      return novo.size === 0 ? atual : novo;
+    });
 
   return (
     <View style={styles.container}>
       <Header title="Agenda" section="agenda" showBack />
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={atualizando && Boolean(dados)} onRefresh={() => void recarregar()} />}
       >
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.pageTitle}>Atividades</Text>
-            <Text style={styles.pageSubtitle}>
-              {atividades.length} {atividades.length === 1 ? 'compromisso registrado' : 'compromissos registrados'}
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <Button
-              title="Calendário"
-              variant="outline"
-              size="sm"
-              onPress={() => irPara('/calendario')}
-              icon={<Calendar size={15} color={COLORS.primary} />}
-            />
-            <Button
-              title="+ Atividade"
-              onPress={openCreateModal}
-              size="sm"
-              icon={<Plus size={16} color="#ffffff" />}
-            />
-          </View>
+        <View style={styles.topo}>
+          <Text style={styles.titulo}>Compromissos</Text>
+          <Button title="+ Novo" size="sm" onPress={() => setEditor({})} />
         </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Carregando atividades...</Text>
-          </View>
-        ) : atividades.length === 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtros}>
+          {VISOES.map(([v, rotulo]) => (
+            <Chip ativo={visao === v} key={v} label={rotulo} onPress={() => setVisao(v)} />
+          ))}
+        </ScrollView>
+        <View style={styles.filtrosTipo}>
+          {TIPOS.map((t) => (
+            <TouchableOpacity key={t} onPress={() => alternarTipo(t)} style={[styles.tipo, !tipos.has(t) && styles.tipoOff]}>
+              <View style={[styles.ponto, { backgroundColor: tipos.has(t) ? COR_TIPO[t].cor : COLORS.border }]} />
+              <Text style={[styles.tipoTexto, !tipos.has(t) && { color: COLORS.placeholder }]}>{ROTULO_TIPO[t]}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {carregando || !dados ? (
+          <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+        ) : grupos.size === 0 ? (
           <EmptyState
-            title="Nenhuma atividade registrada"
-            description="Cadastre seus compromissos diários e rotinas para manter o dia organizado."
-            icon={<ActivityIcon size={28} color={COLORS.primary} />}
-            actionTitle="+ Nova Atividade"
-            onAction={openCreateModal}
+            title={visao === 'atrasados' ? 'Nada atrasado' : visao === 'concluidos' ? 'Nada concluído ainda' : 'Nenhum compromisso'}
+            icon={<ListChecks size={26} color={COLORS.primary} />}
           />
         ) : (
-          atividades.map((item) => (
-            <Card
-              key={item.id}
-              style={styles.activityCard}
-              onPress={() => setSelectedAtividade(item)}
-            >
-              <View style={styles.cardTopRow}>
-                <View style={styles.iconCircle}>
-                  <ActivityIcon size={18} color={COLORS.primary} />
-                </View>
-                <View style={styles.titleInfo}>
-                  <Text style={styles.activityName}>{item.nome}</Text>
-                  <Text style={styles.timeText}>
-                    📅 {formatDisplayDate(item.data_inicio)} • ⏰ {item.data_inicio?.slice(11, 16)} - {item.data_fim?.slice(11, 16)}
-                  </Text>
-                </View>
-
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => openEditModal(item)}
-                    style={styles.actionIconBtn}
-                  >
-                    <Edit2 size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => handleDelete(item.id, item.nome)}
-                    style={styles.actionIconBtn}
-                  >
-                    <Trash2 size={16} color={COLORS.danger} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {Boolean(item.descricao) && (
-                <View style={styles.notesContainer}>
-                  <FileText size={13} color={COLORS.textMuted} style={{ marginTop: 2 }} />
-                  <Text style={styles.notesText} numberOfLines={2}>
-                    {item.descricao}
-                  </Text>
-                </View>
-              )}
-            </Card>
+          Array.from(grupos.entries()).map(([data, itens]) => (
+            <View key={data} style={styles.grupo}>
+              <Text style={[styles.grupoTitulo, data < hoje && visao !== 'concluidos' && { color: COLORS.danger }]}>
+                {data === hoje ? 'Hoje' : formatarData(data, true)}
+              </Text>
+              <Card style={styles.card}>
+                {itens.map((c, i) => (
+                  <View key={c.id} style={[styles.linha, i > 0 && styles.linhaBorda]}>
+                    <TouchableOpacity onPress={() => void alternarConcluido(c.id)} style={styles.check}>
+                      {c.concluido ? <CheckCircle2 size={22} color={COLORS.success} /> : <Circle size={22} color={COLORS.placeholder} />}
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.info} onPress={() => setEditor(c)}>
+                      <Text style={[styles.nome, c.concluido && styles.riscado]} numberOfLines={1}>
+                        {c.titulo}
+                      </Text>
+                      <Text style={styles.meta} numberOfLines={1}>
+                        {formatarHorario(c)}
+                        {nomeDisciplina(c.disciplinaId) ? ` · ${nomeDisciplina(c.disciplinaId)}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                    <Badge label={ROTULO_TIPO[c.tipo]} variant={COR_TIPO[c.tipo].badge} size="sm" />
+                  </View>
+                ))}
+              </Card>
+            </View>
           ))
         )}
       </ScrollView>
-
-      {/* Activity Create/Edit Modal */}
-      <Modal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        title={editingId ? 'Editar Atividade' : 'Nova Atividade'}
-        variant="bottom"
-      >
-        <Input
-          label="Nome da Atividade *"
-          placeholder="ex: Academia, Médico, Aula de Inglês..."
-          value={nome}
-          onChangeText={setNome}
-        />
-
-        <Input
-          label="Data (DD/MM/AAAA)"
-          placeholder="ex: 15/09/2026"
-          value={dataAtividade}
-          onChangeText={(val) => setDataAtividade(applyDateMask(val))}
-        />
-
-        <View style={styles.inputsRow}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Input
-              label="Horário Início"
-              placeholder="09:00"
-              value={horarioInicio}
-              onChangeText={(val) => setHorarioInicio(applyTimeMask(val))}
-            />
-          </View>
-          <View style={{ flex: 1, marginLeft: 8 }}>
-            <Input
-              label="Horário Fim"
-              placeholder="10:00"
-              value={horarioFim}
-              onChangeText={(val) => setHorarioFim(applyTimeMask(val))}
-            />
-          </View>
-        </View>
-
-        <Input
-          label="Anotações / Detalhes"
-          placeholder="Local, orientações, lembretes..."
-          value={anotacoes}
-          onChangeText={setAnotacoes}
-          multiline
-        />
-
-        <Button
-          title={editingId ? 'Salvar Alterações' : 'Cadastrar Atividade'}
-          onPress={handleSave}
-          size="lg"
-          style={{ marginTop: 8 }}
-        />
-      </Modal>
-
-      {/* View Activity Details Modal */}
-      <Modal
-        visible={Boolean(selectedAtividade)}
-        onClose={() => setSelectedAtividade(null)}
-        title="Visualização da Atividade"
-        variant="bottom"
-      >
-        {selectedAtividade && (
-          <View style={{ paddingVertical: 8 }}>
-            <Text style={styles.viewDetailTitle}>{selectedAtividade.nome}</Text>
-
-            <View style={styles.viewDetailMetaRow}>
-              <Clock size={16} color={COLORS.primary} />
-              <Text style={styles.viewDetailMetaText}>
-                {selectedAtividade.data_inicio?.slice(11, 16)} às{' '}
-                {selectedAtividade.data_fim?.slice(11, 16)}
-              </Text>
-            </View>
-
-            <View style={styles.viewDetailMetaRow}>
-              <Calendar size={16} color={COLORS.primary} />
-              <Text style={styles.viewDetailMetaText}>
-                Data: {selectedAtividade.data_inicio?.slice(0, 10)}
-              </Text>
-            </View>
-
-            {Boolean(selectedAtividade.descricao) && (
-              <View style={styles.viewDetailNotesBox}>
-                <Text style={styles.viewDetailNotesLabel}>Anotações:</Text>
-                <Text style={styles.viewDetailNotesText}>
-                  {selectedAtividade.descricao}
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.viewDetailActions}>
-              <Button
-                title="Editar"
-                variant="outline"
-                onPress={() => openEditModal(selectedAtividade)}
-                style={{ flex: 1, marginRight: 8 }}
-              />
-              <Button
-                title="Excluir"
-                variant="danger"
-                onPress={() => handleDelete(selectedAtividade.id, selectedAtividade.nome)}
-                style={{ flex: 1, marginLeft: 8 }}
-              />
-            </View>
-          </View>
-        )}
-      </Modal>
+      <CompromissoEditor visible={Boolean(editor)} disciplinas={dados?.disciplinas ?? []} inicial={editor} onClose={() => setEditor(null)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 36,
-  },
-  loadingContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  headerRow: {
+  container: { flex: 1, backgroundColor: COLORS.background },
+  scroll: { padding: 18, paddingBottom: 40 },
+  topo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  titulo: { fontSize: 20, fontWeight: '700', color: COLORS.text },
+  filtros: { gap: 8, paddingBottom: 10 },
+  filtrosTipo: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  tipo: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  pageTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  pageSubtitle: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  activityCard: {
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.primaryMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  titleInfo: {
-    flex: 1,
-  },
-  activityName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  timeText: {
-    fontSize: 12,
-    color: COLORS.primaryLight,
-    fontWeight: '600',
-  },
-  actionsRow: {
-    flexDirection: 'row',
     gap: 6,
-  },
-  actionIconBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
-  },
-  notesContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 10,
-    gap: 8,
-  },
-  notesText: {
-    flex: 1,
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    lineHeight: 16,
-  },
-  inputsRow: {
-    flexDirection: 'row',
-  },
-  viewDetailTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginBottom: 12,
-  },
-  viewDetailMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  viewDetailMetaText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  viewDetailNotesBox: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 12,
-    marginVertical: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.borderStrong,
+    backgroundColor: '#fff',
   },
-  viewDetailNotesLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  viewDetailNotesText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-  },
-  viewDetailActions: {
-    flexDirection: 'row',
-    marginTop: 14,
-  },
+  tipoOff: { backgroundColor: 'transparent', borderColor: COLORS.border },
+  ponto: { width: 8, height: 8, borderRadius: 4 },
+  tipoTexto: { fontSize: 12, fontWeight: '600', color: COLORS.text },
+  grupo: { marginBottom: 16 },
+  grupoTitulo: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 },
+  card: { padding: 0 },
+  linha: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10, gap: 6 },
+  linhaBorda: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  check: { padding: 2 },
+  info: { flex: 1 },
+  nome: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  riscado: { textDecorationLine: 'line-through', color: COLORS.textMuted },
+  meta: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
 });

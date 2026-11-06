@@ -49,6 +49,13 @@ export interface GerarCronogramaParams {
   duracaoBlocoMin?: number;
   /** Intervalo entre blocos do mesmo horário em minutos (padrão 10). */
   intervaloMin?: number;
+  /**
+   * Períodos já ocupados (aulas, provas com horário, compromissos, blocos já salvos).
+   * Blocos que se sobrepõem a qualquer um deles são descartados.
+   */
+  ocupados?: Array<{ inicio: Date; fim: Date }>;
+  /** Blocos que começam antes deste instante são descartados (ex.: "agora", para não agendar no passado). */
+  naoAntesDe?: Date;
 }
 
 export type CronogramaErrorCode =
@@ -221,6 +228,24 @@ export function gerarCronograma(params: GerarCronogramaParams): BlocoEstudo[] {
     throw new CronogramaError('SEM_BLOCOS', 'Nenhum horário da rotina comporta um bloco de estudo com a duração informada.');
   }
 
+  // 1b) Descarta blocos no passado e os que batem com algo já marcado.
+  const limite = params.naoAntesDe?.getTime();
+  const ocupados = (params.ocupados ?? [])
+    .map((o) => ({ ini: o.inicio.getTime(), fim: o.fim.getTime() }))
+    .filter((o) => Number.isFinite(o.ini) && Number.isFinite(o.fim) && o.fim > o.ini);
+  const livres = ocorrencias.filter((oc) => {
+    const ini = oc.inicio.getTime();
+    const fim = oc.fim.getTime();
+    if (limite !== undefined && ini < limite) return false;
+    return !ocupados.some((o) => ini < o.fim && o.ini < fim);
+  });
+  if (livres.length === 0) {
+    throw new CronogramaError(
+      'SEM_BLOCOS',
+      'Todos os horários livres do período já estão ocupados por aulas, compromissos ou blocos de estudo.',
+    );
+  }
+
   // 2) Smooth weighted round robin com pesos por bloco.
   const atual = disciplinas.map(() => 0);
   const base = disciplinas.map(pesoBase);
@@ -230,7 +255,7 @@ export function gerarCronograma(params: GerarCronogramaParams): BlocoEstudo[] {
   });
 
   let anterior = -1;
-  return ocorrencias.map((oc) => {
+  return livres.map((oc) => {
     const pesos = base.map((b, i) => {
       const prova = provaNoPeriodo[i];
       return prova && oc.dia <= prova ? b * FATOR_PROVA_PROXIMA : b;

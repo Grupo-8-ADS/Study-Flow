@@ -113,7 +113,7 @@ export default function RewardsPage() {
 
   return (
     <>
-      <PageHeader description="Estude, alcance metas e complete conquistas para liberar itens para o seu perfil." title="Recompensas" />
+      <PageHeader title="Recompensas" />
 
       <Card className="relative overflow-hidden !border-primary-800 !bg-primary-800 text-white">
         <div aria-hidden className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-white/[0.06]" />
@@ -190,7 +190,7 @@ export default function RewardsPage() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-12">
         <Card className="lg:col-span-8">
-          <CardHeader description="Itens da coleção selecionada." icon={<Sparkles size={18} />} title={selected.title} />
+          <CardHeader icon={<Sparkles size={18} />} title={selected.title} />
           <ul className="grid gap-2 sm:grid-cols-2">
             {selected.items.length === 0 && selected.total === 0 ? (
               <li className="sm:col-span-2">

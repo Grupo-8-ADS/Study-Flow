@@ -20,7 +20,7 @@ test.describe("Fluxo 1: cronograma automatizado", () => {
       await evidencia(page, testInfo, "fluxo1-01-cadastro");
       await cadastro.enviar();
       await expect(cadastro.mensagemSucesso()).toBeVisible();
-      await expect(page).toHaveURL(/\/timer/);
+      await expect(page).toHaveURL(/\/dashboard/);
     });
 
     await test.step("2. Cadastrar duas disciplinas", async () => {
@@ -72,7 +72,7 @@ test.describe("Fluxo 1: cronograma automatizado", () => {
 
     await login.abrir();
     await login.entrar(usuario.email, usuario.senha);
-    await expect(page).toHaveURL(/\/timer/);
+    await expect(page).toHaveURL(/\/dashboard/);
 
     await rotina.abrir();
     await rotina.adicionarHorario("Terça-feira", "08:00", "10:00");
@@ -92,7 +92,7 @@ test.describe("Fluxo 1: cronograma automatizado", () => {
 
     await login.abrir();
     await login.entrar(usuario.email, usuario.senha);
-    await expect(page).toHaveURL(/\/timer/);
+    await expect(page).toHaveURL(/\/dashboard/);
 
     await rotina.abrir();
     await rotina.adicionarHorario("Sexta-feira", "21:00", "19:00");
