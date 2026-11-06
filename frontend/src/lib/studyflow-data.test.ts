@@ -14,7 +14,7 @@ import { AuthError } from '@supabase/supabase-js';
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
-      getUser: vi.fn(),
+      getSession: vi.fn(),
     },
   },
 }));
@@ -76,8 +76,8 @@ describe('studyflow-data.ts - Suíte de Testes Unitários e de Integração Lóg
     it('getCurrentSupabaseUserId_quandoUsuarioAutenticadoNoSupabase_deveRetornarId', async () => {
       // Arrange (Stub de entrada indireta)
       const mockUserId = 'user-uuid-12345';
-      vi.mocked(supabase.auth.getUser).mockResolvedValue({
-        data: { user: { id: mockUserId } as unknown as import('@supabase/supabase-js').User },
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: { user: { id: mockUserId } } as unknown as import('@supabase/supabase-js').Session },
         error: null,
       });
 
@@ -90,10 +90,10 @@ describe('studyflow-data.ts - Suíte de Testes Unitários e de Integração Lóg
 
     it('getCurrentSupabaseUserId_quandoUsuarioNaoAutenticado_deveRetornarNull', async () => {
       // Arrange
-      vi.mocked(supabase.auth.getUser).mockResolvedValue({
-        data: { user: null },
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: null },
         error: new AuthError('No session'),
-      });
+      } as never);
 
       // Act
       const id = await getCurrentSupabaseUserId();

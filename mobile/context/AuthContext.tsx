@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { StudyFlowSession } from '@studyflow/shared';
 import { supabase } from '../lib/supabase';
 import { Storage } from '../lib/storage';
+import { limparAgenda } from '../lib/agenda';
 
 interface AuthContextType {
   session: StudyFlowSession | null;
@@ -214,6 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Sign out error:', e);
     }
     await Storage.setSession(null);
+    limparAgenda();
     setSession(null);
   };
 

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CircleHelp, FileText, LogOut, Settings, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { limparAgenda } from "@/lib/agenda";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, PageLoading } from "@/components/ui/feedback";
@@ -96,6 +97,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         }
       } catch {
         localStorage.removeItem("studyflow_session");
+        limparAgenda();
         router.push("/");
       }
     }
@@ -126,6 +128,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
       // Ignora se offline
     }
     localStorage.removeItem("studyflow_session");
+    limparAgenda();
     router.push("/");
   };
 
@@ -156,6 +159,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     Object.keys(localStorage)
       .filter((key) => key.startsWith("studyflow_"))
       .forEach((key) => localStorage.removeItem(key));
+    limparAgenda();
     router.push("/");
   };
 
@@ -179,7 +183,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
   return (
     <>
-      <PageHeader description="Notificações, privacidade, ajuda e dados da sua conta." title="Preferências" />
+      <PageHeader title="Preferências" />
 
       <div className="grid max-w-4xl gap-6">
         <Card aria-labelledby="titulo-conta">
@@ -210,7 +214,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
         <Card aria-labelledby="titulo-geral" padded={false}>
           <div className="p-5 pb-2 sm:p-6 sm:pb-2">
-            <CardHeader description="Acessos e opções da sua conta." icon={<Settings size={18} />} id="titulo-geral" title="Geral" />
+            <CardHeader icon={<Settings size={18} />} id="titulo-geral" title="Geral" />
           </div>
           <ul className="divide-y divide-line border-t border-line">
             <li className="flex items-center gap-4 px-5 py-4 sm:px-6">
@@ -226,28 +230,24 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
               <Switch checked={notificationsEnabled} labelledBy="notif-label" onChange={toggleNotifications} />
             </li>
             <SettingsRow
-              description="Controle de dados e visibilidade da conta."
               disabled={basic}
               icon={<ShieldCheck size={18} />}
               label="Configurações de privacidade"
               onClick={() => setShowPrivacy(true)}
             />
             <SettingsRow
-              description="Dúvidas frequentes e orientações de uso."
               disabled={basic}
               icon={<CircleHelp size={18} />}
               label="Ajuda e FAQ"
               onClick={() => setShowFaq(true)}
             />
             <SettingsRow
-              description="Políticas e licença de uso do aplicativo."
               disabled={basic}
               icon={<FileText size={18} />}
               label="Termos de Serviço"
               onClick={() => setShowTerms(true)}
             />
             <SettingsRow
-              description="Encerrar esta sessão e voltar ao login."
               icon={<LogOut size={18} />}
               label="Sair da conta"
               onClick={logout}
@@ -354,7 +354,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
       {showFaq ? (
         <Modal
-          description="Respostas rápidas para as dúvidas mais comuns."
           onClose={() => setShowFaq(false)}
           size="lg"
           title="Ajuda e FAQ"
@@ -389,7 +388,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
       {showTerms ? (
         <Modal
-          description="Políticas e licença de uso do Study Flow."
           footer={<Button onClick={() => setShowTerms(false)}>Entendido</Button>}
           onClose={() => setShowTerms(false)}
           title="Termos de Serviço"
@@ -434,7 +432,7 @@ function SettingsRow({
   label,
   onClick,
 }: {
-  description: string;
+  description?: string;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
@@ -451,7 +449,7 @@ function SettingsRow({
         <RowIcon>{icon}</RowIcon>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium text-ink-900">{label}</span>
-          <span className="block text-sm text-ink-500">{description}</span>
+          {description ? <span className="block text-sm text-ink-500">{description}</span> : null}
         </span>
         {disabled ? (
           <Badge>Em breve</Badge>

@@ -6,3 +6,4 @@ export * from './schemas/disciplina.schema';
 export * from './gamificacao';
 export * from './relatorios';
 export * from './gmail';
+export * from './agenda';

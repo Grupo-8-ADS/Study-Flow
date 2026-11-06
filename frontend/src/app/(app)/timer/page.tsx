@@ -6,6 +6,7 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { BookOpen, NotebookPen, Pause, Play, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { useAgenda } from "@/lib/agenda";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageLoading } from "@/components/ui/feedback";
@@ -37,8 +38,11 @@ const TimerDashboard: NextPage = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Disciplinas & Notas
-  const [disciplines, setDisciplines] = useState<DisciplineOption[]>([]);
-  const [selectedDiscipline, setSelectedDiscipline] = useState<string>("");
+  const { dados: agenda } = useAgenda();
+  const disciplines: DisciplineOption[] = (agenda?.disciplinas ?? []).map((d) => ({ id: d.id, name: d.nome }));
+  // null = ainda não escolheu: usa a primeira disciplina cadastrada.
+  const [escolha, setSelectedDiscipline] = useState<string | null>(null);
+  const selectedDiscipline = escolha ?? disciplines[0]?.id ?? "";
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
 
@@ -54,31 +58,7 @@ const TimerDashboard: NextPage = () => {
 
       setUser(parsed);
 
-      const currentUserId = await getCurrentSupabaseUserId(parsed);
-      setSupabaseUserId(currentUserId);
-
-      if (!currentUserId) {
-        const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
-        const localDisciplines = saved
-          ? (JSON.parse(saved) as Array<{ id: string; name: string }>).map((subject) => ({ id: subject.id, name: subject.name }))
-          : [];
-        setDisciplines(localDisciplines);
-        setSelectedDiscipline(localDisciplines[0]?.id ?? "");
-        return;
-      }
-
-      const [{ data }, { data: profile }] = await Promise.all([
-        supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at"),
-        supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
-      ]);
-
-      if (profile?.avatar_url) {
-        setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
-      }
-
-      const remoteDisciplines = (data ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
-      setDisciplines(remoteDisciplines);
-      setSelectedDiscipline(remoteDisciplines[0]?.id ?? "");
+      setSupabaseUserId(await getCurrentSupabaseUserId(parsed));
     }
 
     void loadTimer();
@@ -239,7 +219,6 @@ const TimerDashboard: NextPage = () => {
   return (
     <>
       <PageHeader
-        description="Use ciclos Pomodoro: 25 minutos de foco e pausas curtas. Ao terminar um ciclo de foco, a sessão entra nas suas estatísticas."
         title="Timer"
       />
 
@@ -310,7 +289,7 @@ const TimerDashboard: NextPage = () => {
 
         <div className="flex w-full flex-col gap-6 lg:col-span-5">
           <Card>
-            <CardHeader icon={<BookOpen size={18} />} title="Disciplina" description="A sessão será registrada nesta disciplina." />
+            <CardHeader icon={<BookOpen size={18} />} title="Disciplina" />
             <Select aria-label="Disciplina da sessão" onChange={(e) => setSelectedDiscipline(e.target.value)} value={selectedDiscipline}>
               <option value="">Sem disciplina</option>
               {disciplines.map((discipline) => (

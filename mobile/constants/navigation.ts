@@ -15,7 +15,7 @@ export const SECTIONS: Record<SectionKey, { title: string; tabs: SectionTab[] }>
     title: 'Agenda',
     tabs: [
       { label: 'Calendário', href: '/calendario' },
-      { label: 'Atividades', href: '/atividade' },
+      { label: 'Compromissos', href: '/atividade' },
       { label: 'Rotina e cronograma', href: '/rotina' },
     ],
   },

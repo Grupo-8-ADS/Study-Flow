@@ -25,10 +25,15 @@ export function getStoredSession(): StudyFlowSession | null {
   return JSON.parse(storedSession) as StudyFlowSession;
 }
 
+/**
+ * Id do usuário logado no Supabase. Lê a sessão já guardada no navegador (sem ida ao
+ * servidor de autenticação a cada troca de tela); o token continua sendo validado pelo
+ * banco (RLS) em cada consulta.
+ */
 export async function getCurrentSupabaseUserId(session?: StudyFlowSession) {
   void session;
-  const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
 }
 
 export function getLocalStudyMinutes(email: string) {

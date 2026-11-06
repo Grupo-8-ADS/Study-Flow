@@ -17,6 +17,9 @@ import { COLORS } from '@studyflow/shared';
 import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { supabase } from '../../lib/supabase';
+
+const LINK_REDEFINIR = 'https://study-flow-ten-olive.vercel.app/redefinir-senha';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -51,6 +54,33 @@ export default function LoginScreen() {
     } else {
       router.replace('/(tabs)/dashboard');
     }
+  };
+
+  /** Envia o link de redefinição; a nova senha é definida na página do site. */
+  const recuperarSenha = async () => {
+    const email = identifier.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrorMessage('Digite seu email no campo acima para receber o link de redefinição.');
+      return;
+    }
+    setErrorMessage('');
+    let erro: { status?: number } | null = null;
+    try {
+      erro = (await supabase.auth.resetPasswordForEmail(email, { redirectTo: LINK_REDEFINIR })).error;
+    } catch {
+      erro = { status: 0 };
+    }
+    if (erro?.status === 429) {
+      setErrorMessage('Muitos pedidos seguidos. Aguarde alguns minutos e tente de novo.');
+      return;
+    }
+    // Erro de rede/servidor (não "conta inexistente", que o Supabase não revela).
+    if (erro && (erro.status === 0 || (erro.status ?? 500) >= 500)) {
+      setErrorMessage('Não foi possível enviar o email agora. Verifique a conexão e tente de novo.');
+      return;
+    }
+    // Mesma resposta exista ou não a conta, para não revelar emails cadastrados.
+    Alert.alert('Verifique seu email', `Se houver uma conta com ${email}, enviamos um link para criar uma nova senha.`);
   };
 
   return (
@@ -125,14 +155,9 @@ export default function LoginScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() =>
-                Alert.alert(
-                  'Recuperação de Senha',
-                  'Para recuperar sua senha, entre em contato com o suporte ou utilize o email cadastrado.'
-                )
-              }
+              onPress={() => void recuperarSenha()}
             >
-              <Text style={styles.forgotText}>Problemas para logar?</Text>
+              <Text style={styles.forgotText}>Esqueci minha senha</Text>
             </TouchableOpacity>
           </View>
 

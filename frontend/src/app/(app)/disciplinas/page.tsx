@@ -1,373 +1,238 @@
+/**
+ * Disciplinas do semestre: nome, professor, prioridade (peso no cronograma) e os horários
+ * de aula da semana. Provas e trabalhos são compromissos da Agenda ligados à disciplina.
+ * @packageDocumentation
+ */
+
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { BookOpen, CalendarDays, Pencil, Plus, Trash2 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
-import { isValidDateString, isValidTimeString, isTimeIntervalValid } from "@studyflow/shared";
-import { Button, buttonClass } from "@/components/ui/button";
+import { useState, type FormEvent } from "react";
+import { BookOpen, Clock, Pencil, Plus, Trash2 } from "lucide-react";
+import { NOMES_DIAS_SEMANA } from "@studyflow/shared";
+import {
+  ROTULO_TIPO,
+  excluirDisciplina,
+  formatarData,
+  formatarHorario,
+  hojeStr,
+  salvarDisciplina,
+  useAgenda,
+  type Aula,
+  type Compromisso,
+  type CompromissoForm,
+  type Disciplina,
+  type DisciplinaForm,
+} from "@/lib/agenda";
+import { ESTILO_TIPO } from "@/lib/agenda-estilos";
+import { CompromissoEditor } from "@/components/compromisso-editor";
+import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 
-type AssessmentItem = { id: string; nome: string; data: string };
+const vazia: DisciplinaForm = { nome: "", professor: "", prioridade: 2, aulas: [], notas: "" };
 
-/** Formato das anotacoes (JSON) salvas em cada disciplina */
-type NotasDisciplina = {
-  provas?: AssessmentItem[];
-  trabalhos?: AssessmentItem[];
-  examDate?: string;
-  workDate?: string;
-  endTime?: string;
-  startTime?: string;
-  notes?: string;
-};
+const PRIORIDADES: Array<[1 | 2 | 3, string]> = [
+  [1, "Baixa"],
+  [2, "Média"],
+  [3, "Alta"],
+];
 
-type Subject = {
-  date: string;
-  endTime: string;
-  examDate?: string;
-  id: string;
-  name: string;
-  notes: string;
-  provas: AssessmentItem[];
-  startTime: string;
-  trabalhos: AssessmentItem[];
-  workDate?: string;
-};
+const diaCurto = (d: number) => NOMES_DIAS_SEMANA[d].slice(0, 3);
 
-type UserSession = { email: string; nome: string; username: string; avatar_url?: string | null };
-
-const emptySubject: Omit<Subject, "id"> = {
-  date: "",
-  endTime: "",
-  examDate: "",
-  name: "",
-  notes: "",
-  provas: [],
-  startTime: "",
-  trabalhos: [],
-  workDate: "",
-};
+function resumoAulas(aulas: Aula[]) {
+  if (aulas.length === 0) return "Sem horário de aula";
+  return [...aulas]
+    .sort((a, b) => a.dia_semana - b.dia_semana || a.inicio.localeCompare(b.inicio))
+    .map((a) => `${diaCurto(a.dia_semana)} ${a.inicio}–${a.fim}`)
+    .join(" · ");
+}
 
 export default function DisciplinasPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<UserSession | null>(null);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [form, setForm] = useState(emptySubject);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<Subject | null>(null);
-  const [deleting, setDeleting] = useState<Subject | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
-  // Enquanto o modo de dados (Supabase x local) não é resolvido, criar uma disciplina
-  // a gravaria só no localStorage e ela sumiria ao fim do carregamento.
-  const [loadingData, setLoadingData] = useState(true);
+  const { dados, carregando, erro } = useAgenda();
+  const [editando, setEditando] = useState<{ id?: string; form: DisciplinaForm } | null>(null);
+  const [vendo, setVendo] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState<Disciplina | null>(null);
+  const [compromisso, setCompromisso] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
 
-  useEffect(() => {
-    async function loadSubjects() {
-      const parsed = getStoredSession();
-      if (!parsed) { router.push("/"); return; }
+  if (carregando || !dados) return erro ? <Alert tone="danger">{erro}</Alert> : <PageLoading label="Carregando disciplinas..." />;
 
-      try {
-        setUser(parsed);
-        const currentUserId = await getCurrentSupabaseUserId(parsed);
-        setSupabaseUserId(currentUserId);
+  const hoje = hojeStr();
+  const avaliacoesDe = (id: string) =>
+    dados.compromissos.filter((c) => c.disciplinaId === id && (c.tipo === "prova" || c.tipo === "trabalho"));
+  const proximaDe = (id: string) => avaliacoesDe(id).find((c) => c.data >= hoje && !c.concluido);
+  const disciplinaVista = vendo ? dados.disciplinas.find((d) => d.id === vendo) ?? null : null;
 
-        if (!currentUserId) {
-          const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
-          setSubjects(saved ? JSON.parse(saved) : []);
-          return;
-        }
-
-        const [{ data }, { data: profile }] = await Promise.all([
-          supabase
-            .from("disciplinas")
-            .select("id,nome,data_inicio,data_fim,anotacoes")
-            .eq("user_id", currentUserId)
-            .order("created_at", { ascending: false }),
-          supabase.from("profiles").select("avatar_url").eq("id", currentUserId).maybeSingle(),
-        ]);
-
-        if (profile?.avatar_url) {
-          setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
-        }
-
-        setSubjects((data ?? []).map((item) => {
-          const notes = (item.anotacoes ?? {}) as NotasDisciplina;
-          const provas: AssessmentItem[] = Array.isArray(notes.provas)
-            ? notes.provas
-            : notes.examDate
-            ? [{ id: "legacy-exam", nome: "Prova", data: notes.examDate }]
-            : [];
-          const trabalhos: AssessmentItem[] = Array.isArray(notes.trabalhos)
-            ? notes.trabalhos
-            : notes.workDate
-            ? [{ id: "legacy-work", nome: "Trabalho", data: notes.workDate }]
-            : [];
-
-          return {
-            date: item.data_inicio ?? "",
-            endTime: notes.endTime ?? "",
-            examDate: notes.examDate ?? "",
-            id: item.id,
-            name: item.nome,
-            notes: notes.notes ?? "",
-            provas,
-            startTime: notes.startTime ?? "",
-            trabalhos,
-            workDate: notes.workDate ?? "",
-          };
-        }));
-      } catch {
-        router.push("/");
-      } finally {
-        setLoadingData(false);
-      }
-    }
-
-    void loadSubjects();
-  }, [router]);
-
-  const save = (next: Subject[]) => {
-    setSubjects(next);
-    if (user && !supabaseUserId) localStorage.setItem(`studyflow_subjects_${user.email}`, JSON.stringify(next));
+  const remover = async () => {
+    if (!excluindo) return;
+    await excluirDisciplina(excluindo.id);
+    setExcluindo(null);
+    setVendo(null);
   };
-  const openNew = () => { setEditingId(null); setForm(emptySubject); setFormError(null); setShowForm(true); };
-  const openEdit = (subject: Subject) => {
-    setEditingId(subject.id);
-    setForm({
-      date: subject.date,
-      endTime: subject.endTime,
-      examDate: subject.examDate || "",
-      name: subject.name,
-      notes: subject.notes,
-      provas: subject.provas ? [...subject.provas] : [],
-      startTime: subject.startTime,
-      trabalhos: subject.trabalhos ? [...subject.trabalhos] : [],
-      workDate: subject.workDate || "",
-    });
-    setFormError(null);
-    setViewing(null);
-    setShowForm(true);
-  };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setFormError(null);
-
-    if (!form.name.trim()) {
-      setFormError("Informe o nome da disciplina.");
-      return;
-    }
-
-    if (form.date && !isValidDateString(form.date)) {
-      setFormError("A data da disciplina é inválida.");
-      return;
-    }
-
-    for (const p of form.provas) {
-      if (p.data && !isValidDateString(p.data)) {
-        setFormError(`A data da prova "${p.nome || 'sem título'}" é inválida.`);
-        return;
-      }
-    }
-
-    for (const t of form.trabalhos) {
-      if (t.data && !isValidDateString(t.data)) {
-        setFormError(`A data do trabalho "${t.nome || 'sem título'}" é inválida.`);
-        return;
-      }
-    }
-
-    if (form.startTime && !isValidTimeString(form.startTime)) {
-      setFormError("O horário de início é inválido.");
-      return;
-    }
-
-    if (form.endTime && !isValidTimeString(form.endTime)) {
-      setFormError("O horário de término é inválido.");
-      return;
-    }
-
-    if (form.startTime && form.endTime && !isTimeIntervalValid(form.startTime, form.endTime)) {
-      setFormError("O horário de término deve ser posterior ao horário de início.");
-      return;
-    }
-
-    const finalForm = {
-      ...form,
-      examDate: form.provas[0]?.data || form.examDate || "",
-      workDate: form.trabalhos[0]?.data || form.workDate || "",
-    };
-
-    if (supabaseUserId) {
-      const payload = {
-        anotacoes: {
-          endTime: form.endTime,
-          examDate: finalForm.examDate,
-          notes: form.notes,
-          provas: form.provas,
-          startTime: form.startTime,
-          trabalhos: form.trabalhos,
-          workDate: finalForm.workDate,
-        },
-        data_fim: form.date || null,
-        data_inicio: form.date || null,
-        nome: form.name.trim(),
-        user_id: supabaseUserId,
-      };
-
-      if (editingId) {
-        await supabase.from("disciplinas").update(payload).eq("id", editingId).eq("user_id", supabaseUserId);
-        save(subjects.map((item) => (item.id === editingId ? { ...finalForm, id: editingId } : item)));
-      } else {
-        const { data } = await supabase.from("disciplinas").insert(payload).select("id").single();
-        if (data) save([{ ...finalForm, id: data.id }, ...subjects]);
-      }
-    } else {
-      save(editingId ? subjects.map((item) => (item.id === editingId ? { ...finalForm, id: editingId } : item)) : [{ ...finalForm, id: crypto.randomUUID() }, ...subjects]);
-    }
-
-    setShowForm(false); setEditingId(null); setForm(emptySubject); setFormError(null);
-  };
-  const remove = async () => {
-    if (!deleting) return;
-    if (supabaseUserId) await supabase.from("disciplinas").delete().eq("id", deleting.id).eq("user_id", supabaseUserId);
-    save(subjects.filter((item) => item.id !== deleting.id));
-    setDeleting(null);
-  };
-
-  if (!user) return <PageLoading label="Carregando disciplinas..." />;
 
   return (
     <>
       <PageHeader
         actions={
-          <>
-            <Link className={buttonClass("secondary")} href="/calendario">
-              <CalendarDays aria-hidden size={18} />
-              Ver no calendário
-            </Link>
-            <Button disabled={loadingData} onClick={openNew}>
-              <Plus aria-hidden size={18} />
-              Adicionar disciplina
-            </Button>
-          </>
+          <Button onClick={() => setEditando({ form: vazia })}>
+            <Plus aria-hidden size={18} />
+            Adicionar disciplina
+          </Button>
         }
-        description="Matérias que você está cursando, com horários, provas e trabalhos."
         title="Disciplinas"
       />
 
-      {subjects.length === 0 ? (
+      {dados.disciplinas.length === 0 ? (
         <EmptyState
           action={
-            <Button disabled={loadingData} onClick={openNew}>
+            <Button onClick={() => setEditando({ form: vazia })}>
               <Plus aria-hidden size={18} />
               Cadastrar primeira disciplina
             </Button>
           }
           className="bg-white py-16"
-          description="Cadastre suas matérias para organizar provas, trabalhos e o cronograma de estudos."
+          description="Com as disciplinas e seus horários de aula, o cronograma de estudos encaixa os blocos nos seus horários livres."
           icon={<BookOpen size={22} />}
-          title={loadingData ? "Carregando disciplinas..." : "Nenhuma disciplina adicionada"}
+          title="Nenhuma disciplina adicionada"
         />
       ) : (
-        <>
-          {/* Celular: lista de cartões */}
-          <ul className="flex flex-col gap-3 md:hidden">
-            {subjects.map((item) => (
-              <li key={item.id}>
-                <Card as="article" className="!p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <button className="min-w-0 flex-1 text-left" onClick={() => setViewing(item)} type="button">
-                      <p className="truncate font-semibold text-ink-900">{item.name}</p>
-                      <p className="mt-0.5 text-sm text-ink-500">
-                        {formatTimeRange(item)} · {formatDate(item.date)}
-                      </p>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {dados.disciplinas.map((d) => {
+            const proxima = proximaDe(d.id);
+            return (
+              <li key={d.id}>
+                <Card as="article" className="flex h-full flex-col !p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <button className="min-w-0 flex-1 text-left" onClick={() => setVendo(d.id)} type="button">
+                      <p className="truncate font-semibold text-ink-900">{d.nome}</p>
+                      {d.professor ? <p className="truncate text-sm text-ink-500">Prof. {d.professor}</p> : null}
                     </button>
-                    <RowActions item={item} onDelete={() => setDeleting(item)} onEdit={() => openEdit(item)} />
+                    <div className="flex shrink-0 gap-1">
+                      <Button aria-label={`Editar ${d.nome}`} onClick={() => setEditando({ id: d.id, form: { ...d } })} size="icon-sm" variant="ghost">
+                        <Pencil size={16} />
+                      </Button>
+                      <Button aria-label={`Excluir ${d.nome}`} onClick={() => setExcluindo(d)} size="icon-sm" variant="danger-ghost">
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
                   </div>
-                  <AssessmentBadges item={item} />
+                  <p className="tabular mt-3 flex items-start gap-1.5 text-sm text-ink-600">
+                    <Clock aria-hidden className="mt-0.5 shrink-0 text-ink-400" size={15} />
+                    {resumoAulas(d.aulas)}
+                  </p>
+                  <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+                    <Badge tone={d.prioridade === 3 ? "danger" : d.prioridade === 1 ? "neutral" : "primary"}>
+                      Prioridade {PRIORIDADES.find(([p]) => p === d.prioridade)?.[1].toLowerCase()}
+                    </Badge>
+                    {proxima ? (
+                      <Badge tone={ESTILO_TIPO[proxima.tipo].tone}>
+                        {ROTULO_TIPO[proxima.tipo]} {formatarData(proxima.data).slice(0, 5)}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </Card>
               </li>
-            ))}
-          </ul>
-
-          {/* Tablet e desktop: tabela */}
-          <Card className="hidden overflow-hidden md:block" padded={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-ink-50 text-xs font-medium text-ink-500">
-                  <tr>
-                    <th className="px-5 py-3 font-medium" scope="col">Nome</th>
-                    <th className="px-5 py-3 font-medium" scope="col">Horário</th>
-                    <th className="px-5 py-3 font-medium" scope="col">Data</th>
-                    <th className="px-5 py-3 font-medium" scope="col">Avaliações</th>
-                    <th className="px-5 py-3 font-medium" scope="col">Anotações</th>
-                    <th className="px-5 py-3 text-right font-medium" scope="col">
-                      <span className="sr-only">Ações</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subjects.map((item) => (
-                    <tr className="cursor-pointer border-t border-line transition-colors first:border-t-0 hover:bg-primary-50/50" key={item.id} onClick={() => setViewing(item)}>
-                      <td className="px-5 py-3.5 font-medium text-ink-900">{item.name}</td>
-                      <td className="tabular px-5 py-3.5 text-ink-600">{formatTimeRange(item)}</td>
-                      <td className="tabular px-5 py-3.5 text-ink-600">{formatDate(item.date)}</td>
-                      <td className="px-5 py-3.5">
-                        <AssessmentBadges inline item={item} />
-                      </td>
-                      <td className="max-w-[16rem] truncate px-5 py-3.5 text-ink-500">{item.notes || "—"}</td>
-                      <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                        <RowActions item={item} onDelete={() => setDeleting(item)} onEdit={() => openEdit(item)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </>
+            );
+          })}
+        </ul>
       )}
 
-      {showForm ? (
-        <SubjectEditor
-          error={formError}
-          form={form}
-          isEditing={Boolean(editingId)}
-          onChange={(f) => {
-            setFormError(null);
-            setForm(f);
-          }}
-          onClose={() => setShowForm(false)}
-          onSubmit={submit}
-        />
-      ) : null}
-      {viewing ? <SubjectView item={viewing} onClose={() => setViewing(null)} onEdit={() => openEdit(viewing)} /> : null}
-      {deleting ? (
+      {editando ? <DisciplinaEditor inicial={editando} onClose={() => setEditando(null)} /> : null}
+
+      {disciplinaVista ? (
         <Modal
           footer={
             <>
-              <Button onClick={() => setDeleting(null)} variant="secondary">
+              <Button onClick={() => setVendo(null)} variant="secondary">
+                Fechar
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditando({ id: disciplinaVista.id, form: { ...disciplinaVista } });
+                  setVendo(null);
+                }}
+              >
+                <Pencil aria-hidden size={16} />
+                Editar
+              </Button>
+            </>
+          }
+          onClose={() => setVendo(null)}
+          title={disciplinaVista.nome}
+        >
+          <div className="grid gap-5 text-sm">
+            {disciplinaVista.professor ? <p className="text-ink-600">Prof. {disciplinaVista.professor}</p> : null}
+            <section>
+              <h3 className="mb-1.5 font-semibold text-ink-800">Aulas</h3>
+              <p className="tabular text-ink-600">{resumoAulas(disciplinaVista.aulas)}</p>
+            </section>
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="font-semibold text-ink-800">Provas e trabalhos</h3>
+                <div className="flex gap-1.5">
+                  <Button onClick={() => setCompromisso({ tipo: "prova", disciplinaId: disciplinaVista.id, titulo: "" })} size="sm" variant="secondary">
+                    <Plus aria-hidden size={14} />
+                    Prova
+                  </Button>
+                  <Button onClick={() => setCompromisso({ tipo: "trabalho", disciplinaId: disciplinaVista.id, titulo: "" })} size="sm" variant="secondary">
+                    <Plus aria-hidden size={14} />
+                    Trabalho
+                  </Button>
+                </div>
+              </div>
+              {avaliacoesDe(disciplinaVista.id).length === 0 ? (
+                <p className="text-ink-500">Nenhuma prova ou trabalho marcado.</p>
+              ) : (
+                <ul className="divide-y divide-line rounded-control border border-line">
+                  {avaliacoesDe(disciplinaVista.id).map((c) => (
+                    <li key={c.id}>
+                      <button className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-ink-50" onClick={() => setCompromisso(c)} type="button">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${ESTILO_TIPO[c.tipo].dot}`} />
+                          <span className={`truncate font-medium ${c.concluido ? "text-ink-500 line-through" : "text-ink-800"}`}>{c.titulo}</span>
+                        </span>
+                        <span className={`tabular shrink-0 ${c.data < hoje && !c.concluido ? "text-danger" : "text-ink-500"}`}>
+                          {formatarData(c.data)}
+                          {c.horaInicio ? ` · ${formatarHorario(c)}` : ""}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            {disciplinaVista.notas ? (
+              <section>
+                <h3 className="mb-1 font-semibold text-ink-800">Anotações</h3>
+                <p className="whitespace-pre-wrap text-ink-600">{disciplinaVista.notas}</p>
+              </section>
+            ) : null}
+          </div>
+        </Modal>
+      ) : null}
+
+      {compromisso ? <CompromissoEditor disciplinas={dados.disciplinas} inicial={compromisso} onClose={() => setCompromisso(null)} /> : null}
+
+      {excluindo ? (
+        <Modal
+          footer={
+            <>
+              <Button onClick={() => setExcluindo(null)} variant="secondary">
                 Cancelar
               </Button>
-              <Button onClick={remove} variant="danger">
+              <Button onClick={() => void remover()} variant="danger">
                 Excluir
               </Button>
             </>
           }
-          onClose={() => setDeleting(null)}
+          onClose={() => setExcluindo(null)}
           size="sm"
           title="Excluir disciplina"
         >
           <p className="text-sm text-ink-600">
-            Tem certeza que deseja excluir “{deleting.name}”? Essa ação não pode ser desfeita.
+            Excluir “{excluindo.nome}”? Provas, trabalhos e blocos de estudo ligados a ela continuam na agenda, sem disciplina.
           </p>
         </Modal>
       ) : null}
@@ -375,131 +240,26 @@ export default function DisciplinasPage() {
   );
 }
 
-function formatDate(value?: string) {
-  if (!value) return "Sem data";
-  const [y, m, d] = value.slice(0, 10).split("-");
-  return y && m && d ? `${d}/${m}/${y}` : value;
-}
+function DisciplinaEditor({ inicial, onClose }: { inicial: { id?: string; form: DisciplinaForm }; onClose: () => void }) {
+  const [form, setForm] = useState<DisciplinaForm>(() => ({ ...inicial.form, aulas: inicial.form.aulas.map((a) => ({ ...a })) }));
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
 
-function formatTimeRange(item: Subject) {
-  if (!item.startTime && !item.endTime) return "Sem horário";
-  return `${item.startTime || "--:--"} – ${item.endTime || "--:--"}`;
-}
+  const mudar = (parcial: Partial<DisciplinaForm>) => {
+    setErro(null);
+    setForm((f) => ({ ...f, ...parcial }));
+  };
+  const mudarAula = (i: number, parcial: Partial<Aula>) => mudar({ aulas: form.aulas.map((a, j) => (j === i ? { ...a, ...parcial } : a)) });
 
-function provasOf(item: Subject) {
-  return item.provas && item.provas.length > 0 ? item.provas : item.examDate ? [{ id: "legacy-exam", nome: "Prova", data: item.examDate }] : [];
-}
+  const enviar = async (event: FormEvent) => {
+    event.preventDefault();
+    setSalvando(true);
+    const msg = await salvarDisciplina(form, inicial.id);
+    setSalvando(false);
+    if (msg) setErro(msg);
+    else onClose();
+  };
 
-function trabalhosOf(item: Subject) {
-  return item.trabalhos && item.trabalhos.length > 0 ? item.trabalhos : item.workDate ? [{ id: "legacy-work", nome: "Trabalho", data: item.workDate }] : [];
-}
-
-function AssessmentBadges({ item, inline = false }: { item: Subject; inline?: boolean }) {
-  const p = provasOf(item).length;
-  const t = trabalhosOf(item).length;
-  return (
-    <div className={`flex flex-wrap gap-1.5 ${inline ? "" : "mt-3"}`}>
-      <Badge tone={p > 0 ? "primary" : "neutral"}>
-        {p} {p === 1 ? "prova" : "provas"}
-      </Badge>
-      <Badge tone={t > 0 ? "gold" : "neutral"}>
-        {t} {t === 1 ? "trabalho" : "trabalhos"}
-      </Badge>
-    </div>
-  );
-}
-
-function RowActions({ item, onEdit, onDelete }: { item: Subject; onEdit: () => void; onDelete: () => void }) {
-  return (
-    <div className="flex shrink-0 justify-end gap-1">
-      <Button aria-label={`Editar ${item.name}`} onClick={onEdit} size="icon-sm" variant="ghost">
-        <Pencil size={16} />
-      </Button>
-      <Button aria-label={`Excluir ${item.name}`} onClick={onDelete} size="icon-sm" variant="danger-ghost">
-        <Trash2 size={16} />
-      </Button>
-    </div>
-  );
-}
-
-type AssessmentListProps = {
-  items: AssessmentItem[];
-  kind: "prova" | "trabalho";
-  onChange: (items: AssessmentItem[]) => void;
-};
-
-function AssessmentList({ items, kind, onChange }: AssessmentListProps) {
-  const title = kind === "prova" ? "Provas e avaliações" : "Trabalhos e entregas";
-  const addLabel = kind === "prova" ? "Adicionar Prova" : "Adicionar Trabalho";
-  const singular = kind === "prova" ? "Prova" : "Trabalho";
-  return (
-    <fieldset className="rounded-card border border-line bg-ink-50/60 p-3.5">
-      <div className="mb-2.5 flex items-center justify-between gap-2">
-        <legend className="text-sm font-semibold text-ink-800">{title}</legend>
-        <Button onClick={() => onChange([...items, { id: crypto.randomUUID(), nome: `${singular} ${items.length + 1}`, data: "" }])} size="sm" variant="secondary">
-          <Plus aria-hidden size={14} />
-          {addLabel}
-        </Button>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-ink-500">Nenhum{kind === "prova" ? "a prova" : " trabalho"} adicionad{kind === "prova" ? "a" : "o"}.</p>
-      ) : (
-        <ul className="grid gap-2">
-          {items.map((entry, idx) => (
-            <li className="flex items-center gap-2" key={entry.id || idx}>
-              <Input
-                aria-label={`Título ${kind === "prova" ? "da prova" : "do trabalho"} ${idx + 1}`}
-                className="flex-1"
-                onChange={(e) => {
-                  const next = [...items];
-                  next[idx] = { ...entry, nome: e.target.value };
-                  onChange(next);
-                }}
-                placeholder={`Título ${kind === "prova" ? "da prova" : "do trabalho"}`}
-                value={entry.nome}
-              />
-              <Input
-                aria-label={`Data ${kind === "prova" ? "da prova" : "do trabalho"} ${idx + 1}`}
-                className="!w-40"
-                onChange={(e) => {
-                  const next = [...items];
-                  next[idx] = { ...entry, data: e.target.value };
-                  onChange(next);
-                }}
-                type="date"
-                value={entry.data}
-              />
-              <Button
-                aria-label={kind === "prova" ? "Remover prova" : "Remover trabalho"}
-                onClick={() => onChange(items.filter((_, i) => i !== idx))}
-                size="icon-sm"
-                variant="danger-ghost"
-              >
-                <Trash2 size={16} />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </fieldset>
-  );
-}
-
-function SubjectEditor({
-  error,
-  form,
-  isEditing,
-  onChange,
-  onClose,
-  onSubmit,
-}: {
-  error?: string | null;
-  form: typeof emptySubject;
-  isEditing: boolean;
-  onChange: (form: typeof emptySubject) => void;
-  onClose: () => void;
-  onSubmit: (event: FormEvent) => void;
-}) {
   return (
     <Modal
       footer={
@@ -507,95 +267,79 @@ function SubjectEditor({
           <Button onClick={onClose} variant="secondary">
             Cancelar
           </Button>
-          <Button form="form-disciplina" type="submit">
-            Salvar
+          <Button disabled={salvando} form="form-disciplina" type="submit">
+            {salvando ? "Salvando..." : "Salvar"}
           </Button>
         </>
       }
       onClose={onClose}
-      title={isEditing ? "Editar disciplina" : "Nova disciplina"}
+      title={inicial.id ? "Editar disciplina" : "Nova disciplina"}
     >
-      <form className="grid gap-4" id="form-disciplina" onSubmit={onSubmit}>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field htmlFor="disciplina-nome" label="Nome da disciplina">
-          <Input id="disciplina-nome" onChange={(e) => onChange({ ...form, name: e.target.value })} placeholder="Ex.: Cálculo I" required value={form.name} />
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field htmlFor="disciplina-data" label="Data">
-            <Input id="disciplina-data" onChange={(e) => onChange({ ...form, date: e.target.value })} type="date" value={form.date} />
+      <form className="grid gap-4" id="form-disciplina" noValidate onSubmit={enviar}>
+        {erro ? <Alert tone="danger">{erro}</Alert> : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field htmlFor="disciplina-nome" label="Nome">
+            <Input id="disciplina-nome" onChange={(e) => mudar({ nome: e.target.value })} placeholder="Ex.: Cálculo I" value={form.nome} />
           </Field>
-          <Field htmlFor="disciplina-inicio" label="Início">
-            <Input id="disciplina-inicio" onChange={(e) => onChange({ ...form, startTime: e.target.value })} type="time" value={form.startTime} />
-          </Field>
-          <Field htmlFor="disciplina-fim" label="Término">
-            <Input id="disciplina-fim" onChange={(e) => onChange({ ...form, endTime: e.target.value })} type="time" value={form.endTime} />
+          <Field htmlFor="disciplina-professor" label="Professor (opcional)">
+            <Input id="disciplina-professor" onChange={(e) => mudar({ professor: e.target.value })} value={form.professor} />
           </Field>
         </div>
 
-        <AssessmentList items={form.provas} kind="prova" onChange={(provas) => onChange({ ...form, provas })} />
-        <AssessmentList items={form.trabalhos} kind="trabalho" onChange={(trabalhos) => onChange({ ...form, trabalhos })} />
+        <fieldset>
+          <legend className="mb-1.5 text-[13px] font-medium text-ink-700">Prioridade no cronograma</legend>
+          <div className="flex gap-2">
+            {PRIORIDADES.map(([p, rotulo]) => (
+              <label
+                className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-500 ${
+                  form.prioridade === p ? "bg-primary-700 text-white ring-primary-700" : "bg-white text-ink-700 ring-line hover:bg-ink-50"
+                }`}
+                key={p}
+              >
+                <input checked={form.prioridade === p} className="sr-only" name="prioridade" onChange={() => mudar({ prioridade: p })} type="radio" />
+                {rotulo}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-500">Prioridade alta recebe até 3× mais blocos de estudo que a baixa.</p>
+        </fieldset>
+
+        <fieldset className="rounded-card border border-line bg-ink-50/60 p-3.5">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <legend className="text-sm font-semibold text-ink-800">Horários de aula</legend>
+            <Button onClick={() => mudar({ aulas: [...form.aulas, { dia_semana: 1, inicio: "19:00", fim: "20:40" }] })} size="sm" variant="secondary">
+              <Plus aria-hidden size={14} />
+              Adicionar aula
+            </Button>
+          </div>
+          {form.aulas.length === 0 ? (
+            <p className="text-sm text-ink-500">Nenhum horário. As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas.</p>
+          ) : (
+            <ul className="grid gap-2">
+              {form.aulas.map((a, i) => (
+                <li className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2" key={i}>
+                  <Select aria-label={`Dia da aula ${i + 1}`} onChange={(e) => mudarAula(i, { dia_semana: Number(e.target.value) })} value={a.dia_semana}>
+                    {NOMES_DIAS_SEMANA.map((nome, d) => (
+                      <option key={nome} value={d}>
+                        {nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input aria-label={`Início da aula ${i + 1}`} className="!w-28" onChange={(e) => mudarAula(i, { inicio: e.target.value })} type="time" value={a.inicio} />
+                  <Input aria-label={`Fim da aula ${i + 1}`} className="!w-28" onChange={(e) => mudarAula(i, { fim: e.target.value })} type="time" value={a.fim} />
+                  <Button aria-label={`Remover aula ${i + 1}`} onClick={() => mudar({ aulas: form.aulas.filter((_, j) => j !== i) })} size="icon-sm" variant="danger-ghost">
+                    <Trash2 size={16} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </fieldset>
 
         <Field htmlFor="disciplina-notas" label="Anotações">
-          <Textarea
-            className="min-h-24 resize-y"
-            id="disciplina-notas"
-            onChange={(e) => onChange({ ...form, notes: e.target.value })}
-            placeholder="Professor, sala, links úteis..."
-            value={form.notes}
-          />
+          <Textarea className="min-h-20 resize-y" id="disciplina-notas" onChange={(e) => mudar({ notas: e.target.value })} placeholder="Sala, links úteis, critérios de avaliação..." value={form.notas} />
         </Field>
       </form>
-    </Modal>
-  );
-}
-
-function SubjectView({ item, onClose, onEdit }: { item: Subject; onClose: () => void; onEdit: () => void }) {
-  const provas = provasOf(item);
-  const trabalhos = trabalhosOf(item);
-
-  return (
-    <Modal
-      description={`${formatTimeRange(item)} · ${formatDate(item.date)}`}
-      footer={
-        <>
-          <Button onClick={onClose} variant="secondary">
-            Fechar
-          </Button>
-          <Button onClick={onEdit}>
-            <Pencil aria-hidden size={16} />
-            Editar
-          </Button>
-        </>
-      }
-      onClose={onClose}
-      title={item.name}
-    >
-      <div className="grid gap-5 text-sm">
-        {[
-          { label: "Provas", items: provas, empty: "Nenhuma prova cadastrada" },
-          { label: "Trabalhos", items: trabalhos, empty: "Nenhum trabalho cadastrado" },
-        ].map((group) => (
-          <section key={group.label}>
-            <h3 className="mb-2 text-sm font-semibold text-ink-800">{group.label}</h3>
-            {group.items.length === 0 ? (
-              <p className="text-ink-500">{group.empty}</p>
-            ) : (
-              <ul className="divide-y divide-line rounded-control border border-line">
-                {group.items.map((entry, idx) => (
-                  <li className="flex justify-between gap-3 px-3 py-2" key={entry.id || idx}>
-                    <span className="font-medium text-ink-800">{entry.nome || `${group.label.slice(0, -1)} ${idx + 1}`}</span>
-                    <span className="tabular text-ink-500">{formatDate(entry.data)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ))}
-        <section>
-          <h3 className="mb-1 text-sm font-semibold text-ink-800">Anotações</h3>
-          <p className="whitespace-pre-wrap text-ink-600">{item.notes || "Sem anotações"}</p>
-        </section>
-      </div>
     </Modal>
   );
 }

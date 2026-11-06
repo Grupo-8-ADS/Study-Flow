@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { calculateStreak, buildDistribution } from './studyflow-data';
 
 vi.mock('@/lib/supabase', () => ({
-  supabase: { auth: { getUser: vi.fn() } },
+  supabase: { auth: { getSession: vi.fn() } },
 }));
 
 /** Testes complementares guiados por mutacao (StrykerJS). */

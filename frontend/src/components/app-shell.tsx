@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { LogOut, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getStoredSession, type StudyFlowSession } from "@/lib/studyflow-data";
+import { limparAgenda } from "@/lib/agenda";
 import { NotificationBell } from "@/components/notification-bell";
 import { ACCOUNT_MATCH, MAIN_NAV, isActive, sectionFor } from "@/components/navigation";
 
@@ -54,8 +55,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     void (async () => {
-      const { data } = await supabase.auth.getUser();
-      const id = data.user?.id;
+      const { data } = await supabase.auth.getSession();
+      const id = data.session?.user?.id;
       if (!id) return;
       const { data: profile } = await supabase.from("profiles").select("nome,avatar_url").eq("id", id).maybeSingle();
       if (!cancelled && profile) {
@@ -63,10 +64,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     })();
 
+    const reler = () => {
+      const atual = getStoredSession();
+      if (atual) setUser(atual);
+    };
+    window.addEventListener("studyflow:sessao", reler);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("studyflow:sessao", reler);
     };
-  }, [router, pathname]);
+    // Perfil (nome e foto) é buscado uma vez por sessão do shell, não a cada troca de aba.
+  }, [router]);
 
   const logout = async () => {
     try {
@@ -75,6 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       // Sem rede: ainda assim encerra a sessão local.
     }
     localStorage.removeItem("studyflow_session");
+    limparAgenda();
     router.push("/");
   };
 

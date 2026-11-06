@@ -122,7 +122,7 @@ const Cadastro: NextPage = () => {
 
           setSuccessMsg("Cadastro realizado com sucesso! Entrando...");
           setTimeout(() => {
-            router.push("/timer");
+            router.replace("/dashboard");
           }, 1000);
         }
       } catch (err) {
@@ -136,7 +136,7 @@ const Cadastro: NextPage = () => {
   );
 
   return (
-    <AuthLayout description="Leva menos de um minuto. Você já entra direto no app." title="Criar cadastro">
+    <AuthLayout title="Criar cadastro">
       <form className="flex flex-col gap-4" noValidate onSubmit={handleRegister}>
         {errorMsg ? <Alert tone="danger">{errorMsg}</Alert> : null}
         {successMsg ? <Alert tone="success">{successMsg}</Alert> : null}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Check, Download, FileText, Share2, Sparkles, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { limparAgenda } from "@/lib/agenda";
 import {
   buildDistribution,
   getCurrentSupabaseUserId,
@@ -229,6 +230,7 @@ export default function EstatisticasPage() {
         setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: inProgressAchievements });
       } catch {
         localStorage.removeItem("studyflow_session");
+        limparAgenda();
         router.push("/");
       }
     }
@@ -315,7 +317,6 @@ export default function EstatisticasPage() {
             {shared ? "Resumo copiado" : "Compartilhar progresso"}
           </Button>
         }
-        description="Quanto você estudou, em quais disciplinas e como está seu nível."
         title="Estatísticas"
       />
 
@@ -346,7 +347,7 @@ export default function EstatisticasPage() {
               />
             }
             description={
-              current.chart.length > 0 ? `Mais estudado: ${current.topic} (${current.topicHours.replace("H", " h")})` : "Horas por disciplina no período."
+              current.chart.length > 0 ? `Mais estudado: ${current.topic} (${current.topicHours.replace("H", " h")})` : undefined
             }
             icon={<BarChart3 size={18} />}
             title="Disciplinas mais estudadas"
@@ -390,7 +391,6 @@ export default function EstatisticasPage() {
         <Card className="flex flex-col xl:col-span-4">
           <CardHeader
             action={<Trophy aria-hidden className="text-gold" size={20} />}
-            description="Suas últimas conquistas."
             title="Conquistas"
           />
           <ul className="flex flex-col gap-2">
@@ -507,16 +507,15 @@ export default function EstatisticasPage() {
 
       {showAchievements ? (
         <Modal
-          description="Veja o que você já conquistou e os próximos desafios."
           onClose={() => setShowAchievements(false)}
           size="lg"
           title="Todas as conquistas"
           titleId="all-achievements-title"
         >
           <div className="flex flex-col gap-7">
-            <AchievementGroup achievements={allAchievements.completed} description="Conquistas que já fazem parte do seu perfil." title="Concluídas" type="completed" />
-            <AchievementGroup achievements={allAchievements.inProgress} description="Desafios que estão avançando conforme você estuda." title="Em andamento" type="progress" />
-            <AchievementGroup achievements={allAchievements.available} description="Novos objetivos que você pode começar a completar." title="Disponíveis" type="available" />
+            <AchievementGroup achievements={allAchievements.completed} title="Concluídas" type="completed" />
+            <AchievementGroup achievements={allAchievements.inProgress} title="Em andamento" type="progress" />
+            <AchievementGroup achievements={allAchievements.available} title="Disponíveis" type="available" />
           </div>
         </Modal>
       ) : null}
@@ -573,12 +572,10 @@ type AchievementItem = {
 
 function AchievementGroup({
   achievements,
-  description,
   title,
   type,
 }: {
   achievements: AchievementItem[];
-  description: string;
   title: string;
   type: "available" | "completed" | "progress";
 }) {
@@ -589,7 +586,6 @@ function AchievementGroup({
           <h3 className="text-base font-semibold text-ink-900">{title}</h3>
           <Badge>{achievements.length}</Badge>
         </div>
-        <p className="mt-0.5 text-sm text-ink-500">{description}</p>
       </div>
 
       {achievements.length === 0 ? (

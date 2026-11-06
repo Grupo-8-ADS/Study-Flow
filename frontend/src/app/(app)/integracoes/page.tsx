@@ -146,7 +146,6 @@ function IntegracoesConteudo() {
   return (
     <>
       <PageHeader
-        description="Conecte seu Gmail e o Study Flow transforma e-mails sobre provas, trabalhos e entregas em itens do seu cronograma."
         title="Integrações"
       />
 
