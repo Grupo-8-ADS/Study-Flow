@@ -657,7 +657,7 @@ const ESTILOS_AVATAR = [
 ] as const;
 
 const urlAvatar = (estilo: string, semente: string) =>
-  `https://api.dicebear.com/9.x/${estilo}/svg?seed=${encodeURIComponent(semente)}&backgroundColor=d1ece8,e3f3f0,fff4d6,fdecea&radius=50`;
+  `https://api.dicebear.com/9.x/${estilo}/png?size=256&seed=${encodeURIComponent(semente)}&backgroundColor=d1ece8,e3f3f0,fff4d6,fdecea&radius=50`;
 
 /** Sementes aleatórias: nada do usuário (nome, email) é enviado ao serviço de avatares. */
 const novasSementes = () => Array.from({ length: 8 }, () => Math.random().toString(36).slice(2, 10));

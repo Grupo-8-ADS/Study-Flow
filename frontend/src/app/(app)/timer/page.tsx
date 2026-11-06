@@ -247,8 +247,10 @@ const TimerDashboard: NextPage = () => {
 
   const pular = () => {
     setAviso("");
-    // Pular não registra a sessão de foco.
-    irParaModo(proximoModo(timerType, timerType === "foco" ? focosConcluidos + 1 : focosConcluidos, config), false);
+    // Pular não registra a sessão de foco, mas conta para o ciclo (senão a pausa longa se repete).
+    const focos = timerType === "foco" ? focosConcluidos + 1 : focosConcluidos;
+    if (timerType === "foco") setFocosConcluidos(focos);
+    irParaModo(proximoModo(timerType, focos, config), false);
   };
 
   const salvarConfig = (cfg: ConfigPomodoro) => {

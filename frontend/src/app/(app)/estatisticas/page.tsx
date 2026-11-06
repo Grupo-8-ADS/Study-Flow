@@ -24,7 +24,7 @@ import {
   intervaloDoPeriodo,
   intervaloPersonalizado,
   progressoConquista,
-  diasSeguidos,
+  maiorSequencia,
   nomeConquista,
   dataStr,
   progressoNivel,
@@ -198,7 +198,7 @@ export default function EstatisticasPage() {
           minutosEstudados: 0,
           sessoesConcluidas: completedSessions.length,
           sessoesPorDisciplina: {} as Record<string, number>,
-          diasSeguidos: diasSeguidos(
+          diasSeguidos: maiorSequencia(
             completedSessions.filter((sessao) => sessao.data_inicio).map((sessao) => dataStr(new Date(sessao.data_inicio as string))),
           ),
         };

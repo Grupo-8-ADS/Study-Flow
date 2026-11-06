@@ -263,4 +263,11 @@ describe('conquistas dinâmicas', () => {
     expect(g.diasSeguidos(['2026-11-01', '2026-11-03', '2026-11-04', '2026-11-04', '2026-11-05'])).toBe(3);
     expect(g.diasSeguidos(['2026-10-31', '2026-11-01'])).toBe(2);
   });
+
+  it('maiorSequencia acha a maior sequência, mesmo já quebrada', () => {
+    expect(g.maiorSequencia([])).toBe(0);
+    expect(g.maiorSequencia(['2026-10-01', '2026-10-02', '2026-10-03', '2026-11-05'])).toBe(3);
+    expect(g.maiorSequencia(['2026-11-05', '2026-11-05'])).toBe(1);
+    expect(g.maiorSequencia(['2026-10-31', '2026-11-01', '2026-11-03'])).toBe(2);
+  });
 });

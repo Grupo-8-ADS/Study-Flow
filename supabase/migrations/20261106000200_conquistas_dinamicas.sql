@@ -82,7 +82,8 @@ begin
   limit 1;
   v_top := coalesce(v_top, 0);
 
-  -- Dias seguidos (no fuso de São Paulo) terminando no dia mais recente com estudo.
+  -- Maior sequência de dias seguidos (no fuso de São Paulo), mesmo já quebrada: quem
+  -- fez 15 dias em outubro ganha a conquista mesmo sem estudar hoje.
   with dias as (
     select distinct (coalesce(data_inicio, created_at) at time zone 'America/Sao_Paulo')::date as d
     from public.sessoes_estudo
@@ -90,9 +91,8 @@ begin
   ), grupos as (
     select d, d - (row_number() over (order by d))::integer as grupo from dias
   )
-  select count(*) into v_streak
-  from grupos
-  where grupo = (select grupo from grupos order by d desc limit 1);
+  select max(n) into v_streak
+  from (select count(*) as n from grupos group by grupo) as sequencias;
   v_streak := coalesce(v_streak, 0);
 
   for v_conquista in

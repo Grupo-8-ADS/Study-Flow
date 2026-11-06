@@ -134,6 +134,23 @@ export function diasSeguidos(datas: string[]): number {
   return contagem;
 }
 
+/**
+ * Maior sequência de dias seguidos já feita (mesma regra do banco em avaliar_conquistas):
+ * é o que libera as conquistas de sequência, mesmo que a sequência já tenha sido quebrada.
+ */
+export function maiorSequencia(datas: string[]): number {
+  const dias = Array.from(new Set(datas.filter(Boolean))).sort();
+  let maior = 0;
+  let atual = 0;
+  for (let i = 0; i < dias.length; i++) {
+    const seguido =
+      i > 0 && Math.round((new Date(`${dias[i]}T12:00:00`).getTime() - new Date(`${dias[i - 1]}T12:00:00`).getTime()) / 86_400_000) === 1;
+    atual = seguido ? atual + 1 : 1;
+    maior = Math.max(maior, atual);
+  }
+  return maior;
+}
+
 /** Nível visual da conquista (bronze, prata, ouro). */
 export const ROTULO_TIER: Record<number, string> = { 1: 'Bronze', 2: 'Prata', 3: 'Ouro' };
 

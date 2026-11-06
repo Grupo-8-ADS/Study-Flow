@@ -16,7 +16,7 @@ import {
   Conquista,
   progressoNivel,
   progressoConquista,
-  diasSeguidos,
+  maiorSequencia,
   nomeConquista,
   dataStr,
   textoCompartilhamento,
@@ -109,7 +109,7 @@ export default function EstatisticasScreen() {
         sessoesConcluidas: concluidas.length,
         minutosEstudados: totalMins,
         sessoesPorDisciplina,
-        diasSeguidos: diasSeguidos(concluidas.filter((s) => s.data_inicio).map((s) => dataStr(new Date(s.data_inicio)))),
+        diasSeguidos: maiorSequencia(concluidas.filter((s) => s.data_inicio).map((s) => dataStr(new Date(s.data_inicio)))),
       };
 
       // 2. Fetch conquistas and user_conquistas

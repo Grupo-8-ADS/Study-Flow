@@ -64,6 +64,10 @@ export default function TimerScreen() {
   const [notes, setNotes] = useState<string>('');
   const [subjectModalVisible, setSubjectModalVisible] = useState<boolean>(false);
   const finishCycleRef = useRef<() => void>(() => {});
+  const fimEmRef = useRef<number | null>(null);
+  useEffect(() => {
+    fimEmRef.current = fimEm;
+  }, [fimEm]);
 
   const progress = totalDuration > 0 ? (totalDuration - timeLeft) / totalDuration : 0;
 
@@ -72,6 +76,8 @@ export default function TimerScreen() {
     void AsyncStorage.getItem(chaveConfig(session.email)).then((salvo) => {
       const cfg = normalizarPomodoro(salvo);
       setConfig(cfg);
+      // Se o timer já começou antes de a configuração carregar, não mexe nele.
+      if (fimEmRef.current !== null) return;
       setTotalDuration(duracaoModo('foco', cfg));
       setTimeLeft(duracaoModo('foco', cfg));
     });
@@ -120,9 +126,17 @@ export default function TimerScreen() {
     void notificarFimDoCiclo(MODO_NOTIFICACAO[mode]);
     const focos = mode === 'foco' ? focosConcluidos + 1 : focosConcluidos;
     const proximo = proximoModo(mode, focos, config);
-    if (mode === 'foco') {
+    // Avança antes de salvar: enquanto a gravação não volta, o usuário já pode mexer
+    // no próximo ciclo sem que ele seja trocado depois.
+    const terminado = mode;
+    const duracao = totalDuration;
+    const disciplina = selectedSubject;
+    const anotacoes = notes;
+    irParaModo(proximo, config.autoIniciar);
+    if (terminado === 'foco') {
       setFocosConcluidos(focos);
-      const minutos = Math.round(totalDuration / 60);
+      const minutos = Math.round(duracao / 60);
+      setAviso(`${minutos} min de foco em ${disciplina.nome} registrados (+${Math.min(minutos, 240)} XP). Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`);
       try {
         const { data } = await supabase.auth.getSession();
         const uid = data.session?.user?.id;
@@ -131,24 +145,23 @@ export default function TimerScreen() {
           // XP, nível e conquistas são calculados pelo trigger on_sessao_concluida no banco.
           await supabase.from('sessoes_estudo').insert({
             user_id: uid,
-            disciplina_id: selectedSubject.id,
-            data_inicio: new Date(fim.getTime() - totalDuration * 1000).toISOString(),
+            disciplina_id: disciplina.id,
+            data_inicio: new Date(fim.getTime() - duracao * 1000).toISOString(),
             data_fim: fim.toISOString(),
             duracao_efetiva_min: minutos,
             status: 'concluida',
             exp: minutos,
-            notas: notes.trim() || null,
+            notas: anotacoes.trim() || null,
           });
           await refreshProfile();
         }
       } catch (e) {
         console.error('Error saving study session:', e);
+        setAviso('Não foi possível registrar a sessão. Verifique a conexão.');
       }
-      setAviso(`${minutos} min de foco em ${selectedSubject.nome} registrados (+${Math.min(minutos, 240)} XP). Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`);
     } else {
       setAviso('A pausa acabou. Pronto para voltar ao foco?');
     }
-    irParaModo(proximo, config.autoIniciar);
   };
 
   useEffect(() => {
@@ -176,7 +189,10 @@ export default function TimerScreen() {
 
   const pular = () => {
     setAviso('');
-    irParaModo(proximoModo(mode, mode === 'foco' ? focosConcluidos + 1 : focosConcluidos, config), false);
+    // Pular um foco conta para o ciclo (não para o XP), senão a pausa longa se repete.
+    const focos = mode === 'foco' ? focosConcluidos + 1 : focosConcluidos;
+    if (mode === 'foco') setFocosConcluidos(focos);
+    irParaModo(proximoModo(mode, focos, config), false);
   };
 
   const salvarConfig = (cfg: ConfigPomodoro) => {
