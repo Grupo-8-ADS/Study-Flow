@@ -7,3 +7,5 @@ export * from './gamificacao';
 export * from './relatorios';
 export * from './gmail';
 export * from './agenda';
+export * from './pomodoro';
+export * from './recompensas';

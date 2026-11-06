@@ -18,7 +18,8 @@ import {
   Image as ImageIcon,
   Trash2,
 } from 'lucide-react-native';
-import { COLORS } from '@studyflow/shared';
+import { COLORS, bannerPreset } from '@studyflow/shared';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
@@ -258,7 +259,14 @@ export default function PerfilScreen() {
         {/* Profile Banner & Header Card */}
         <View style={styles.bannerContainer}>
           <View style={[styles.bannerBg, { backgroundColor: bgColor }]}>
-            {bannerUrl ? (
+            {bannerPreset(bannerUrl) ? (
+              <LinearGradient
+                colors={bannerPreset(bannerUrl)!.cores}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : bannerUrl ? (
               <Image
                 source={{ uri: bannerUrl }}
                 style={StyleSheet.absoluteFill}

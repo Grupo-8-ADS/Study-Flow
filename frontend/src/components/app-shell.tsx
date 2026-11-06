@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { getStoredSession, type StudyFlowSession } from "@/lib/studyflow-data";
 import { limparAgenda } from "@/lib/agenda";
 import { NotificationBell } from "@/components/notification-bell";
+import { MolduraAvatar } from "@/components/moldura-avatar";
 import { ACCOUNT_MATCH, MAIN_NAV, isActive, sectionFor } from "@/components/navigation";
 
 /** Logotipo textual com a fonte da marca. */
@@ -18,6 +19,7 @@ function Wordmark({ className = "" }: { className?: string }) {
 function Avatar({ user, size = 36 }: { user: StudyFlowSession | null; size?: number }) {
   const initial = user?.nome?.trim()?.[0]?.toUpperCase();
   return (
+    <MolduraAvatar espessura={2} moldura={user?.moldura}>
     <span
       className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-sm font-semibold text-primary-800"
       style={{ height: size, width: size }}
@@ -30,6 +32,7 @@ function Avatar({ user, size = 36 }: { user: StudyFlowSession | null; size?: num
         <UserRound size={size * 0.5} aria-hidden />
       )}
     </span>
+    </MolduraAvatar>
   );
 }
 
@@ -58,9 +61,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       const { data } = await supabase.auth.getSession();
       const id = data.session?.user?.id;
       if (!id) return;
-      const { data: profile } = await supabase.from("profiles").select("nome,avatar_url").eq("id", id).maybeSingle();
+      const { data: profile } = await supabase.from("profiles").select("nome,avatar_url,moldura").eq("id", id).maybeSingle();
       if (!cancelled && profile) {
-        setUser((current) => (current ? { ...current, nome: profile.nome || current.nome, avatar_url: profile.avatar_url } : current));
+        setUser((current) => (current ? { ...current, nome: profile.nome || current.nome, avatar_url: profile.avatar_url, moldura: profile.moldura } : current));
       }
     })();
 

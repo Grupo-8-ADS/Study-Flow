@@ -9,12 +9,16 @@ import {
   Share,
   ActivityIndicator,
 } from 'react-native';
-import { Trophy, Share2, Award, Zap } from 'lucide-react-native';
+import { Share2, Zap } from 'lucide-react-native';
+import { ConquistaIcone } from '../../components/ConquistaIcone';
 import {
   COLORS,
   Conquista,
   progressoNivel,
   progressoConquista,
+  maiorSequencia,
+  nomeConquista,
+  dataStr,
   textoCompartilhamento,
   intervaloDoPeriodo,
   gerarRelatorioPeriodo,
@@ -42,7 +46,7 @@ export default function EstatisticasScreen() {
 
   const [topSubject, setTopSubject] = useState<string | null>(null);
   const [subjectStats, setSubjectStats] = useState<Array<{ name: string; hours: number; percent: number; color: string }>>([]);
-  const [conquistas, setConquistas] = useState<Array<Conquista & { unlocked: boolean; progress?: number }>>([]);
+  const [conquistas, setConquistas] = useState<Array<Conquista & { unlocked: boolean; progress?: number; ordem?: number }>>([]);
 
   const loadStats = async () => {
     setLoading(true);
@@ -78,7 +82,8 @@ export default function EstatisticasScreen() {
         totalMins += dur;
         const subName = s.disciplina_nome || 'Geral';
         subMap.set(subName, (subMap.get(subName) || 0) + dur);
-        sessoesPorDisciplina[subName] = (sessoesPorDisciplina[subName] || 0) + 1;
+        // Sessões sem disciplina não contam para conquistas por disciplina.
+        if (s.disciplina_nome) sessoesPorDisciplina[s.disciplina_nome] = (sessoesPorDisciplina[s.disciplina_nome] || 0) + 1;
       });
 
       setWeekHours(horas(semana.totalMinutos));
@@ -104,21 +109,34 @@ export default function EstatisticasScreen() {
         sessoesConcluidas: concluidas.length,
         minutosEstudados: totalMins,
         sessoesPorDisciplina,
+        diasSeguidos: maiorSequencia(concluidas.filter((s) => s.data_inicio).map((s) => dataStr(new Date(s.data_inicio)))),
       };
 
       // 2. Fetch conquistas and user_conquistas
-      const { data: allConq } = await supabase.from('conquistas').select('*');
-      const { data: userConq } = await supabase.from('user_conquistas').select('conquista_id').eq('user_id', uid);
+      const { data: allConq } = await supabase.from('conquistas').select('*').order('tier').order('created_at');
+      const { data: userConq } = await supabase
+        .from('user_conquistas')
+        .select('conquista_id, detalhe, data_conquista')
+        .eq('user_id', uid)
+        .order('data_conquista', { ascending: false });
 
-      const unlockedSet = new Set((userConq || []).map((u) => u.conquista_id));
+      const desbloqueadas = new Map((userConq || []).map((u, i) => [u.conquista_id as string, { detalhe: u.detalhe as string | null, ordem: i }]));
 
       if (allConq && allConq.length > 0) {
         setConquistas(
-          allConq.map((c) => ({
-            ...c,
-            unlocked: unlockedSet.has(c.id),
-            progress: unlockedSet.has(c.id) ? 100 : progressoConquista(c.criterio, stats).percentual,
-          }))
+          allConq
+            .map((c) => {
+              const ganha = desbloqueadas.get(c.id);
+              return {
+                ...c,
+                nome: nomeConquista(c.nome, ganha?.detalhe, stats),
+                unlocked: Boolean(ganha),
+                ordem: ganha?.ordem ?? Number.MAX_SAFE_INTEGER,
+                progress: ganha ? 100 : progressoConquista(c.criterio, stats).percentual,
+              };
+            })
+            // Mais recentes primeiro; depois as bloqueadas, as mais perto de concluir antes.
+            .sort((a, b) => a.ordem - b.ordem || (b.progress ?? 0) - (a.progress ?? 0)),
         );
       }
     } catch (e) {
@@ -283,7 +301,7 @@ export default function EstatisticasScreen() {
         )}
 
         {/* Conquistas Card */}
-        {conquistas.length > 0 && (
+        {conquistas.some((c) => c.unlocked) && (
           <>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Conquistas Recentes</Text>
@@ -296,11 +314,9 @@ export default function EstatisticasScreen() {
             </View>
 
             <Card style={styles.achievementsCard}>
-              {conquistas.slice(0, 3).map((item) => (
+              {conquistas.filter((c) => c.unlocked).slice(0, 3).map((item) => (
                 <View key={item.id} style={styles.achievementRow}>
-                  <View style={styles.trophyCircle}>
-                    <Trophy size={20} color={COLORS.gold} />
-                  </View>
+                  <ConquistaIcone icone={item.icone} tier={item.tier} />
                   <View style={styles.achievementInfo}>
                     <Text style={styles.achievementName}>{item.nome}</Text>
                     <Text style={styles.achievementDesc}>{item.descricao}</Text>
@@ -337,9 +353,7 @@ export default function EstatisticasScreen() {
             .filter((a) => a.unlocked)
             .map((a) => (
               <View key={a.id} style={styles.modalAchieveItem}>
-                <View style={styles.trophyCircleUnlocked}>
-                  <Trophy size={20} color={COLORS.gold} />
-                </View>
+                <ConquistaIcone icone={a.icone} tier={a.tier} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalAchieveName}>{a.nome}</Text>
                   <Text style={styles.modalAchieveDesc}>{a.descricao}</Text>
@@ -355,9 +369,7 @@ export default function EstatisticasScreen() {
             .filter((a) => !a.unlocked)
             .map((a) => (
               <View key={a.id} style={styles.modalAchieveItem}>
-                <View style={styles.trophyCircleLocked}>
-                  <Award size={20} color={COLORS.textMuted} />
-                </View>
+                <ConquistaIcone bloqueada icone={a.icone} tier={a.tier} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalAchieveName}>{a.nome}</Text>
                   <Text style={styles.modalAchieveDesc}>{a.descricao}</Text>

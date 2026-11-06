@@ -46,6 +46,8 @@ export interface EstatisticasConquista {
   minutosEstudados: number;
   /** Sessões concluídas por nome de disciplina. */
   sessoesPorDisciplina: Record<string, number>;
+  /** Dias seguidos com estudo, terminando no dia mais recente com estudo. */
+  diasSeguidos?: number;
 }
 
 export interface ProgressoConquista {
@@ -78,6 +80,15 @@ export function progressoConquista(
         .reduce((soma, [, qtd]) => soma + qtd, 0);
       break;
     }
+    case 'unique_subjects':
+      atual = Object.values(stats.sessoesPorDisciplina).filter((n) => n > 0).length;
+      break;
+    case 'streak':
+      atual = stats.diasSeguidos ?? 0;
+      break;
+    case 'top_subject_sessions':
+      atual = disciplinaMaisEstudada(stats)?.sessoes ?? 0;
+      break;
     default:
       atual = 0;
   }
@@ -90,6 +101,58 @@ export function progressoConquista(
     concluida: atual >= alvo,
   };
 }
+
+/** Disciplina com mais sessões concluídas (empate: a primeira na ordem recebida). */
+export function disciplinaMaisEstudada(stats: EstatisticasConquista): { nome: string; sessoes: number } | null {
+  let melhor: { nome: string; sessoes: number } | null = null;
+  for (const [nome, sessoes] of Object.entries(stats.sessoesPorDisciplina)) {
+    if (sessoes > 0 && (!melhor || sessoes > melhor.sessoes)) melhor = { nome, sessoes };
+  }
+  return melhor;
+}
+
+/**
+ * Nome exibido da conquista. Nomes com "{disciplina}" usam a disciplina gravada no
+ * desbloqueio (`detalhe`) ou, se ainda bloqueada, a mais estudada no momento.
+ */
+export function nomeConquista(nome: string, detalhe: string | null | undefined, stats?: EstatisticasConquista): string {
+  if (!nome.includes('{disciplina}')) return nome;
+  const disciplina = detalhe || (stats ? disciplinaMaisEstudada(stats)?.nome : null) || 'sua disciplina';
+  return nome.replace('{disciplina}', disciplina);
+}
+
+/** Dias seguidos com estudo (datas AAAA-MM-DD em qualquer ordem), terminando no dia mais recente. */
+export function diasSeguidos(datas: string[]): number {
+  const dias = Array.from(new Set(datas.filter(Boolean))).sort();
+  if (dias.length === 0) return 0;
+  let contagem = 1;
+  for (let i = dias.length - 1; i > 0; i--) {
+    const [a, b] = [new Date(`${dias[i - 1]}T12:00:00`), new Date(`${dias[i]}T12:00:00`)];
+    if (Math.round((b.getTime() - a.getTime()) / 86_400_000) !== 1) break;
+    contagem++;
+  }
+  return contagem;
+}
+
+/**
+ * Maior sequência de dias seguidos já feita (mesma regra do banco em avaliar_conquistas):
+ * é o que libera as conquistas de sequência, mesmo que a sequência já tenha sido quebrada.
+ */
+export function maiorSequencia(datas: string[]): number {
+  const dias = Array.from(new Set(datas.filter(Boolean))).sort();
+  let maior = 0;
+  let atual = 0;
+  for (let i = 0; i < dias.length; i++) {
+    const seguido =
+      i > 0 && Math.round((new Date(`${dias[i]}T12:00:00`).getTime() - new Date(`${dias[i - 1]}T12:00:00`).getTime()) / 86_400_000) === 1;
+    atual = seguido ? atual + 1 : 1;
+    maior = Math.max(maior, atual);
+  }
+  return maior;
+}
+
+/** Nível visual da conquista (bronze, prata, ouro). */
+export const ROTULO_TIER: Record<number, string> = { 1: 'Bronze', 2: 'Prata', 3: 'Ouro' };
 
 export interface DadosCompartilhamento {
   nivel: number;

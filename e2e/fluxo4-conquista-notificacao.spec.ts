@@ -25,13 +25,12 @@ test.describe("Fluxo 4: conquista desbloqueada vira notificação", () => {
       await page.clock.install();
       await timer.abrir();
       await timer.iniciar();
-      const aviso = page.waitForEvent("dialog");
       const gravacao = page.waitForResponse(
         (r) => r.url().includes("/rest/v1/sessoes_estudo") && r.request().method() === "POST",
       );
       await page.clock.runFor(25 * 60 * 1000);
-      await (await aviso).accept();
       expect((await gravacao).ok()).toBe(true);
+      await expect(page.getByText(/Sessão de foco em .* registrada\./)).toBeVisible();
     });
 
     await test.step("2. Ver a conquista no sino de notificações", async () => {
