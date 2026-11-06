@@ -100,6 +100,8 @@ export type Conquista = {
   pontos_recompensa: number;
   icone?: string | null;
   category?: string | null;
+  /** 1 bronze, 2 prata, 3 ouro. */
+  tier?: number | null;
 };
 
 export type UserConquista = {

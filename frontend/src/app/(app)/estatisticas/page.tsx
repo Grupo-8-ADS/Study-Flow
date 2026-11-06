@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Check, Download, FileText, Share2, Sparkles, Trophy } from "lucide-react";
+import { BarChart3, Check, Download, FileText, Share2, Trophy } from "lucide-react";
+import { ConquistaIcone } from "@/components/conquista-icone";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
 import {
@@ -23,6 +24,9 @@ import {
   intervaloDoPeriodo,
   intervaloPersonalizado,
   progressoConquista,
+  diasSeguidos,
+  nomeConquista,
+  dataStr,
   progressoNivel,
   relatorioParaCSV,
   textoCompartilhamento,
@@ -163,10 +167,10 @@ export default function EstatisticasPage() {
             .eq("user_id", currentUserId),
           supabase
             .from("user_conquistas")
-            .select("conquistas(nome,descricao)")
+            .select("detalhe,conquistas(id,nome,descricao,icone,tier)")
             .eq("user_id", currentUserId)
             .order("data_conquista", { ascending: false }),
-          supabase.from("conquistas").select("nome,descricao,criterio"),
+          supabase.from("conquistas").select("id,nome,descricao,criterio,icone,tier").order("tier").order("created_at"),
           supabase.from("profiles").select("avatar_url,xp,horas_diarias").eq("id", currentUserId).maybeSingle(),
         ]);
 
@@ -194,6 +198,9 @@ export default function EstatisticasPage() {
           minutosEstudados: 0,
           sessoesConcluidas: completedSessions.length,
           sessoesPorDisciplina: {} as Record<string, number>,
+          diasSeguidos: diasSeguidos(
+            completedSessions.filter((sessao) => sessao.data_inicio).map((sessao) => dataStr(new Date(sessao.data_inicio as string))),
+          ),
         };
         for (const sessao of completedSessions) {
           const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
@@ -206,18 +213,24 @@ export default function EstatisticasPage() {
           const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
           return {
             detail: conquista?.descricao ?? "Conquista desbloqueada",
-            name: conquista?.nome ?? "Conquista",
+            icon: conquista?.icone ?? null,
+            id: conquista?.id ?? "",
+            name: nomeConquista(conquista?.nome ?? "Conquista", item.detalhe, achievementStats),
+            tier: conquista?.tier ?? 1,
           };
         });
-        const completedNames = new Set(completedAchievements.map((achievement) => achievement.name));
+        const completedIds = new Set(completedAchievements.map((achievement) => achievement.id));
         // Conquistas ainda bloqueadas: progresso real calculado das sessões concluídas (RF004).
         const lockedAchievements = (todasConquistas ?? [])
-          .filter((achievement) => !completedNames.has(achievement.nome))
+          .filter((achievement) => !completedIds.has(achievement.id))
           .map((achievement) => {
             const progress = progressoConquista(achievement.criterio as CriterioConquista | null, achievementStats);
             return {
               detail: achievement.descricao ?? "Continue estudando para desbloquear",
-              name: achievement.nome,
+              icon: achievement.icone ?? null,
+              id: achievement.id,
+              name: nomeConquista(achievement.nome, null, achievementStats),
+              tier: achievement.tier ?? 1,
               progress: progress.percentual,
               progressLabel: `${Math.floor(progress.atual)} / ${progress.alvo}`,
             };
@@ -395,10 +408,8 @@ export default function EstatisticasPage() {
           />
           <ul className="flex flex-col gap-2">
             {featuredAchievements.map((achievement) => (
-              <li className="flex items-center gap-3 rounded-control border border-line p-3" key={achievement.name}>
-                <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gold-soft text-gold">
-                  <Trophy size={17} />
-                </span>
+              <li className="flex items-center gap-3 rounded-control border border-line p-3" key={achievement.id}>
+                <ConquistaIcone icone={achievement.icon} tamanho={36} tier={achievement.tier} />
                 <span className="min-w-0 flex-1">
                   <strong className="block truncate text-sm font-medium text-ink-900">{achievement.name}</strong>
                   <small className="block truncate text-xs text-ink-500">{achievement.detail}</small>
@@ -565,7 +576,10 @@ function Segmented({
 
 type AchievementItem = {
   detail: string;
+  icon: string | null;
+  id: string;
   name: string;
+  tier: number;
   progress?: number;
   progressLabel?: string;
 };
@@ -595,16 +609,9 @@ function AchievementGroup({
           {achievements.map((achievement) => (
             <li
               className={`flex items-center gap-3 rounded-control border p-3 ${type === "available" ? "border-dashed border-ink-200 bg-ink-50/60" : "border-line bg-white"}`}
-              key={achievement.name}
+              key={achievement.id}
             >
-              <span
-                aria-hidden
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${
-                  type === "completed" ? "bg-gold-soft text-gold" : type === "progress" ? "bg-primary-100 text-primary-700" : "bg-ink-100 text-ink-400"
-                }`}
-              >
-                {type === "progress" ? <Sparkles size={19} /> : <Trophy size={19} />}
-              </span>
+              <ConquistaIcone bloqueada={type !== "completed"} icone={achievement.icon} tier={achievement.tier} />
 
               <span className="min-w-0 flex-1">
                 <strong className="block text-sm font-medium text-ink-900">{achievement.name}</strong>

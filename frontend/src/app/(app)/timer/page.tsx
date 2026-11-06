@@ -3,14 +3,27 @@
 import type { NextPage } from "next";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useEffect, useRef } from "react";
-import { BookOpen, NotebookPen, Pause, Play, RotateCcw } from "lucide-react";
+import { BookOpen, NotebookPen, Pause, Play, RotateCcw, Settings2, SkipForward } from "lucide-react";
+import {
+  LIMITES_POMODORO,
+  POMODORO_PADRAO,
+  PRESETS_POMODORO,
+  ROTULO_MODO,
+  duracaoModo,
+  normalizarPomodoro,
+  proximoModo,
+  segundosRestantes,
+  type ConfigPomodoro,
+  type ModoPomodoro,
+} from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { useAgenda } from "@/lib/agenda";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageLoading } from "@/components/ui/feedback";
-import { Select, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 
 interface UserSession {
@@ -22,20 +35,46 @@ interface UserSession {
 
 type DisciplineOption = { id: string; name: string };
 
+const chaveConfig = (email: string) => `studyflow_pomodoro_${email}`;
+
+/** Bipe curto ao terminar um ciclo (sem arquivo de áudio). */
+function tocarAviso() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [0, 0.25, 0.5].forEach((atraso) => {
+      const osc = ctx.createOscillator();
+      const ganho = ctx.createGain();
+      osc.frequency.value = 880;
+      ganho.gain.setValueAtTime(0.0001, ctx.currentTime + atraso);
+      ganho.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + atraso + 0.02);
+      ganho.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + atraso + 0.18);
+      osc.connect(ganho).connect(ctx.destination);
+      osc.start(ctx.currentTime + atraso);
+      osc.stop(ctx.currentTime + atraso + 0.2);
+    });
+    setTimeout(() => void ctx.close(), 1200);
+  } catch {
+    // Sem áudio disponível: segue sem som.
+  }
+}
+
 const TimerDashboard: NextPage = () => {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
-  
+  const [config, setConfig] = useState<ConfigPomodoro>(POMODORO_PADRAO);
+  const [editandoConfig, setEditandoConfig] = useState(false);
 
-  // Pomodoro Timer States
-  const [timerType, setTimerType] = useState<"foco" | "pausa_curta" | "pausa_longa">("foco");
-  const [secondsLeft, setSecondsLeft] = useState<number>(25 * 60);
-  // Fonte da verdade para o intervalo: atualizada junto com o estado (sincronizar via
-  // efeito sobrescreveria ticks mais novos com um valor antigo).
-  const secondsLeftRef = useRef(25 * 60);
-  const [totalDuration, setTotalDuration] = useState<number>(25 * 60);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Estado do timer. O tempo restante vem do relógio (fimEm), não da contagem de ticks:
+  // em aba de fundo o navegador atrasa o setInterval e o timer "andava devagar".
+  const [timerType, setTimerType] = useState<ModoPomodoro>("foco");
+  const [totalDuration, setTotalDuration] = useState<number>(duracaoModo("foco", POMODORO_PADRAO));
+  const [secondsLeft, setSecondsLeft] = useState<number>(totalDuration);
+  const [fimEm, setFimEm] = useState<number | null>(null);
+  const isRunning = fimEm !== null;
+  const [focosConcluidos, setFocosConcluidos] = useState(0);
+  const [aviso, setAviso] = useState("");
 
   // Disciplinas & Notas
   const { dados: agenda } = useAgenda();
@@ -46,18 +85,18 @@ const TimerDashboard: NextPage = () => {
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
 
-  // Redirecionamento caso não autenticado e carregamento de sessão
   useEffect(() => {
     async function loadTimer() {
       const parsed = getStoredSession();
-
       if (!parsed) {
         router.push("/");
         return;
       }
-
       setUser(parsed);
-
+      const cfg = normalizarPomodoro(localStorage.getItem(chaveConfig(parsed.email)));
+      setConfig(cfg);
+      setTotalDuration(duracaoModo("foco", cfg));
+      setSecondsLeft(duracaoModo("foco", cfg));
       setSupabaseUserId(await getCurrentSupabaseUserId(parsed));
     }
 
@@ -74,7 +113,6 @@ const TimerDashboard: NextPage = () => {
     }
   }, [user, selectedDiscipline]);
 
-  // Salva anotações no localStorage
   const handleNotesChange = (text: string) => {
     setNotes(text);
     if (user && selectedDiscipline) {
@@ -86,126 +124,147 @@ const TimerDashboard: NextPage = () => {
     return disciplines.find((discipline) => discipline.id === selectedDiscipline)?.name ?? "Sem disciplina";
   }, [disciplines, selectedDiscipline]);
 
-  const recordStudySession = useCallback(async () => {
-    if (!user || timerType !== "foco") return;
+  const recordStudySession = useCallback(
+    async (duracaoSeg: number) => {
+      if (!user) return;
+      const durationMinutes = Math.round(duracaoSeg / 60);
+      const finishedAt = new Date();
+      const startedAt = new Date(finishedAt.getTime() - duracaoSeg * 1000);
 
-    const durationMinutes = Math.round(totalDuration / 60);
-    const finishedAt = new Date();
-    const startedAt = new Date(finishedAt.getTime() - totalDuration * 1000);
+      if (supabaseUserId) {
+        await supabase.from("sessoes_estudo").insert({
+          data_fim: finishedAt.toISOString(),
+          data_inicio: startedAt.toISOString(),
+          disciplina_id: selectedDiscipline || null,
+          duracao_efetiva_min: durationMinutes,
+          exp: durationMinutes,
+          notas: notes,
+          status: "concluida",
+          user_id: supabaseUserId,
+        });
+        return;
+      }
 
-    if (supabaseUserId) {
-      await supabase.from("sessoes_estudo").insert({
-        data_fim: finishedAt.toISOString(),
-        data_inicio: startedAt.toISOString(),
-        disciplina_id: selectedDiscipline || null,
-        duracao_efetiva_min: durationMinutes,
-        exp: durationMinutes,
-        notas: notes,
-        status: "concluida",
-        user_id: supabaseUserId,
+      const key = `studyflow_activity_${user.email}`;
+      const current = localStorage.getItem(key);
+      const activity = current ? JSON.parse(current) : [];
+      activity.push({
+        createdAt: finishedAt.toISOString(),
+        discipline: getSelectedDisciplineName(),
+        minutes: durationMinutes,
+        type: "foco",
       });
-      return;
-    }
+      localStorage.setItem(key, JSON.stringify(activity));
+    },
+    [getSelectedDisciplineName, notes, selectedDiscipline, supabaseUserId, user],
+  );
 
-    const key = `studyflow_activity_${user.email}`;
-    const current = localStorage.getItem(key);
-    const activity = current ? JSON.parse(current) : [];
-    activity.push({
-      createdAt: finishedAt.toISOString(),
-      discipline: getSelectedDisciplineName(),
-      minutes: durationMinutes,
-      type: "foco",
-    });
-    localStorage.setItem(key, JSON.stringify(activity));
-  }, [getSelectedDisciplineName, notes, selectedDiscipline, supabaseUserId, timerType, totalDuration, user]);
+  /** Prepara um modo (parado ou já rodando). */
+  const irParaModo = useCallback(
+    (modo: ModoPomodoro, iniciar: boolean, cfg: ConfigPomodoro = config) => {
+      const duracao = duracaoModo(modo, cfg);
+      setTimerType(modo);
+      setTotalDuration(duracao);
+      setSecondsLeft(duracao);
+      setFimEm(iniciar ? Date.now() + duracao * 1000 : null);
+    },
+    [config],
+  );
 
-  // Ajusta o tempo inicial com base no tipo de timer selecionado
-  const getInitialTime = (type: "foco" | "pausa_curta" | "pausa_longa") => {
-    switch (type) {
-      case "foco":
-        return 25 * 60;
-      case "pausa_curta":
-        return 5 * 60;
-      case "pausa_longa":
-        return 15 * 60;
-    }
-  };
-
-  // Muda a aba do Timer (Foco, Pausa Curta, Pausa Longa)
-  const handleTimerTypeChange = (type: "foco" | "pausa_curta" | "pausa_longa") => {
-    setIsRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    
-    setTimerType(type);
-    const duration = getInitialTime(type);
-    setSecondsLeft(duration);
-    secondsLeftRef.current = duration;
-    setTotalDuration(duration);
-  };
-
-  // Iniciar/Pausar cronômetro
-  const toggleTimer = () => {
-    setIsRunning(!isRunning);
-  };
-
-  // Resetar cronômetro
-  const resetTimer = () => {
-    setIsRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    const duration = getInitialTime(timerType);
-    setSecondsLeft(duration);
-    secondsLeftRef.current = duration;
-  };
-
-  // Término do ciclo: registra a sessão e notifica (chamado uma única vez por ciclo)
+  // Término do ciclo: registra a sessão (só foco), avisa e avança para o próximo modo.
   const finishCycle = useCallback(() => {
-    void recordStudySession();
+    const focos = timerType === "foco" ? focosConcluidos + 1 : focosConcluidos;
+    if (timerType === "foco") {
+      void recordStudySession(totalDuration);
+      setFocosConcluidos(focos);
+    }
+    if (config.som) tocarAviso();
+    const proximo = proximoModo(timerType, focos, config);
+    setAviso(
+      timerType === "foco"
+        ? `Sessão de foco em "${getSelectedDisciplineName()}" registrada. Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`
+        : "A pausa acabou. Pronto para voltar ao foco?",
+    );
+    if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
+      new Notification("Study Flow", { body: timerType === "foco" ? "Foco concluído! Hora da pausa." : "Pausa concluída! De volta ao foco." });
+    }
+    irParaModo(proximo, config.autoIniciar);
+  }, [config, focosConcluidos, getSelectedDisciplineName, irParaModo, recordStudySession, timerType, totalDuration]);
 
-    const notificationMsg = timerType === "foco"
-      ? `Sessão de foco em "${getSelectedDisciplineName()}" finalizada! Hora de uma pausa.`
-      : "Sua pausa acabou! Pronto para voltar ao foco?";
-    alert(notificationMsg);
-  }, [getSelectedDisciplineName, recordStudySession, timerType]);
-
-  // Ref com o callback mais recente, lido pelo intervalo sem recriá-lo a cada render
   const finishCycleRef = useRef(finishCycle);
   useEffect(() => {
     finishCycleRef.current = finishCycle;
   }, [finishCycle]);
 
-  // Efeito principal do Timer (Intervalo de 1 segundo)
+  // Tique: recalcula pelo relógio. Ao voltar para a aba, corrige na hora.
   useEffect(() => {
-    if (isRunning) {
-      // Efeitos colaterais ficam fora do updater do setState: o React pode executá-lo
-      // duas vezes (StrictMode), o que gravava a sessão em dobro.
-      timerRef.current = setInterval(() => {
-        const next = Math.max(secondsLeftRef.current - 1, 0);
-        secondsLeftRef.current = next;
-        setSecondsLeft(next);
-
-        if (next === 0) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          setIsRunning(false);
-          finishCycleRef.current();
-        }
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (fimEm === null) return;
+    let encerrado = false;
+    const tique = () => {
+      if (encerrado) return;
+      const restante = segundosRestantes(fimEm, Date.now());
+      setSecondsLeft(restante);
+      if (restante === 0) {
+        encerrado = true;
+        finishCycleRef.current();
+      }
     };
-  }, [isRunning]);
+    const id = setInterval(tique, 250);
+    document.addEventListener("visibilitychange", tique);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tique);
+    };
+  }, [fimEm]);
 
-  // Formatação de minutos/segundos (MM:SS)
+  // Mostra o tempo na aba do navegador enquanto roda.
+  useEffect(() => {
+    if (!isRunning) return;
+    const original = document.title;
+    const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+    const ss = String(secondsLeft % 60).padStart(2, "0");
+    document.title = `${mm}:${ss} · ${ROTULO_MODO[timerType]}`;
+    return () => {
+      document.title = original;
+    };
+  }, [isRunning, secondsLeft, timerType]);
+
+  const toggleTimer = () => {
+    setAviso("");
+    if (fimEm !== null) {
+      setSecondsLeft(segundosRestantes(fimEm, Date.now()));
+      setFimEm(null);
+      return;
+    }
+    if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
+    setFimEm(Date.now() + secondsLeft * 1000);
+  };
+
+  const resetTimer = () => {
+    setAviso("");
+    irParaModo(timerType, false);
+  };
+
+  const pular = () => {
+    setAviso("");
+    // Pular não registra a sessão de foco.
+    irParaModo(proximoModo(timerType, timerType === "foco" ? focosConcluidos + 1 : focosConcluidos, config), false);
+  };
+
+  const salvarConfig = (cfg: ConfigPomodoro) => {
+    const limpa = normalizarPomodoro(cfg);
+    setConfig(limpa);
+    if (user) localStorage.setItem(chaveConfig(user.email), JSON.stringify(limpa));
+    if (!isRunning) irParaModo(timerType, false, limpa);
+    setEditandoConfig(false);
+  };
+
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Cálculo do progresso circular do timer (SVG)
   const radius = 120;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = totalDuration > 0 ? circumference - (secondsLeft / totalDuration) * circumference : 0;
@@ -214,17 +273,22 @@ const TimerDashboard: NextPage = () => {
     return <PageLoading label="Carregando timer..." />;
   }
 
-  const modeLabels = { foco: "Foco", pausa_curta: "Pausa curta", pausa_longa: "Pausa longa" } as const;
+  const cicloAtual = (focosConcluidos % config.ciclosAteLonga) + (timerType === "foco" ? 1 : 0);
 
   return (
     <>
       <PageHeader
+        actions={
+          <Button onClick={() => setEditandoConfig(true)} variant="secondary">
+            <Settings2 aria-hidden size={18} />
+            Ajustar tempos
+          </Button>
+        }
         title="Timer"
       />
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
         <Card className="flex flex-col items-center !py-8 lg:col-span-7">
-          {/* Modos de tempo */}
           <div aria-label="Modo do timer" className="mb-8 grid w-full max-w-sm grid-cols-3 gap-1 rounded-full bg-ink-100 p-1" role="group">
             {(["foco", "pausa_curta", "pausa_longa"] as const).map((type) => (
               <button
@@ -233,20 +297,22 @@ const TimerDashboard: NextPage = () => {
                   timerType === type ? "bg-white text-primary-800 shadow-card" : "text-ink-600 hover:text-ink-900"
                 }`}
                 key={type}
-                onClick={() => handleTimerTypeChange(type)}
+                onClick={() => {
+                  setAviso("");
+                  irParaModo(type, false);
+                }}
                 type="button"
               >
-                {modeLabels[type]}
+                {ROTULO_MODO[type]}
               </button>
             ))}
           </div>
 
-          {/* Mostrador circular */}
           <div className="relative flex h-[260px] w-[260px] select-none items-center justify-center sm:h-[280px] sm:w-[280px]">
             <svg aria-hidden className="h-full w-full -rotate-90" viewBox="0 0 280 280">
               <circle className="fill-transparent stroke-ink-100" cx="140" cy="140" r={radius} strokeWidth="10" />
               <circle
-                className={`fill-transparent transition-all duration-1000 ease-linear ${timerType === "foco" ? "stroke-primary-600" : "stroke-primary-400"}`}
+                className={`fill-transparent transition-all duration-300 ease-linear ${timerType === "foco" ? "stroke-primary-600" : "stroke-primary-400"}`}
                 cx="140"
                 cy="140"
                 r={radius}
@@ -260,19 +326,20 @@ const TimerDashboard: NextPage = () => {
               <span aria-live="off" className="tabular text-6xl font-semibold tracking-tight text-ink-900" role="timer">
                 {formatTime(secondsLeft)}
               </span>
-              <span className="mt-1 text-sm font-medium text-ink-500">{modeLabels[timerType]}</span>
+              <span className="mt-1 text-sm font-medium text-ink-500">{ROTULO_MODO[timerType]}</span>
+              <span aria-label={`Ciclo ${cicloAtual} de ${config.ciclosAteLonga}`} className="mt-3 flex gap-1.5">
+                {Array.from({ length: config.ciclosAteLonga }, (_, i) => (
+                  <span
+                    className={`h-2 w-2 rounded-full ${i < focosConcluidos % config.ciclosAteLonga ? "bg-primary-600" : "bg-ink-200"}`}
+                    key={i}
+                  />
+                ))}
+              </span>
             </div>
           </div>
 
-          {/* Controles */}
           <div className="mt-8 flex items-center gap-3">
-            <Button
-              aria-label="Reiniciar cronômetro"
-              className="!h-12 !w-12 !rounded-full"
-              onClick={resetTimer}
-              size="icon"
-              variant="secondary"
-            >
+            <Button aria-label="Reiniciar cronômetro" className="!h-12 !w-12 !rounded-full" onClick={resetTimer} size="icon" variant="secondary">
               <RotateCcw size={20} />
             </Button>
             <Button
@@ -284,7 +351,17 @@ const TimerDashboard: NextPage = () => {
               {isRunning ? <Pause aria-hidden size={20} /> : <Play aria-hidden size={20} />}
               {isRunning ? "Pausar" : "Começar"}
             </Button>
+            <Button aria-label="Pular para o próximo modo" className="!h-12 !w-12 !rounded-full" onClick={pular} size="icon" variant="secondary">
+              <SkipForward size={20} />
+            </Button>
           </div>
+
+          <p aria-live="polite" className="mt-5 min-h-5 text-center text-sm text-ink-600" role="status">
+            {aviso}
+          </p>
+          <p className="tabular text-xs text-ink-400">
+            Foco {config.foco} min · pausa {config.pausaCurta} min · pausa longa {config.pausaLonga} min a cada {config.ciclosAteLonga}
+          </p>
         </Card>
 
         <div className="flex w-full flex-col gap-6 lg:col-span-5">
@@ -301,7 +378,7 @@ const TimerDashboard: NextPage = () => {
           </Card>
 
           <Card className="flex min-h-[300px] flex-col">
-            <CardHeader icon={<NotebookPen size={18} />} title="Notas de estudo"/>
+            <CardHeader icon={<NotebookPen size={18} />} title="Notas de estudo" />
             <Textarea
               aria-label="Notas de estudo"
               className="min-h-[180px] flex-1 resize-none"
@@ -312,8 +389,87 @@ const TimerDashboard: NextPage = () => {
           </Card>
         </div>
       </div>
+
+      {editandoConfig ? <ConfigModal inicial={config} onClose={() => setEditandoConfig(false)} onSalvar={salvarConfig} /> : null}
     </>
   );
 };
+
+function ConfigModal({ inicial, onClose, onSalvar }: { inicial: ConfigPomodoro; onClose: () => void; onSalvar: (c: ConfigPomodoro) => void }) {
+  const [cfg, setCfg] = useState(inicial);
+  const numero = (campo: keyof typeof LIMITES_POMODORO, rotulo: string, sufixo: string) => (
+    <Field htmlFor={`pomo-${campo}`} label={rotulo}>
+      <div className="flex items-center gap-2">
+        <Input
+          id={`pomo-${campo}`}
+          max={LIMITES_POMODORO[campo][1]}
+          min={LIMITES_POMODORO[campo][0]}
+          onChange={(e) => setCfg((c) => ({ ...c, [campo]: Number(e.target.value) }))}
+          type="number"
+          value={Number.isFinite(cfg[campo]) ? cfg[campo] : ""}
+        />
+        <span className="text-sm text-ink-500">{sufixo}</span>
+      </div>
+    </Field>
+  );
+
+  return (
+    <Modal
+      footer={
+        <>
+          <Button onClick={() => setCfg(POMODORO_PADRAO)} variant="ghost">
+            Restaurar padrão
+          </Button>
+          <Button onClick={onClose} variant="secondary">
+            Cancelar
+          </Button>
+          <Button onClick={() => onSalvar(cfg)}>Salvar</Button>
+        </>
+      }
+      onClose={onClose}
+      title="Ajustar tempos"
+    >
+      <div className="flex flex-wrap gap-2">
+        {PRESETS_POMODORO.map((p) => {
+          const ativo = p.config.foco === cfg.foco && p.config.pausaCurta === cfg.pausaCurta && p.config.pausaLonga === cfg.pausaLonga;
+          return (
+            <button
+              aria-pressed={ativo}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium ${
+                ativo ? "border-primary-700 bg-primary-700 text-white" : "border-line bg-white text-ink-700 hover:border-ink-300"
+              }`}
+              key={p.nome}
+              onClick={() => setCfg((c) => ({ ...c, ...p.config }))}
+              type="button"
+            >
+              {p.nome}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-4">
+        {numero("foco", "Foco", "min")}
+        {numero("pausaCurta", "Pausa curta", "min")}
+        {numero("pausaLonga", "Pausa longa", "min")}
+        {numero("ciclosAteLonga", "Pausa longa a cada", "focos")}
+      </div>
+      <div className="mt-5 flex flex-col gap-3 text-sm text-ink-700">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            checked={cfg.autoIniciar}
+            className="h-4 w-4 accent-primary-700"
+            onChange={(e) => setCfg((c) => ({ ...c, autoIniciar: e.target.checked }))}
+            type="checkbox"
+          />
+          Começar o próximo modo automaticamente
+        </label>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input checked={cfg.som} className="h-4 w-4 accent-primary-700" onChange={(e) => setCfg((c) => ({ ...c, som: e.target.checked }))} type="checkbox" />
+          Tocar um aviso sonoro ao terminar
+        </label>
+      </div>
+    </Modal>
+  );
+}
 
 export default TimerDashboard;

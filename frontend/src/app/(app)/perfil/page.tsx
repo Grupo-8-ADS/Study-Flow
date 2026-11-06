@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Check, ImageIcon, KeyRound, Pencil, Trophy, Upload, UserRound } from "lucide-react";
+import { Camera, Check, Crop, ImageIcon, KeyRound, Pencil, Shuffle, Trash2, Trophy, Upload, UserRound } from "lucide-react";
+import { ImageCropper } from "@/components/image-cropper";
+import { FundoBanner, MolduraAvatar } from "@/components/moldura-avatar";
 
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
-import { progressoNivel } from "@studyflow/shared";
+import { bannerPreset, progressoNivel } from "@studyflow/shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Alert } from "@/components/ui/feedback";
@@ -62,6 +64,7 @@ export default function PerfilPage() {
   const [tempValues, setTempValues] = useState<Partial<ProfileData>>({});
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [bannerPic, setBannerPic] = useState<string | null>(null);
+  const [moldura, setMoldura] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -69,6 +72,10 @@ export default function PerfilPage() {
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [recorte, setRecorte] = useState<{ src: string; formato: "avatar" | "banner" } | null>(null);
+  const [galeriaAvatar, setGaleriaAvatar] = useState(false);
+  /** Foto ou banner mudou e ainda não foi salvo. */
+  const [imagemAlterada, setImagemAlterada] = useState(false);
   const profilePicRef = useRef<HTMLInputElement>(null);
   const bannerPicRef = useRef<HTMLInputElement>(null);
 
@@ -118,6 +125,7 @@ export default function PerfilPage() {
           });
           if (dbProfile.avatar_url) setProfilePic(dbProfile.avatar_url);
           if (dbProfile.banner_url) setBannerPic(dbProfile.banner_url);
+          setMoldura(dbProfile.moldura ?? null);
         } else {
           setProfile((current) => ({
             ...current,
@@ -156,16 +164,26 @@ export default function PerfilPage() {
     setTempValues({});
   };
 
-  const handleImageChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    setter: (value: string) => void,
-  ) => {
+  /** Abre o arquivo escolhido direto no recorte (a foto original não é salva). */
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>, formato: "avatar" | "banner") => {
     const file = event.target.files?.[0];
+    // Permite escolher o mesmo arquivo de novo depois.
+    event.target.value = "";
     if (!file) return;
-
+    if (!file.type.startsWith("image/")) {
+      setErrors({ global: "Escolha um arquivo de imagem." });
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = (readerEvent) => setter(String(readerEvent.target?.result ?? ""));
+    reader.onload = (readerEvent) => setRecorte({ src: String(readerEvent.target?.result ?? ""), formato });
     reader.readAsDataURL(file);
+  };
+
+  const aplicarRecorte = (dataUrl: string) => {
+    setImagemAlterada(true);
+    if (recorte?.formato === "avatar") setProfilePic(dataUrl);
+    else setBannerPic(dataUrl);
+    setRecorte(null);
   };
 
   const validate = () => {
@@ -248,6 +266,7 @@ export default function PerfilPage() {
       }
 
       setSaveSuccess(true);
+      setImagemAlterada(false);
       setCurrentPassword("");
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch {
@@ -337,22 +356,45 @@ export default function PerfilPage() {
     <>
       <PageHeader title="Perfil" />
 
+      {recorte ? <ImageCropper formato={recorte.formato} onCancel={() => setRecorte(null)} onConfirm={aplicarRecorte} src={recorte.src} /> : null}
+      {galeriaAvatar ? (
+        <GaleriaAvatares
+          onClose={() => setGaleriaAvatar(false)}
+          onEscolher={(url) => {
+            setProfilePic(url);
+            setImagemAlterada(true);
+            setGaleriaAvatar(false);
+          }}
+        />
+      ) : null}
+
       <div className="grid max-w-4xl gap-6">
         <Card className="overflow-hidden" padded={false}>
           <div className="relative h-32 sm:h-40">
-            {bannerPic ? (
-              <img alt="Banner do perfil" className="absolute inset-0 h-full w-full object-cover" src={bannerPic} />
-            ) : (
-              <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${profile.bgColor} 0%, #29645e 100%)` }} />
-            )}
-            <Button className="absolute right-3 top-3" onClick={() => bannerPicRef.current?.click()} size="sm" variant="inverse">
-              <ImageIcon aria-hidden size={15} />
-              Alterar banner
-            </Button>
+            <FundoBanner corPadrao={profile.bgColor} valor={bannerPic} />
+            <div className="absolute right-3 top-3 flex gap-2">
+              {bannerPic ? (
+                <>
+                  {bannerPreset(bannerPic) ? null : (
+                  <Button aria-label="Ajustar banner" onClick={() => setRecorte({ src: bannerPic, formato: "banner" })} size="icon-sm" variant="inverse">
+                    <Crop size={15} />
+                  </Button>
+                  )}
+                  <Button aria-label="Remover banner" onClick={() => (setBannerPic(null), setImagemAlterada(true))} size="icon-sm" variant="inverse">
+                    <Trash2 size={15} />
+                  </Button>
+                </>
+              ) : null}
+              <Button onClick={() => bannerPicRef.current?.click()} size="sm" variant="inverse">
+                <ImageIcon aria-hidden size={15} />
+                {bannerPic ? "Trocar banner" : "Adicionar banner"}
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:px-6 sm:pb-6">
             <div className="relative -mt-12 h-24 w-24 shrink-0 sm:h-28 sm:w-28">
+              <MolduraAvatar className="h-full w-full" espessura={4} moldura={moldura}>
               <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-primary-100 text-3xl font-semibold text-primary-700 ring-4 ring-surface">
                 {profilePic ? (
                   <img alt="Foto do perfil" className="h-full w-full object-cover" src={profilePic} />
@@ -360,6 +402,7 @@ export default function PerfilPage() {
                   profile.name.charAt(0).toUpperCase()
                 )}
               </span>
+              </MolduraAvatar>
               <Button
                 aria-label="Alterar foto de perfil"
                 className="absolute bottom-0 right-0 !rounded-full shadow-raised"
@@ -374,6 +417,26 @@ export default function PerfilPage() {
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-xl font-semibold text-ink-900">{profile.name}</h2>
               <p className="truncate text-sm text-ink-500">@{profile.username}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <Button onClick={() => profilePicRef.current?.click()} size="sm" variant="secondary">
+                  <Upload aria-hidden size={14} />
+                  {profilePic ? "Trocar foto" : "Enviar foto"}
+                </Button>
+                <Button onClick={() => setGaleriaAvatar(true)} size="sm" variant="secondary">
+                  <Shuffle aria-hidden size={14} />
+                  Gerar avatar
+                </Button>
+                {profilePic ? (
+                  <>
+                    <Button aria-label="Ajustar foto" onClick={() => setRecorte({ src: profilePic, formato: "avatar" })} size="icon-sm" variant="ghost">
+                      <Crop size={15} />
+                    </Button>
+                    <Button aria-label="Remover foto" onClick={() => (setProfilePic(null), setImagemAlterada(true))} size="icon-sm" variant="danger-ghost">
+                      <Trash2 size={15} />
+                    </Button>
+                  </>
+                ) : null}
+              </div>
             </div>
 
             <div className="w-full rounded-control border border-line bg-ink-50/60 p-3 sm:w-60">
@@ -397,8 +460,11 @@ export default function PerfilPage() {
               </p>
             </div>
           </div>
-          <input ref={profilePicRef} accept="image/*" className="hidden" onChange={(event) => handleImageChange(event, setProfilePic)} type="file" />
-          <input ref={bannerPicRef} accept="image/*" className="hidden" onChange={(event) => handleImageChange(event, setBannerPic)} type="file" />
+          <input ref={profilePicRef} accept="image/*" className="hidden" onChange={(event) => handleImageChange(event, "avatar")} type="file" />
+          <input ref={bannerPicRef} accept="image/*" className="hidden" onChange={(event) => handleImageChange(event, "banner")} type="file" />
+          {imagemAlterada ? (
+            <p className="px-5 pb-4 text-xs text-ink-500 sm:px-6">As mudanças de foto e banner valem depois de salvar o perfil.</p>
+          ) : null}
         </Card>
 
         <Card aria-labelledby="titulo-dados">
@@ -579,6 +645,78 @@ function PasswordModal({
           <Input id="senha-codigo" onChange={(event) => setEmailCode(event.target.value)} placeholder="Digite o código recebido" type="text" value={emailCode} />
         </Field>
       </form>
+    </Modal>
+  );
+}
+
+/** Estilos de avatar do DiceBear com licença CC0 (uso livre, sem atribuição obrigatória). */
+const ESTILOS_AVATAR = [
+  { id: "notionists", nome: "Rabisco" },
+  { id: "lorelei", nome: "Ilustrado" },
+  { id: "thumbs", nome: "Polegar" },
+] as const;
+
+const urlAvatar = (estilo: string, semente: string) =>
+  `https://api.dicebear.com/9.x/${estilo}/svg?seed=${encodeURIComponent(semente)}&backgroundColor=d1ece8,e3f3f0,fff4d6,fdecea&radius=50`;
+
+/** Sementes aleatórias: nada do usuário (nome, email) é enviado ao serviço de avatares. */
+const novasSementes = () => Array.from({ length: 8 }, () => Math.random().toString(36).slice(2, 10));
+
+function GaleriaAvatares({ onClose, onEscolher }: { onClose: () => void; onEscolher: (url: string) => void }) {
+  const [estilo, setEstilo] = useState<string>(ESTILOS_AVATAR[0].id);
+  const [sementes, setSementes] = useState(novasSementes);
+  return (
+    <Modal
+      footer={
+        <>
+          <Button onClick={() => setSementes(novasSementes())} variant="secondary">
+            <Shuffle aria-hidden size={15} />
+            Outros
+          </Button>
+          <Button onClick={onClose} variant="ghost">
+            Fechar
+          </Button>
+        </>
+      }
+      onClose={onClose}
+      title="Escolher um avatar"
+    >
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Estilo">
+        {ESTILOS_AVATAR.map((e) => (
+          <button
+            aria-pressed={estilo === e.id}
+            className={`rounded-full border px-3 py-1.5 text-sm font-medium ${
+              estilo === e.id ? "border-primary-700 bg-primary-700 text-white" : "border-line bg-white text-ink-700 hover:border-ink-300"
+            }`}
+            key={e.id}
+            onClick={() => setEstilo(e.id)}
+            type="button"
+          >
+            {e.nome}
+          </button>
+        ))}
+      </div>
+      <ul className="grid grid-cols-4 gap-3">
+        {sementes.map((semente) => (
+          <li key={semente}>
+            <button
+              aria-label="Usar este avatar"
+              className="aspect-square w-full overflow-hidden rounded-full ring-2 ring-transparent transition hover:ring-primary-500 focus-visible:ring-primary-600"
+              onClick={() => onEscolher(urlAvatar(estilo, semente))}
+              type="button"
+            >
+              <img alt="" className="h-full w-full" loading="lazy" src={urlAvatar(estilo, semente)} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-4 text-xs text-ink-500">
+        Avatares gerados pelo{" "}
+        <a className="underline" href="https://www.dicebear.com" rel="noreferrer" target="_blank">
+          DiceBear
+        </a>{" "}
+        (estilos com licença CC0).
+      </p>
     </Modal>
   );
 }

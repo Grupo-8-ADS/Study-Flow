@@ -7,6 +7,7 @@ export type StudyFlowSession = {
   username: string;
   avatar_url?: string | null;
   banner_url?: string | null;
+  moldura?: string | null;
 };
 
 export type StudyDistribution = {

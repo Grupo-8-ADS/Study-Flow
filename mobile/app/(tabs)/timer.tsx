@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,137 +6,149 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
+  AppState,
+  Switch,
 } from 'react-native';
-import { Play, Pause, RotateCcw, BookOpen, FileText, CheckCircle2 } from 'lucide-react-native';
-import { COLORS, TimerMode, POMODORO_TIMES } from '@studyflow/shared';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Play, Pause, RotateCcw, BookOpen, FileText, CheckCircle2, Settings2, SkipForward } from 'lucide-react-native';
+import {
+  COLORS,
+  LIMITES_POMODORO,
+  POMODORO_PADRAO,
+  PRESETS_POMODORO,
+  ROTULO_MODO,
+  duracaoModo,
+  normalizarPomodoro,
+  proximoModo,
+  segundosRestantes,
+  type ConfigPomodoro,
+  type ModoPomodoro,
+} from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
 import { ProgressRing } from '../../components/ui/ProgressRing';
 import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Chip } from '../../components/CompromissoEditor';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useAgenda } from '../../lib/agenda';
 import { notificarFimDoCiclo } from '../../lib/notifications';
+
+const MODO_NOTIFICACAO = { foco: 'foco', pausa_curta: 'curta', pausa_longa: 'longa' } as const;
+const chaveConfig = (email: string) => `studyflow_pomodoro_${email}`;
 
 export default function TimerScreen() {
   const { session, refreshProfile } = useAuth();
+  const { dados: agenda } = useAgenda();
+  const subjectsList = (agenda?.disciplinas ?? []).map((d) => ({ id: d.id, nome: d.nome }));
 
-  const [mode, setMode] = useState<TimerMode>('foco');
-  const [timeLeft, setTimeLeft] = useState<number>(POMODORO_TIMES.foco);
-  const [isActive, setIsActive] = useState<boolean>(false);
-  const [selectedSubject, setSelectedSubject] = useState<{ id: string | null; nome: string }>({
-    id: null,
-    nome: 'Geral',
-  });
-  const [subjectsList, setSubjectsList] = useState<Array<{ id: string; nome: string }>>([]);
+  const [config, setConfig] = useState<ConfigPomodoro>(POMODORO_PADRAO);
+  const [configVisivel, setConfigVisivel] = useState(false);
+  const [mode, setMode] = useState<ModoPomodoro>('foco');
+  const [totalDuration, setTotalDuration] = useState(duracaoModo('foco', POMODORO_PADRAO));
+  const [timeLeft, setTimeLeft] = useState<number>(totalDuration);
+  // O tempo restante vem do relógio: com o app em segundo plano o intervalo para,
+  // e ao voltar o timer corrige na hora (antes ele "congelava").
+  const [fimEm, setFimEm] = useState<number | null>(null);
+  const isActive = fimEm !== null;
+  const [focosConcluidos, setFocosConcluidos] = useState(0);
+  const [aviso, setAviso] = useState('');
+  // null = ainda não escolheu: usa a primeira disciplina.
+  const [escolha, setEscolha] = useState<{ id: string | null; nome: string } | null>(null);
+  const selectedSubject = escolha ?? (subjectsList[0] ? { id: subjectsList[0].id, nome: subjectsList[0].nome } : { id: null, nome: 'Geral' });
+  const setSelectedSubject = setEscolha;
   const [notes, setNotes] = useState<string>('');
   const [subjectModalVisible, setSubjectModalVisible] = useState<boolean>(false);
-  // Fonte da verdade do contador: efeitos colaterais ficam fora do updater do setState,
-  // evitando gravar a sessão duas vezes.
-  const secondsLeftRef = useRef<number>(POMODORO_TIMES.foco);
   const finishCycleRef = useRef<() => void>(() => {});
 
-  const totalDuration = POMODORO_TIMES[mode];
-  const progress = (totalDuration - timeLeft) / totalDuration;
+  const progress = totalDuration > 0 ? (totalDuration - timeLeft) / totalDuration : 0;
 
-  // Load user disciplines for dropdown
   useEffect(() => {
-    async function loadDisciplinas() {
-      try {
-        const { data: userRes } = await supabase.auth.getUser();
-        if (!userRes.user) return;
+    if (!session?.email) return;
+    void AsyncStorage.getItem(chaveConfig(session.email)).then((salvo) => {
+      const cfg = normalizarPomodoro(salvo);
+      setConfig(cfg);
+      setTotalDuration(duracaoModo('foco', cfg));
+      setTimeLeft(duracaoModo('foco', cfg));
+    });
+  }, [session?.email]);
 
-        const { data } = await supabase
-          .from('disciplinas')
-          .select('id, nome')
-          .eq('user_id', userRes.user.id)
-          .order('nome', { ascending: true });
+  const irParaModo = useCallback(
+    (novo: ModoPomodoro, iniciar: boolean, cfg: ConfigPomodoro = config) => {
+      const dur = duracaoModo(novo, cfg);
+      setMode(novo);
+      setTotalDuration(dur);
+      setTimeLeft(dur);
+      setFimEm(iniciar ? Date.now() + dur * 1000 : null);
+    },
+    [config],
+  );
 
-        if (data && data.length > 0) {
-          setSubjectsList(data);
-          if (!selectedSubject.id) {
-            setSelectedSubject({ id: data[0].id, nome: data[0].nome });
-          }
-        } else {
-          setSubjectsList([]);
-        }
-      } catch (e) {
-        console.error('Failed to load timer disciplines:', e);
+  // Tique pelo relógio; também recalcula ao voltar do segundo plano.
+  useEffect(() => {
+    if (fimEm === null) return;
+    let encerrado = false;
+    const tique = () => {
+      if (encerrado) return;
+      const restante = segundosRestantes(fimEm, Date.now());
+      setTimeLeft(restante);
+      if (restante === 0) {
+        encerrado = true;
+        finishCycleRef.current();
       }
-    }
-
-    loadDisciplinas();
-  }, [session]);
-
-  // Timer interval handling
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    if (isActive) {
-      interval = setInterval(() => {
-        const next = Math.max(secondsLeftRef.current - 1, 0);
-        secondsLeftRef.current = next;
-        setTimeLeft(next);
-        if (next === 0) {
-          clearInterval(interval!);
-          setIsActive(false);
-          finishCycleRef.current();
-        }
-      }, 1000);
-    } else if (interval) {
-      clearInterval(interval);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
     };
-  }, [isActive, mode]);
+    const id = setInterval(tique, 500);
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') tique();
+    });
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, [fimEm]);
 
-  const changeMode = (newMode: TimerMode) => {
-    setIsActive(false);
-    setMode(newMode);
-    secondsLeftRef.current = POMODORO_TIMES[newMode];
-    setTimeLeft(POMODORO_TIMES[newMode]);
+  const changeMode = (novo: ModoPomodoro) => {
+    setAviso('');
+    irParaModo(novo, false);
   };
 
   const handleTimerCompleted = async () => {
-    void notificarFimDoCiclo(mode);
+    void notificarFimDoCiclo(MODO_NOTIFICACAO[mode]);
+    const focos = mode === 'foco' ? focosConcluidos + 1 : focosConcluidos;
+    const proximo = proximoModo(mode, focos, config);
     if (mode === 'foco') {
+      setFocosConcluidos(focos);
+      const minutos = Math.round(totalDuration / 60);
       try {
-        const { data: userRes } = await supabase.auth.getUser();
-        if (userRes.user) {
+        const { data } = await supabase.auth.getSession();
+        const uid = data.session?.user?.id;
+        if (uid) {
+          const fim = new Date();
           // XP, nível e conquistas são calculados pelo trigger on_sessao_concluida no banco.
           await supabase.from('sessoes_estudo').insert({
-            user_id: userRes.user.id,
+            user_id: uid,
             disciplina_id: selectedSubject.id,
-            duracao_efetiva_min: 25,
+            data_inicio: new Date(fim.getTime() - totalDuration * 1000).toISOString(),
+            data_fim: fim.toISOString(),
+            duracao_efetiva_min: minutos,
             status: 'concluida',
-            exp: 25,
+            exp: minutos,
             notas: notes.trim() || null,
           });
-
           await refreshProfile();
         }
       } catch (e) {
         console.error('Error saving study session:', e);
       }
-
-      Alert.alert(
-        'Sessão Concluída! 🎉',
-        `Parabéns! Você completou 25 minutos de foco em ${selectedSubject.nome} e ganhou +25 XP! Que tal uma pausa curta de 5 minutos?`,
-        [
-          { text: 'Pausa Curta', onPress: () => changeMode('curta') },
-          { text: 'OK', style: 'cancel' },
-        ]
-      );
+      setAviso(`${minutos} min de foco em ${selectedSubject.nome} registrados (+${Math.min(minutos, 240)} XP). Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`);
     } else {
-      Alert.alert('Pausa Encerrada! ⏰', 'Pronto para voltar ao foco?', [
-        { text: 'Iniciar Foco', onPress: () => changeMode('foco') },
-        { text: 'OK', style: 'cancel' },
-      ]);
+      setAviso('A pausa acabou. Pronto para voltar ao foco?');
     }
+    irParaModo(proximo, config.autoIniciar);
   };
 
   useEffect(() => {
@@ -146,18 +158,33 @@ export default function TimerScreen() {
   });
 
   const toggleTimer = () => {
-    // Ciclo já terminado: recomeça do tempo cheio em vez de concluir de novo em 1s.
-    if (!isActive && secondsLeftRef.current === 0) {
-      secondsLeftRef.current = POMODORO_TIMES[mode];
-      setTimeLeft(POMODORO_TIMES[mode]);
+    setAviso('');
+    if (fimEm !== null) {
+      setTimeLeft(segundosRestantes(fimEm, Date.now()));
+      setFimEm(null);
+      return;
     }
-    setIsActive((prev) => !prev);
+    const restante = timeLeft > 0 ? timeLeft : totalDuration;
+    setTimeLeft(restante);
+    setFimEm(Date.now() + restante * 1000);
   };
 
   const resetTimer = () => {
-    setIsActive(false);
-    secondsLeftRef.current = POMODORO_TIMES[mode];
-    setTimeLeft(POMODORO_TIMES[mode]);
+    setAviso('');
+    irParaModo(mode, false);
+  };
+
+  const pular = () => {
+    setAviso('');
+    irParaModo(proximoModo(mode, mode === 'foco' ? focosConcluidos + 1 : focosConcluidos, config), false);
+  };
+
+  const salvarConfig = (cfg: ConfigPomodoro) => {
+    const limpa = normalizarPomodoro(cfg);
+    setConfig(limpa);
+    if (session?.email) void AsyncStorage.setItem(chaveConfig(session.email), JSON.stringify(limpa));
+    if (!isActive) irParaModo(mode, false, limpa);
+    setConfigVisivel(false);
   };
 
   const formatTime = (secs: number) => {
@@ -165,6 +192,8 @@ export default function TimerScreen() {
     const s = secs % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  const minutosDe = (m: ModoPomodoro) => (m === 'foco' ? config.foco : m === 'pausa_curta' ? config.pausaCurta : config.pausaLonga);
 
   return (
     <KeyboardAvoidingView
@@ -178,52 +207,22 @@ export default function TimerScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Mode Selector Tabs */}
         <View style={styles.modeTabs}>
-          <TouchableOpacity
-            style={[styles.modeTab, mode === 'foco' && styles.modeTabActive]}
-            onPress={() => changeMode('foco')}
-          >
-            <Text
-              style={[
-                styles.modeTabText,
-                mode === 'foco' && styles.modeTabTextActive,
-              ]}
+          {(['foco', 'pausa_curta', 'pausa_longa'] as const).map((m) => (
+            <TouchableOpacity
+              key={m}
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === m }}
+              style={[styles.modeTab, mode === m && styles.modeTabActive]}
+              onPress={() => changeMode(m)}
             >
-              Foco (25m)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.modeTab, mode === 'curta' && styles.modeTabActive]}
-            onPress={() => changeMode('curta')}
-          >
-            <Text
-              style={[
-                styles.modeTabText,
-                mode === 'curta' && styles.modeTabTextActive,
-              ]}
-            >
-              Pausa curta (5m)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.modeTab, mode === 'longa' && styles.modeTabActive]}
-            onPress={() => changeMode('longa')}
-          >
-            <Text
-              style={[
-                styles.modeTabText,
-                mode === 'longa' && styles.modeTabTextActive,
-              ]}
-            >
-              Pausa longa (15m)
-            </Text>
-          </TouchableOpacity>
+              <Text style={[styles.modeTabText, mode === m && styles.modeTabTextActive]}>
+                {ROTULO_MODO[m]} ({minutosDe(m)}m)
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Big Progress Ring Card */}
         <Card style={styles.timerCard}>
           <ProgressRing
             size={220}
@@ -233,25 +232,26 @@ export default function TimerScreen() {
             trackColor="#f1f5f9"
           >
             <View style={styles.timerInner}>
-              <Text style={styles.timerModeLabel}>
-                {mode === 'foco' ? 'Foco Total' : mode === 'curta' ? 'Pausa Curta' : 'Pausa Longa'}
-              </Text>
+              <Text style={styles.timerModeLabel}>{ROTULO_MODO[mode]}</Text>
               <Text style={styles.timerDigits}>{formatTime(timeLeft)}</Text>
-              <Text style={styles.timerSubjectLabel}>
-                {selectedSubject.nome}
-              </Text>
+              <Text style={styles.timerSubjectLabel}>{selectedSubject.nome}</Text>
+              <View style={styles.ciclos}>
+                {Array.from({ length: config.ciclosAteLonga }, (_, i) => (
+                  <View key={i} style={[styles.cicloPonto, i < focosConcluidos % config.ciclosAteLonga && styles.cicloPontoFeito]} />
+                ))}
+              </View>
             </View>
           </ProgressRing>
 
-          {/* Controls */}
           <View style={styles.controlsRow}>
+            <TouchableOpacity accessibilityLabel="Reiniciar" activeOpacity={0.7} onPress={resetTimer} style={styles.resetButton}>
+              <RotateCcw size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
             <TouchableOpacity
+              accessibilityLabel={isActive ? 'Pausar' : 'Começar'}
               activeOpacity={0.8}
               onPress={toggleTimer}
-              style={[
-                styles.mainPlayButton,
-                isActive && styles.pauseButton,
-              ]}
+              style={[styles.mainPlayButton, isActive && styles.pauseButton]}
             >
               {isActive ? (
                 <Pause size={28} color="#ffffff" fill="#ffffff" />
@@ -259,15 +259,16 @@ export default function TimerScreen() {
                 <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 4 }} />
               )}
             </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={resetTimer}
-              style={styles.resetButton}
-            >
-              <RotateCcw size={22} color={COLORS.textSecondary} />
+            <TouchableOpacity accessibilityLabel="Pular para o próximo modo" activeOpacity={0.7} onPress={pular} style={styles.resetButton}>
+              <SkipForward size={22} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
+
+          {aviso ? <Text style={styles.aviso}>{aviso}</Text> : null}
+          <TouchableOpacity accessibilityRole="button" onPress={() => setConfigVisivel(true)} style={styles.ajustar}>
+            <Settings2 size={16} color={COLORS.primary} />
+            <Text style={styles.ajustarTexto}>Ajustar tempos</Text>
+          </TouchableOpacity>
         </Card>
 
         {/* Subject Selection Card */}
@@ -382,11 +383,102 @@ export default function TimerScreen() {
           ))}
         </View>
       </Modal>
+      {configVisivel ? <ConfigPomodoroModal inicial={config} onClose={() => setConfigVisivel(false)} onSalvar={salvarConfig} /> : null}
     </KeyboardAvoidingView>
   );
 }
 
+function ConfigPomodoroModal({
+  inicial,
+  onClose,
+  onSalvar,
+}: {
+  inicial: ConfigPomodoro;
+  onClose: () => void;
+  onSalvar: (c: ConfigPomodoro) => void;
+}) {
+  const [cfg, setCfg] = useState(inicial);
+  const [textos, setTextos] = useState(() => ({
+    foco: String(inicial.foco),
+    pausaCurta: String(inicial.pausaCurta),
+    pausaLonga: String(inicial.pausaLonga),
+    ciclosAteLonga: String(inicial.ciclosAteLonga),
+  }));
+  const aplicar = (parcial: Partial<ConfigPomodoro>) => {
+    setCfg((c) => ({ ...c, ...parcial }));
+    setTextos((t) => {
+      const novo = { ...t };
+      (['foco', 'pausaCurta', 'pausaLonga', 'ciclosAteLonga'] as const).forEach((k) => {
+        if (parcial[k] !== undefined) novo[k] = String(parcial[k]);
+      });
+      return novo;
+    });
+  };
+  const campo = (k: keyof typeof LIMITES_POMODORO, rotulo: string) => (
+    <Input
+      containerStyle={{ flex: 1 }}
+      keyboardType="number-pad"
+      label={`${rotulo} (${LIMITES_POMODORO[k][0]}–${LIMITES_POMODORO[k][1]})`}
+      maxLength={3}
+      value={textos[k]}
+      onChangeText={(t) => {
+        const limpo = t.replace(/\D/g, '');
+        setTextos((x) => ({ ...x, [k]: limpo }));
+        setCfg((c) => ({ ...c, [k]: Number(limpo) }));
+      }}
+    />
+  );
+
+  return (
+    <Modal visible onClose={onClose} title="Ajustar tempos" variant="bottom">
+      <View style={styles.presets}>
+        {PRESETS_POMODORO.map((p) => (
+          <Chip
+            ativo={p.config.foco === cfg.foco && p.config.pausaCurta === cfg.pausaCurta && p.config.pausaLonga === cfg.pausaLonga}
+            key={p.nome}
+            label={p.nome}
+            onPress={() => aplicar(p.config)}
+          />
+        ))}
+      </View>
+      <View style={styles.camposLinha}>
+        {campo('foco', 'Foco (min)')}
+        {campo('pausaCurta', 'Pausa curta')}
+      </View>
+      <View style={styles.camposLinha}>
+        {campo('pausaLonga', 'Pausa longa')}
+        {campo('ciclosAteLonga', 'Longa a cada')}
+      </View>
+      <View style={styles.switchLinha}>
+        <Text style={styles.switchTexto}>Começar o próximo modo sozinho</Text>
+        <Switch
+          value={cfg.autoIniciar}
+          onValueChange={(v) => aplicar({ autoIniciar: v })}
+          trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
+          thumbColor={cfg.autoIniciar ? COLORS.primary : '#f4f3f4'}
+        />
+      </View>
+      <View style={styles.configAcoes}>
+        <Button title="Padrão" variant="ghost" onPress={() => aplicar(POMODORO_PADRAO)} />
+        <Button title="Cancelar" variant="outline" onPress={onClose} />
+        <Button title="Salvar" onPress={() => onSalvar(cfg)} />
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
+  ciclos: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  cicloPonto: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#e2e8f0' },
+  cicloPontoFeito: { backgroundColor: COLORS.primary },
+  aviso: { marginTop: 16, textAlign: 'center', fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
+  ajustar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, padding: 6 },
+  ajustarTexto: { color: COLORS.primary, fontWeight: '600', fontSize: 14 },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  camposLinha: { flexDirection: 'row', gap: 12 },
+  switchLinha: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  switchTexto: { fontSize: 14, color: COLORS.text, flex: 1 },
+  configAcoes: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,

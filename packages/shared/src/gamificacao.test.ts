@@ -7,6 +7,7 @@ import {
   textoCompartilhamento,
   type EstatisticasConquista,
 } from './gamificacao';
+import * as g from './gamificacao';
 
 const stats = (parcial: Partial<EstatisticasConquista> = {}): EstatisticasConquista => ({
   sessoesConcluidas: 0,
@@ -231,5 +232,35 @@ describe('textoCompartilhamento', () => {
   it('textoCompartilhamento_quandoPeriodoComEspacosEMaiusculas_deveNormalizar', () => {
     const t = textoCompartilhamento({ nivel: 2, periodo: '  ACUMULADO ', horas: 1, topico: null });
     expect(t).toContain('(acumulado)');
+  });
+});
+
+describe('conquistas dinâmicas', () => {
+  const s = (parcial: Partial<EstatisticasConquista> = {}): EstatisticasConquista => ({
+    sessoesConcluidas: 0,
+    minutosEstudados: 0,
+    sessoesPorDisciplina: {},
+    ...parcial,
+  });
+
+  it('top_subject_sessions usa a disciplina mais estudada e o nome troca o marcador', () => {
+    const stats = s({ sessoesPorDisciplina: { Cálculo: 3, Física: 7 } });
+    expect(g.progressoConquista({ type: 'top_subject_sessions', target: 5 }, stats).concluida).toBe(true);
+    expect(g.nomeConquista('Especialista em {disciplina}', null, stats)).toBe('Especialista em Física');
+    expect(g.nomeConquista('Especialista em {disciplina}', 'História', stats)).toBe('Especialista em História');
+    expect(g.nomeConquista('Especialista em {disciplina}', null)).toBe('Especialista em sua disciplina');
+    expect(g.nomeConquista('Foco inicial', null, stats)).toBe('Foco inicial');
+  });
+
+  it('unique_subjects conta disciplinas com sessão e streak usa diasSeguidos', () => {
+    const stats = s({ sessoesPorDisciplina: { A: 1, B: 2, C: 0 }, diasSeguidos: 4 });
+    expect(g.progressoConquista({ type: 'unique_subjects', target: 3 }, stats).atual).toBe(2);
+    expect(g.progressoConquista({ type: 'streak', target: 5 }, stats).atual).toBe(4);
+  });
+
+  it('diasSeguidos conta a sequência que termina no dia mais recente', () => {
+    expect(g.diasSeguidos([])).toBe(0);
+    expect(g.diasSeguidos(['2026-11-01', '2026-11-03', '2026-11-04', '2026-11-04', '2026-11-05'])).toBe(3);
+    expect(g.diasSeguidos(['2026-10-31', '2026-11-01'])).toBe(2);
   });
 });
