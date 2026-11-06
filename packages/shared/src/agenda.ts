@@ -153,7 +153,7 @@ export function deLinha(l: LinhaItem): Compromisso | null {
   if (ini) {
     const hi = horaStr(ini);
     const hf = fim ? horaStr(fim) : "";
-    const diaInteiro = hi === "00:00" && (!fim || hf === "23:59" || hf === "00:00");
+    const diaInteiro = hi === "00:00" && (!fim || (hf === "23:59" && dataStr(fim) === dataStr(ini)));
     if (!diaInteiro) {
       horaInicio = hi;
       horaFim = fim && fim.getTime() > ini.getTime() && dataStr(fim) === dataStr(ini) ? hf : "";
@@ -167,10 +167,7 @@ export function deLinha(l: LinhaItem): Compromisso | null {
     ? "cronograma"
     : l.origem_externa_id?.startsWith("gmail:")
       ? "gmail"
-      : // Blocos gerados antes da marcação de origem.
-        normalizarTipo(l.tipo) === "estudo" && l.nome.startsWith("Estudo: ")
-        ? "cronograma"
-        : null;
+      : null;
 
   return {
     id: l.id,
@@ -317,6 +314,8 @@ export function criarAgenda(cfg: AgendaConfig) {
 
   let estado: Estado = { dados: null, userId: null, local: false, carregando: false, erro: null };
   let emAndamento: Promise<void> | null = null;
+  /** Incrementa ao limpar o cache: cargas iniciadas antes disso são descartadas. */
+  let geracao = 0;
   const ouvintes = new Set<() => void>();
 
   function definir(parcial: Partial<Estado>) {
@@ -339,13 +338,15 @@ export function criarAgenda(cfg: AgendaConfig) {
       const trabalhos = Array.isArray(n.trabalhos) ? n.trabalhos : n.workDate ? [{ nome: "Trabalho", data: n.workDate }] : [];
       if (provas.length === 0 && trabalhos.length === 0 && !("provas" in n) && !("trabalhos" in n)) return;
 
-      const add = (tipo: TipoCompromisso, itens: Array<{ nome?: string; data?: string }>) =>
-        itens.forEach((it) => {
+      const add = (tipo: TipoCompromisso, itens: Array<{ id?: string; nome?: string; data?: string }>) =>
+        itens.forEach((it, idx) => {
           const data = String(it?.data ?? "").slice(0, 10);
           if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return;
           novos.push({
             ...paraLinha({ titulo: it.nome || `${ROTULO_TIPO[tipo]} – ${l.nome}`, tipo, disciplinaId: l.id, data, horaInicio: "", horaFim: "", notas: "" }),
             user_id: userId,
+            // Id estável: migrar de novo (outra aba, outro aparelho, app antigo) não duplica.
+            origem_externa_id: `legado:${l.id}:${tipo}:${it?.id ?? `${idx}-${data}`}`,
           });
         });
       add("prova", provas);
@@ -356,31 +357,48 @@ export function criarAgenda(cfg: AgendaConfig) {
       delete resto.trabalhos;
       delete resto.examDate;
       delete resto.workDate;
-      delete resto.startTime;
-      delete resto.endTime;
       limpar.push({ id: l.id, anotacoes: resto });
     });
 
     if (limpar.length === 0) return false;
     if (novos.length > 0) {
-      const { error } = await cfg.client.from("itens_cronograma").insert(novos);
-      if (error) return false;
+      const { data: existentes, error: erroBusca } = await cfg.client
+        .from("itens_cronograma")
+        .select("origem_externa_id")
+        .eq("user_id", userId)
+        .like("origem_externa_id", "legado:%");
+      if (erroBusca) return false;
+      const ja = new Set((existentes ?? []).map((e) => e.origem_externa_id as string));
+      const faltam = novos.filter((n) => !ja.has(n.origem_externa_id as string));
+      if (faltam.length > 0) {
+        const { error } = await cfg.client.from("itens_cronograma").insert(faltam);
+        // 23505: outra aba/aparelho migrou ao mesmo tempo; os itens já existem.
+        if (error && error.code !== "23505") return false;
+      }
     }
-    await Promise.all(limpar.map((d) => cfg.client.from("disciplinas").update({ anotacoes: d.anotacoes }).eq("id", d.id).eq("user_id", userId)));
-    return true;
+    const resultados = await Promise.all(
+      limpar.map((d) => cfg.client.from("disciplinas").update({ anotacoes: d.anotacoes }).eq("id", d.id).eq("user_id", userId)),
+    );
+    return resultados.every((r) => !r.error);
   }
 
   async function buscar(): Promise<void> {
+    const minha = geracao;
+    const valida = () => minha === geracao;
     if (!(await cfg.temSessao())) {
-      definir({ dados: null, carregando: false });
+      if (valida()) definir({ dados: null, userId: null, carregando: false });
       return;
     }
 
     definir({ carregando: true, erro: null });
     try {
       const userId = await cfg.obterUserId();
+      if (!valida()) return;
+      // Outra conta no mesmo aparelho: não mostra o cache da anterior nem por um instante.
+      if (estado.dados && estado.userId !== userId) definir({ dados: null, userId });
       if (!userId) {
         const salvo = await cfg.storage.get(await cfg.chaveLocal());
+        if (!valida()) return;
         definir({
           userId: null,
           local: true,
@@ -403,6 +421,7 @@ export function criarAgenda(cfg: AgendaConfig) {
       if (disc.data && (await migrarAvaliacoesAntigas(userId, disc.data as LinhaDisciplina[]))) {
         [disc, itens] = await consultar();
       }
+      if (!valida()) return;
       if (disc.error || itens.error) throw disc.error ?? itens.error;
 
       definir({
@@ -416,9 +435,9 @@ export function criarAgenda(cfg: AgendaConfig) {
         },
       });
     } catch {
-      definir({ erro: "Não foi possível carregar a agenda. Verifique sua conexão." });
+      if (valida()) definir({ erro: "Não foi possível carregar a agenda. Verifique sua conexão." });
     } finally {
-      definir({ carregando: false });
+      if (valida()) definir({ carregando: false });
     }
   }
 
@@ -430,7 +449,9 @@ export function criarAgenda(cfg: AgendaConfig) {
 
   /** Limpa o cache (ex.: ao sair da conta). */
   function limparAgenda() {
-    definir({ dados: null, userId: null, local: false, erro: null });
+    geracao++;
+    emAndamento = null;
+    definir({ dados: null, userId: null, local: false, erro: null, carregando: false });
   }
 
   function atualizarLocal(fn: (d: AgendaDados) => AgendaDados) {
@@ -562,9 +583,6 @@ export function criarAgenda(cfg: AgendaConfig) {
     substituir: boolean,
   ): Promise<string | null> {
     const agora = new Date();
-    const futurosGerados = (estado.dados?.compromissos ?? []).filter(
-      (c) => c.origem === "cronograma" && !c.concluido && intervaloDe(c).inicio >= agora,
-    );
 
     const novos: Compromisso[] = blocos.map((b) => {
       const ini = new Date(b.data_inicio);
@@ -585,14 +603,7 @@ export function criarAgenda(cfg: AgendaConfig) {
 
     if (!estado.local && estado.userId) {
       const userId = estado.userId;
-      if (substituir && futurosGerados.length > 0) {
-        const { error } = await cfg.client
-          .from("itens_cronograma")
-          .delete()
-          .eq("user_id", userId)
-          .in("id", futurosGerados.map((c) => c.id));
-        if (error) return "Não foi possível apagar o cronograma anterior.";
-      }
+      // Primeiro grava os novos: se falhar, o cronograma anterior continua intacto.
       const { error } = await cfg.client.from("itens_cronograma").insert(
         novos.map((c) => ({
           ...paraLinha(c),
@@ -603,9 +614,32 @@ export function criarAgenda(cfg: AgendaConfig) {
         })),
       );
       if (error) return "Não foi possível salvar o cronograma. Tente novamente.";
+
+      if (substituir) {
+        // Apaga no servidor (não pelo cache, que pode estar desatualizado) os blocos gerados
+        // ainda por vir e não concluídos, exceto os que acabaram de ser criados.
+        let consulta = cfg.client
+          .from("itens_cronograma")
+          .delete()
+          .eq("user_id", userId)
+          .eq("completed", false)
+          .like("origem_externa_id", "cronograma:%")
+          .gte("data_inicio", agora.toISOString());
+        if (novos.length > 0) consulta = consulta.not("id", "in", `(${novos.map((c) => c.id).join(",")})`);
+        const { error: erroApagar } = await consulta;
+        await recarregarAgenda();
+        if (erroApagar) return "Os novos blocos foram salvos, mas não foi possível apagar os anteriores.";
+        return null;
+      }
+      atualizarLocal((d) => ({ ...d, compromissos: ordenarCompromissos([...d.compromissos, ...novos]) }));
+      return null;
     }
 
-    const remover = new Set(substituir ? futurosGerados.map((c) => c.id) : []);
+    const remover = new Set(
+      substituir
+        ? (estado.dados?.compromissos ?? []).filter((c) => c.origem === "cronograma" && !c.concluido && intervaloDe(c).inicio >= agora).map((c) => c.id)
+        : [],
+    );
     atualizarLocal((d) => ({ ...d, compromissos: ordenarCompromissos([...d.compromissos.filter((c) => !remover.has(c.id)), ...novos]) }));
     return null;
   }

@@ -42,6 +42,11 @@ test.describe("Fluxo 1: cronograma automatizado", () => {
     });
 
     await test.step("4. Gerar a prévia do cronograma (1 semana, blocos de 50 min)", async () => {
+      // O cronograma pula horários que já passaram: fixa o relógio em hoje às 08:00 para
+      // que os 4 blocos (seg e qua, 19h–21h) caiam sempre dentro da semana, sem passado.
+      const hojeCedo = new Date();
+      hojeCedo.setHours(8, 0, 0, 0);
+      await page.clock.setFixedTime(hojeCedo);
       await rotina.gerar(1, 50);
       await expect(page.getByRole("heading", { name: "Prévia do cronograma" })).toBeVisible();
       // 2 horários de 2h → 2 blocos de 50 min (+10 min de intervalo) por horário.

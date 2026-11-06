@@ -177,7 +177,7 @@ export default function RotinaScreen() {
     const ocupados = [
       ...aulasNoPeriodo(agenda.disciplinas, hoje, fimPeriodo),
       ...agenda.compromissos.filter(
-        (c) => c.horaInicio && !c.concluido && c.data >= hoje && c.data <= fimPeriodo && !(substituir && c.origem === 'cronograma'),
+        (c) => c.horaInicio && c.data >= hoje && c.data <= fimPeriodo && !(substituir && c.origem === 'cronograma' && !c.concluido),
       ),
     ].map((c) => {
       const { inicio: ini, fim: f } = intervaloDe(c);

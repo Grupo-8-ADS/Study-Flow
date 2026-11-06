@@ -6,6 +6,7 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { BookOpen, NotebookPen, Pause, Play, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { useAgenda } from "@/lib/agenda";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageLoading } from "@/components/ui/feedback";
@@ -37,8 +38,11 @@ const TimerDashboard: NextPage = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Disciplinas & Notas
-  const [disciplines, setDisciplines] = useState<DisciplineOption[]>([]);
-  const [selectedDiscipline, setSelectedDiscipline] = useState<string>("");
+  const { dados: agenda } = useAgenda();
+  const disciplines: DisciplineOption[] = (agenda?.disciplinas ?? []).map((d) => ({ id: d.id, name: d.nome }));
+  // null = ainda não escolheu: usa a primeira disciplina cadastrada.
+  const [escolha, setSelectedDiscipline] = useState<string | null>(null);
+  const selectedDiscipline = escolha ?? disciplines[0]?.id ?? "";
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
 
@@ -54,24 +58,7 @@ const TimerDashboard: NextPage = () => {
 
       setUser(parsed);
 
-      const currentUserId = await getCurrentSupabaseUserId(parsed);
-      setSupabaseUserId(currentUserId);
-
-      if (!currentUserId) {
-        const saved = localStorage.getItem(`studyflow_subjects_${parsed.email}`);
-        const localDisciplines = saved
-          ? (JSON.parse(saved) as Array<{ id: string; name: string }>).map((subject) => ({ id: subject.id, name: subject.name }))
-          : [];
-        setDisciplines(localDisciplines);
-        setSelectedDiscipline(localDisciplines[0]?.id ?? "");
-        return;
-      }
-
-      const { data } = await supabase.from("disciplinas").select("id,nome").eq("user_id", currentUserId).order("created_at");
-
-      const remoteDisciplines = (data ?? []).map((disciplina) => ({ id: disciplina.id, name: disciplina.nome }));
-      setDisciplines(remoteDisciplines);
-      setSelectedDiscipline(remoteDisciplines[0]?.id ?? "");
+      setSupabaseUserId(await getCurrentSupabaseUserId(parsed));
     }
 
     void loadTimer();

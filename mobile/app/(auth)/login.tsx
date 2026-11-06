@@ -58,15 +58,25 @@ export default function LoginScreen() {
 
   /** Envia o link de redefinição; a nova senha é definida na página do site. */
   const recuperarSenha = async () => {
-    const email = identifier.trim();
+    const email = identifier.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setErrorMessage('Digite seu email no campo acima para receber o link de redefinição.');
       return;
     }
     setErrorMessage('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: LINK_REDEFINIR });
-    if (error?.status === 429) {
+    let erro: { status?: number } | null = null;
+    try {
+      erro = (await supabase.auth.resetPasswordForEmail(email, { redirectTo: LINK_REDEFINIR })).error;
+    } catch {
+      erro = { status: 0 };
+    }
+    if (erro?.status === 429) {
       setErrorMessage('Muitos pedidos seguidos. Aguarde alguns minutos e tente de novo.');
+      return;
+    }
+    // Erro de rede/servidor (não "conta inexistente", que o Supabase não revela).
+    if (erro && (erro.status === 0 || (erro.status ?? 500) >= 500)) {
+      setErrorMessage('Não foi possível enviar o email agora. Verifique a conexão e tente de novo.');
       return;
     }
     // Mesma resposta exista ou não a conta, para não revelar emails cadastrados.

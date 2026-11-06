@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Gift, Image as ImageIcon, Lock, Palette, Sparkles, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { limparAgenda } from "@/lib/agenda";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -94,6 +95,7 @@ export default function RewardsPage() {
         ]);
       } catch {
         localStorage.removeItem("studyflow_session");
+        limparAgenda();
         router.push("/");
       }
     }

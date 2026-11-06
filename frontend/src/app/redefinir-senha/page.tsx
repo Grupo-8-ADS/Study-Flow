@@ -18,6 +18,15 @@ import { PasswordInput } from "@/components/ui/password-input";
 
 type Estado = "verificando" | "pronto" | "invalido";
 
+/**
+ * Lido ao carregar o módulo, antes de o cliente do Supabase consumir e limpar o hash:
+ * só um link de recuperação (type=recovery ou ?code=) libera a troca de senha, para que
+ * uma sessão já aberta no navegador não permita trocar a senha sem a senha atual.
+ */
+const LINK_DE_RECUPERACAO =
+  typeof window !== "undefined" &&
+  (/(^|[#&])type=recovery(&|$)/.test(window.location.hash) || new URLSearchParams(window.location.search).has("code"));
+
 export default function RedefinirSenhaPage() {
   const router = useRouter();
   const [estado, setEstado] = useState<Estado>("verificando");
@@ -46,9 +55,9 @@ export default function RedefinirSenhaPage() {
         return;
       }
 
-      // Fluxo implícito (#access_token=...): o cliente já lê o hash ao iniciar.
+      // Fluxo implícito (#access_token=...&type=recovery): o cliente já lê o hash ao iniciar.
       const { data } = await supabase.auth.getSession();
-      if (ativo) setEstado(data.session ? "pronto" : "invalido");
+      if (ativo) setEstado(LINK_DE_RECUPERACAO && data.session ? "pronto" : "invalido");
     })();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {

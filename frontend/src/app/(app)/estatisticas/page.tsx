@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Check, Download, FileText, Share2, Sparkles, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { limparAgenda } from "@/lib/agenda";
 import {
   buildDistribution,
   getCurrentSupabaseUserId,
@@ -229,6 +230,7 @@ export default function EstatisticasPage() {
         setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: inProgressAchievements });
       } catch {
         localStorage.removeItem("studyflow_session");
+        limparAgenda();
         router.push("/");
       }
     }

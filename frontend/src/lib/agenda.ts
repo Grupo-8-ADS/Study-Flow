@@ -46,6 +46,14 @@ const agenda = criarAgenda({
   },
 });
 
+// Saiu da conta ou entrou outra pessoa (em qualquer tela ou aba): descarta o cache.
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((evento, sessao) => {
+    const atual = agenda.obterEstado().userId;
+    if (evento === "SIGNED_OUT" || (sessao?.user?.id && atual && sessao.user.id !== atual)) agenda.limparAgenda();
+  });
+}
+
 export const {
   recarregarAgenda,
   limparAgenda,

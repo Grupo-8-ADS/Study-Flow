@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CircleHelp, FileText, LogOut, Settings, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { limparAgenda } from "@/lib/agenda";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, PageLoading } from "@/components/ui/feedback";
@@ -96,6 +97,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         }
       } catch {
         localStorage.removeItem("studyflow_session");
+        limparAgenda();
         router.push("/");
       }
     }
@@ -126,6 +128,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
       // Ignora se offline
     }
     localStorage.removeItem("studyflow_session");
+    limparAgenda();
     router.push("/");
   };
 
@@ -156,6 +159,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     Object.keys(localStorage)
       .filter((key) => key.startsWith("studyflow_"))
       .forEach((key) => localStorage.removeItem(key));
+    limparAgenda();
     router.push("/");
   };
 
