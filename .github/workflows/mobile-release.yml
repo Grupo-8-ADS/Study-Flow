@@ -80,7 +80,7 @@ jobs:
         java-version: '17'
 
     - name: Setup Gradle (cache)
-      uses: gradle/actions/setup-gradle@v4
+      uses: gradle/actions/setup-gradle@v6
 
     - name: Install dependencies
       run: npm ci
