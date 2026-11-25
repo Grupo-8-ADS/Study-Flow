@@ -7,3 +7,6 @@ expo-env.d.ts
 # Projetos nativos gerados pelo `expo prebuild` (CI de release)
 /android
 /ios
+# Estado local do Expo e saída do expo export (smoke do CI)
+.expo/
+dist/
