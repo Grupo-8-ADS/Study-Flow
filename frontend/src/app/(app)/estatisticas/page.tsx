@@ -8,7 +8,6 @@ import { ConquistaIcone } from "@/components/conquista-icone";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
 import {
-  buildDistribution,
   getCurrentSupabaseUserId,
   getLocalStudyMinutes,
   getStoredSession,
@@ -22,8 +21,11 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   PRIVACIDADE_PADRAO,
+  SEM_DISCIPLINA,
+  distribuicaoEstudo,
   type Privacidade,
   dataLocalISO,
+  metasDeEstudo,
   gerarRelatorioPeriodo,
   intervaloDoPeriodo,
   intervaloPersonalizado,
@@ -42,8 +44,6 @@ type Period = "semana" | "mes" | "acumulado";
 type ReportMode = "semana" | "mes" | "personalizado";
 
 // Metas sugeridas (horas) usadas quando o usuário ainda não definiu horas diárias no perfil.
-const DEFAULT_WEEKLY_GOAL = 28;
-const DEFAULT_MONTHLY_GOAL = 80;
 
 const formatMinutes = (minutes: number) => {
   const hours = Math.floor(minutes / 60);
@@ -89,11 +89,11 @@ const emptyAchievements = { available: [], completed: [], inProgress: [] } as {
 };
 
 function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: number | null; disciplinas: { nome?: string | null } | Array<{ nome?: string | null }> | null }>): PeriodStats {
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Mesma semana (segunda a domingo) e mês do relatório e do app.
+  const agora = new Date();
+  const semana = intervaloDoPeriodo("semana", agora);
+  const mes = intervaloDoPeriodo("mes", agora);
+  const dentro = (d: Date, i: { inicio: Date; fim: Date }) => d >= i.inicio && d < i.fim;
 
   const makePeriod = (label: string, predicate: (date: Date) => boolean) => {
     const rows = sessoes
@@ -102,11 +102,11 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
         const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
 
         return {
-          disciplina: disciplina?.nome ?? "Sem disciplina",
-          minutes: sessao.duracao_efetiva_min ?? 0,
+          disciplina: disciplina?.nome ?? SEM_DISCIPLINA,
+          minutos: sessao.duracao_efetiva_min ?? 0,
         };
       });
-    const distribution = buildDistribution(rows);
+    const distribution = distribuicaoEstudo(rows);
     const top = distribution[0];
 
     return {
@@ -119,8 +119,8 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
 
   return {
     acumulado: makePeriod("Acumulado", () => true),
-    mes: makePeriod("Mês", (date) => date >= startOfMonth),
-    semana: makePeriod("Semana", (date) => date >= startOfWeek),
+    mes: makePeriod("Mês", (date) => dentro(date, mes)),
+    semana: makePeriod("Semana", (date) => dentro(date, semana)),
   };
 }
 
@@ -308,11 +308,10 @@ export default function EstatisticasPage() {
   const weeklyHours = statsData.semana.chart.reduce((sum, item) => sum + item.value, 0);
   const monthlyHours = statsData.mes.chart.reduce((sum, item) => sum + item.value, 0);
   // Metas derivadas das horas diárias do perfil (semana = 7 dias, mês = 30 dias).
-  const hasGoal = dailyHours > 0;
-  const weeklyGoal = hasGoal ? dailyHours * 7 : DEFAULT_WEEKLY_GOAL;
-  const monthlyGoal = hasGoal ? dailyHours * 30 : DEFAULT_MONTHLY_GOAL;
-  const weeklyProgress = Math.min(100, Math.round((weeklyHours / weeklyGoal) * 100));
-  const monthlyProgress = Math.min(100, Math.round((monthlyHours / monthlyGoal) * 100));
+  const metas = metasDeEstudo(dailyHours, weeklyHours, monthlyHours);
+  const hasGoal = !metas.sugerida;
+  const { meta: weeklyGoal, percentual: weeklyProgress } = metas.semana;
+  const { meta: monthlyGoal, percentual: monthlyProgress } = metas.mes;
   const { report, error: reportError } = buildReport();
 
   return (

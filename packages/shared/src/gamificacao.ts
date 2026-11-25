@@ -158,6 +158,28 @@ export function diasSeguidos(datas: string[]): number {
 }
 
 /**
+ * Sequência atual: dias seguidos com estudo terminando hoje (no fuso local do aparelho).
+ * Recebe os instantes ISO de início das sessões. Sem estudo hoje, a sequência é 0.
+ */
+export function sequenciaAtual(instantes: string[], hoje: Date = new Date()): number {
+  const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dias = new Set(
+    instantes
+      .filter(Boolean)
+      .map((i) => new Date(i))
+      .filter((d) => !Number.isNaN(d.getTime()))
+      .map(dia),
+  );
+  let contagem = 0;
+  const cursor = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12);
+  while (dias.has(dia(cursor))) {
+    contagem++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return contagem;
+}
+
+/**
  * Maior sequência de dias seguidos já feita (mesma regra do banco em avaliar_conquistas):
  * é o que libera as conquistas de sequência, mesmo que a sequência já tenha sido quebrada.
  */

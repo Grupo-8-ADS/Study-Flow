@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { DISTRIBUTION_COLORS } from './constants';
 import {
+  META_SUGERIDA_H,
+  distribuicaoEstudo,
+  metasDeEstudo,
   intervaloDoPeriodo,
   intervaloPersonalizado,
   gerarRelatorioPeriodo,
@@ -464,5 +468,50 @@ describe('relatorioParaCSV', () => {
   it('relatorioParaCSV_quandoNomeSemCaracteresEspeciais_deveNaoUsarAspas', () => {
     const csv = relatorioParaCSV(base);
     expect(csv).not.toContain('"');
+  });
+});
+
+describe('metasDeEstudo', () => {
+  it('quandoPerfilTemMetaDiaria_deveMultiplicarPor7E30', () => {
+    expect(metasDeEstudo(2, 7, 30)).toEqual({ sugerida: false, semana: { meta: 14, percentual: 50 }, mes: { meta: 60, percentual: 50 } });
+  });
+
+  it('quandoSemMeta_deveUsarAsSugeridasELimitarA100', () => {
+    const r = metasDeEstudo(0, 56, 0);
+    expect(r.sugerida).toBe(true);
+    expect(r.semana).toEqual({ meta: META_SUGERIDA_H.semana, percentual: 100 });
+    expect(r.mes).toEqual({ meta: META_SUGERIDA_H.mes, percentual: 0 });
+    expect(metasDeEstudo(null, 1, 1).sugerida).toBe(true);
+  });
+});
+
+describe('distribuicaoEstudo', () => {
+  it('agrupaOrdenaCalculaHorasEDescartaSemDisciplina', () => {
+    const d = distribuicaoEstudo([
+      { disciplina: 'Cálculo 1', minutos: 120 },
+      { disciplina: 'Física 1', minutos: 60 },
+      { disciplina: 'Cálculo 1', minutos: 60 },
+      { disciplina: null, minutos: 30 },
+      { disciplina: '  ', minutos: 30 },
+    ]);
+    expect(d.map((x) => [x.name, x.hours])).toEqual([
+      ['Cálculo 1', 3],
+      ['Física 1', 1],
+    ]);
+    expect(d[0].color).toBe(DISTRIBUTION_COLORS[0]);
+  });
+
+  it('limitaAoTop5ComCoresNaOrdemDaPaleta', () => {
+    const d = distribuicaoEstudo(['A', 'B', 'C', 'D', 'E', 'F'].map((disciplina, i) => ({ disciplina, minutos: (i + 1) * 10 })));
+    expect(d).toHaveLength(5);
+    expect(d[0].name).toBe('F');
+    expect(d.map((x) => x.color)).toEqual(DISTRIBUTION_COLORS);
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 1 }, { disciplina: 'B', minutos: 2 }], 1)).toHaveLength(1);
+  });
+
+  it('maximoDaBarraEhOProximoParDeHorasComMinimoUm', () => {
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 30 }])[0]).toMatchObject({ hours: 0.5, max: 2 });
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 180 }])[0].max).toBe(4);
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 0 }])[0]).toMatchObject({ hours: 0, max: 1 });
   });
 });

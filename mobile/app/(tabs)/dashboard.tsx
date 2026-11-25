@@ -26,6 +26,8 @@ import {
   ROTULO_TIPO,
   StudyDistribution,
   dataStr,
+  distribuicaoEstudo,
+  sequenciaAtual,
   formatarData,
   formatarHorario,
   hojeStr,
@@ -44,8 +46,6 @@ import { agendarLembretesDePrazos } from '../../lib/notifications';
 import { CompromissoEditor } from '../../components/CompromissoEditor';
 import { COR_TIPO, alternarConcluido, useAgenda } from '../../lib/agenda';
 
-const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#a855f7'];
-
 export default function DashboardScreen() {
   const router = useRouter();
   const { session } = useAuth();
@@ -57,24 +57,6 @@ export default function DashboardScreen() {
 
   const { dados: agenda, carregando: carregandoAgenda, recarregar: recarregarAgenda } = useAgenda();
   const [editor, setEditor] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
-
-  const calculateStreakFromDates = (dates: string[]) => {
-    // Dias no fuso local (as sessões são gravadas como instantes reais).
-    const uniqueDays = new Set(dates.filter(Boolean).map((d) => dataStr(new Date(d))));
-    if (uniqueDays.size === 0) return 0;
-
-    let count = 0;
-    const cursor = new Date();
-
-    while (true) {
-      const key = dataStr(cursor);
-      if (!uniqueDays.has(key)) break;
-      count += 1;
-      cursor.setDate(cursor.getDate() - 1);
-    }
-
-    return count;
-  };
 
   const loadData = useCallback(async () => {
     try {
@@ -98,30 +80,12 @@ export default function DashboardScreen() {
         const totalMinutes = sessionsData.reduce((acc, s) => acc + (s.duracao_efetiva_min || 0), 0);
         setTotalHours(Number((totalMinutes / 60).toFixed(1)));
 
-        const sessionDates = sessionsData.map((s) => s.data_inicio).filter(Boolean) as string[];
-        setStreak(calculateStreakFromDates(sessionDates));
-
-        // Build subject distribution
-        const subjectMap = new Map<string, number>();
-        sessionsData.forEach((s: any) => {
-          const subName = s.disciplinas?.nome || 'Geral';
-          subjectMap.set(subName, (subjectMap.get(subName) || 0) + (s.duracao_efetiva_min || 0));
-        });
-
-        const distList: StudyDistribution[] = Array.from(subjectMap.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 4)
-          .map(([name, mins], idx) => {
-            const hrs = Number((mins / 60).toFixed(1));
-            return {
-              name,
-              hours: hrs,
-              max: Math.max(2, Math.ceil(hrs / 2) * 2),
-              color: DIST_COLORS[idx % DIST_COLORS.length],
-            };
-          });
-
-        setDistribution(distList);
+        setStreak(sequenciaAtual(sessionsData.map((s) => s.data_inicio).filter(Boolean) as string[]));
+        setDistribution(
+          distribuicaoEstudo(
+            sessionsData.map((s: any) => ({ disciplina: s.disciplinas?.nome ?? null, minutos: s.duracao_efetiva_min || 0 })),
+          ),
+        );
       } else {
         setTotalHours(0);
         setStreak(0);
