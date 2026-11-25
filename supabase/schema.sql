@@ -449,9 +449,9 @@ create or replace function public.nivel_por_xp(p_xp integer)
 returns integer
 language sql
 immutable
-as $
+as $$
   select greatest(floor((1 + sqrt(1 + 8 * greatest(coalesce(p_xp, 0), 0) / 100.0)) / 2)::integer, 1);
-$;
+$$;
 
 -- RF004: ao concluir uma sessão, soma o XP, concede as conquistas cujo critério foi
 -- atingido (com o bônus de pontos de cada uma) e avisa o usuário.
