@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { APP_RETORNO_GMAIL, type EmailResumo } from "@studyflow/shared";
 import { supabase, SUPABASE_FALLBACK_URL } from "@/lib/supabase";
+import { clienteServidor } from "@/lib/supabase-servidor";
 
 /**
  * RF012: integração com o Gmail (somente no servidor).
@@ -41,9 +42,7 @@ export function lerConfigGmail(env: NodeJS.ProcessEnv = process.env): GmailConfi
 
 /** Cliente com service role: ignora RLS, então TODA consulta deve filtrar por user_id. */
 export function clienteServico(config: GmailConfig): SupabaseClient {
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return clienteServidor(config.serviceRoleKey, { url: config.supabaseUrl });
 }
 
 /** Valida o JWT do Supabase enviado no header Authorization e devolve o id do usuário. */

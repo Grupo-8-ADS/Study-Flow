@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { StudyFlowSession } from '@studyflow/shared';
+import { entrar, MENSAGENS_LOGIN, StudyFlowSession } from '@studyflow/shared';
 import { supabase } from '../lib/supabase';
+import { entrarPorUsuario } from '../lib/api';
 import { Storage } from '../lib/storage';
 import { limparAgenda } from '../lib/agenda';
 
@@ -106,71 +107,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /** Login por e-mail ou nome de usuário (mesma regra da web: ver entrar em @studyflow/shared). */
   const signIn = async (identifier: string, pass: string): Promise<{ error?: string }> => {
-    const cleanId = identifier.trim();
-    const isEmail = cleanId.includes('@');
+    const resultado = await entrar(supabase.auth, entrarPorUsuario, identifier, pass);
+    if (!resultado.ok) return { error: resultado.mensagem };
 
     try {
-      let email = cleanId;
-      if (!isEmail) {
-        let resolvedEmail: string | null = null;
-        try {
-          const { data: rpcEmail, error: rpcError } = await supabase.rpc('get_email_by_username', {
-            login_username: cleanId,
-          });
-          if (!rpcError && typeof rpcEmail === 'string' && rpcEmail.includes('@')) {
-            resolvedEmail = rpcEmail;
-          }
-        } catch {
-          // RPC fallback
-        }
-
-        if (!resolvedEmail) {
-          try {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('email')
-              .ilike('username', cleanId)
-              .maybeSingle();
-
-            if (profile?.email) {
-              resolvedEmail = profile.email;
-            }
-          } catch {
-            // Profile query fallback
-          }
-        }
-
-        if (!resolvedEmail) {
-          return { error: 'Email/usuário ou senha informados são inválidos.' };
-        }
-        email = resolvedEmail;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
-
-      if (error?.code === 'email_not_confirmed') {
-        return { error: 'Confirme seu e-mail antes de entrar: abra o link que enviamos no cadastro.' };
-      }
-
-      if (error) {
-        return { error: 'Email e/ou senha informados são inválidos.' };
-      }
-
-      if (data.user) {
-        const userSession = await fetchProfileForUser(data.user.id, data.user.email || email);
-        setSession(userSession);
-        await Storage.setSession(userSession);
-        return {};
-      }
-    } catch (err: any) {
-      return { error: err.message || 'Erro ao efetuar login.' };
+      const userSession = await fetchProfileForUser(resultado.user.id, resultado.user.email || identifier.trim());
+      setSession(userSession);
+      await Storage.setSession(userSession);
+      return {};
+    } catch {
+      return { error: MENSAGENS_LOGIN.indisponivel };
     }
-
-    return { error: 'Email e/ou senha informados são inválidos.' };
   };
 
   const signUp = async (nome: string, username: string, email: string, pass: string): Promise<{ error?: string; confirmarEmail?: boolean }> => {

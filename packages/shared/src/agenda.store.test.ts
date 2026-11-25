@@ -292,16 +292,10 @@ describe('criarAgenda (store)', () => {
     expect(ctx.banco.tabelas.atividades_rotina).toHaveLength(0);
   });
 
-  it('sem a tabela de rotinas no servidor, carrega o resto da agenda e recusa salvar rotina', async () => {
-    ctx.banco.falhas.set('atividades_rotina:select', { code: 'PGRST205', message: 'tabela ausente' });
-    await ctx.agenda.salvarCompromisso(form());
+  it('falha ao ler as rotinas é erro da agenda, não uma rotina vazia', async () => {
+    ctx.banco.falhas.set('atividades_rotina:select', { message: 'falhou' });
     await ctx.agenda.recarregarAgenda();
-    const estado = ctx.agenda.obterEstado();
-    expect(estado.erro).toBeNull();
-    expect(estado.dados!.rotinas).toEqual([]);
-    expect(await ctx.agenda.salvarRotina({ nome: 'Academia', horarios: [{ dia_semana: 2, inicio: '07:00', fim: '08:00' }], notas: '' })).toMatch(
-      /não estão disponíveis/,
-    );
+    expect(ctx.agenda.obterEstado().erro).toMatch(/Não foi possível carregar a agenda/);
   });
 
   it('migra provas antigas do JSON da disciplina uma única vez', async () => {
