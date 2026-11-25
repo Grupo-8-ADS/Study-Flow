@@ -59,10 +59,10 @@ export default defineConfig({
       {
         // Build de produção: o servidor de dev compila rotas sob demanda e gera
         // latência variável (flakiness). E2E_DEV=1 usa `next dev` para depuração local.
-        // Em CI o build é feito em etapa anterior do workflow.
+        // Em CI (e no npm run verify) o build é feito na etapa anterior: E2E_BUILD_PRONTO.
         command: process.env.E2E_DEV
           ? `npm --workspace=frontend run dev -- -p ${PORT}`
-          : isCI
+          : isCI || process.env.E2E_BUILD_PRONTO
             ? `npm --workspace=frontend run start -- -p ${PORT}`
             : `npm run build:web && npm --workspace=frontend run start -- -p ${PORT}`,
         url: `http://localhost:${PORT}`,

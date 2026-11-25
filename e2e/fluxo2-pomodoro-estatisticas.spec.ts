@@ -97,4 +97,20 @@ test.describe("Fluxo 2: Pomodoro registrado nas estatísticas", () => {
     await page.goto("/estatisticas");
     await expect(page).toHaveURL(/\/$/);
   });
+
+  test("alternativo: login pelo nome de usuário, sem o e-mail sair do servidor", async ({ page, usuario }, testInfo) => {
+    test.skip(
+      !process.env.SUPABASE_SERVICE_ROLE_KEY,
+      "Precisa de SUPABASE_SERVICE_ROLE_KEY: a rota /api/auth/entrar descobre o e-mail com a chave secreta.",
+    );
+    await criarUsuarioViaApi(usuario);
+    const login = new LoginPage(page);
+
+    await login.abrir();
+    const resposta = page.waitForResponse((r) => r.url().endsWith("/api/auth/entrar"));
+    await login.entrar(usuario.username, usuario.senha);
+    expect(await (await resposta).text()).not.toContain(usuario.email);
+    await expect(page).toHaveURL(/\/dashboard/);
+    await evidencia(page, testInfo, "fluxo2-06-login-por-usuario");
+  });
 });
