@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { DISTRIBUTION_COLORS } from './constants';
 import {
+  BOM_UTF8,
   META_SUGERIDA_H,
+  formatarDataISO,
+  formatarHoras,
+  formatarMinutos,
+  montarRelatorio,
+  nomeArquivoRelatorio,
+  resumoRelatorio,
   distribuicaoEstudo,
   metasDeEstudo,
   intervaloDoPeriodo,
@@ -513,5 +520,36 @@ describe('distribuicaoEstudo', () => {
     expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 30 }])[0]).toMatchObject({ hours: 0.5, max: 2 });
     expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 180 }])[0].max).toBe(4);
     expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 0 }])[0]).toMatchObject({ hours: 0, max: 1 });
+  });
+});
+
+describe('montarRelatorio e formatação', () => {
+  const sessoes = [{ data_inicio: new Date(2026, 10, 24, 10).toISOString(), duracao_efetiva_min: 95, disciplina_nome: 'Cálculo', status: 'concluida' }];
+
+  it('monta semana, mês ou personalizado e acusa período inválido', () => {
+    const agora = new Date(2026, 10, 25, 12);
+    expect(montarRelatorio(sessoes, 'semana', { inicio: '', fim: '' }, agora).relatorio?.totalMinutos).toBe(95);
+    expect(montarRelatorio(sessoes, 'mes', { inicio: '', fim: '' }, agora).relatorio?.inicio).toBe('2026-11-01');
+    expect(montarRelatorio(sessoes, 'personalizado', { inicio: '2026-11-25', fim: '2026-11-25' }, agora).relatorio?.totalMinutos).toBe(0);
+    expect(montarRelatorio(sessoes, 'personalizado', { inicio: '2026-11-25', fim: '2026-11-01' }, agora).erro).toMatch(/data final/);
+  });
+
+  it('formata minutos, horas, datas e o nome do arquivo', () => {
+    expect(formatarMinutos(95)).toBe('1h35');
+    expect(formatarMinutos(40)).toBe('40min');
+    expect(formatarHoras(2.25)).toBe('2,3 h');
+    expect(formatarDataISO('2026-11-25')).toBe('25/11/2026');
+    expect(nomeArquivoRelatorio({ inicio: '2026-11-01', fim: '2026-11-30' })).toBe('relatorio-studyflow-2026-11-01-a-2026-11-30.csv');
+    expect(BOM_UTF8.charCodeAt(0)).toBe(0xfeff);
+  });
+
+  it('resumoRelatorio lista os quatro números', () => {
+    const r = montarRelatorio(sessoes, 'semana', { inicio: '', fim: '' }, new Date(2026, 10, 25, 12)).relatorio!;
+    expect(resumoRelatorio(r)).toEqual([
+      ['Total de horas', '1,6 h'],
+      ['Sessões', '1'],
+      ['Dias estudados', '1'],
+      ['Média por dia', '14min'],
+    ]);
   });
 });

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Share2, Zap } from 'lucide-react-native';
 import { ConquistaIcone } from '../../components/ConquistaIcone';
+import { RelatorioEstudos } from '../../components/RelatorioEstudos';
 import {
   COLORS,
   Conquista,
@@ -24,6 +25,7 @@ import {
   gerarRelatorioPeriodo,
   metasDeEstudo,
   SEM_DISCIPLINA,
+  type SessaoRelatorio,
 } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
@@ -46,6 +48,7 @@ export default function EstatisticasScreen() {
   const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessoesRelatorio, setSessoesRelatorio] = useState<SessaoRelatorio[]>([]);
 
   const [weekHours, setWeekHours] = useState(0);
   const [monthHours, setMonthHours] = useState(0);
@@ -76,6 +79,7 @@ export default function EstatisticasScreen() {
         status: 'concluida',
       }));
 
+      setSessoesRelatorio(concluidas);
       const agora = new Date();
       const semana = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('semana', agora));
       const mes = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('mes', agora));
@@ -285,6 +289,8 @@ export default function EstatisticasScreen() {
         </Card>
 
         {/* Study Distribution */}
+        <RelatorioEstudos sessoes={sessoesRelatorio} />
+
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Distribuição por Matéria</Text>
         </View>

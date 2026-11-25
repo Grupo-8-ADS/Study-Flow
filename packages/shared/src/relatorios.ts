@@ -207,3 +207,55 @@ export function distribuicaoEstudo(linhas: Array<{ disciplina?: string | null; m
       return { name, hours, max: Math.max(1, Math.ceil(hours / 2) * 2), color: DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length] };
     });
 }
+
+export type ModoRelatorio = PeriodoRelatorio | 'personalizado';
+
+/**
+ * Relatório da tela de estatísticas: semana, mês ou intervalo personalizado (datas AAAA-MM-DD).
+ * Devolve o relatório ou a mensagem de erro do período.
+ */
+export function montarRelatorio(
+  sessoes: SessaoRelatorio[],
+  modo: ModoRelatorio,
+  personalizado: { inicio: string; fim: string },
+  agora: Date = new Date(),
+): { relatorio: RelatorioPeriodo; erro: null } | { relatorio: null; erro: string } {
+  try {
+    const intervalo = modo === 'personalizado' ? intervaloPersonalizado(personalizado.inicio, personalizado.fim) : intervaloDoPeriodo(modo, agora);
+    return { relatorio: gerarRelatorioPeriodo(sessoes, intervalo), erro: null };
+  } catch (e) {
+    return { relatorio: null, erro: e instanceof Error ? e.message : 'Período inválido' };
+  }
+}
+
+/** Marca de ordem de bytes: faz o Excel abrir o CSV em UTF-8 (acentos corretos). */
+export const BOM_UTF8 = '\uFEFF';
+
+export const nomeArquivoRelatorio = (r: Pick<RelatorioPeriodo, 'inicio' | 'fim'>) => `relatorio-studyflow-${r.inicio}-a-${r.fim}.csv`;
+
+/** 95 → "1h35"; 40 → "40min". */
+export function formatarMinutos(minutos: number): string {
+  const m = Math.max(Math.round(minutos), 0);
+  const horas = Math.floor(m / 60);
+  const resto = m % 60;
+  return horas > 0 ? `${horas}h${String(resto).padStart(2, '0')}` : `${resto}min`;
+}
+
+/** 2.25 → "2,3 h". */
+export const formatarHoras = (horas: number) => `${Number(horas.toFixed(1)).toLocaleString('pt-BR')} h`;
+
+/** "2026-11-25" → "25/11/2026". */
+export function formatarDataISO(valor: string): string {
+  const [a, m, d] = valor.split('-');
+  return a && m && d ? `${d}/${m}/${a}` : valor;
+}
+
+/** Linhas de resumo do relatório, na ordem exibida. */
+export function resumoRelatorio(r: RelatorioPeriodo): Array<[string, string]> {
+  return [
+    ['Total de horas', formatarHoras(r.totalMinutos / 60)],
+    ['Sessões', String(r.totalSessoes)],
+    ['Dias estudados', String(r.diasEstudados)],
+    ['Média por dia', formatarMinutos(r.mediaMinutosPorDia)],
+  ];
+}
