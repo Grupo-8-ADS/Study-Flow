@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { reenviarConfirmacao, supabase, urlConfirmacaoEmail } from "@/lib/supabase";
-import { isValidEmail } from "@studyflow/shared";
+import { validarCadastro } from "@studyflow/shared";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
@@ -68,29 +68,12 @@ const Cadastro: NextPage = () => {
       setErrorMsg("");
       setSuccessMsg("");
 
-      const cleanNome = nome.trim();
-      const cleanUsername = username.trim().toLowerCase();
-      const cleanEmail = email.trim().toLowerCase();
-
-      if (!cleanNome || !cleanUsername || !cleanEmail || !senha || !confirmarSenha) {
-        setErrorMsg("Todos os campos são obrigatórios.");
+      const validacao = validarCadastro({ nome, username, email, senha, confirmarSenha });
+      if ("erro" in validacao) {
+        setErrorMsg(validacao.erro);
         return;
       }
-
-      if (!isValidEmail(cleanEmail)) {
-        setErrorMsg("Informe um e-mail válido.");
-        return;
-      }
-
-      if (senha !== confirmarSenha) {
-        setErrorMsg("As senhas não coincidem.");
-        return;
-      }
-
-      if (senha.length < 6) {
-        setErrorMsg("A senha deve ter pelo menos 6 caracteres.");
-        return;
-      }
+      const { nome: cleanNome, username: cleanUsername, email: cleanEmail } = validacao.dados;
 
       setIsLoading(true);
 

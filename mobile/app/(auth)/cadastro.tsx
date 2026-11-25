@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle2, User, Mail, Lock } from 'lucide-react-native';
-import { COLORS } from '@studyflow/shared';
+import { COLORS, validarCadastro } from '@studyflow/shared';
 import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -30,32 +30,24 @@ export default function CadastroScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!nome.trim() || !username.trim() || !email.trim() || !password || !confirmPassword) {
-      setErrorMessage('Por favor, preencha todos os campos.');
+    const validacao = validarCadastro({ nome, username, email, senha: password, confirmarSenha: confirmPassword });
+    if ('erro' in validacao) {
+      setErrorMessage(validacao.erro);
       return;
     }
-
-    if (password.length < 6) {
-      setErrorMessage('A senha deve conter no mínimo 6 caracteres.');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage('As senhas digitadas não coincidem.');
-      return;
-    }
+    const dados = validacao.dados;
 
     setErrorMessage('');
     setSuccessMessage('');
     setLoading(true);
 
-    const result = await signUp(nome, username, email, password);
+    const result = await signUp(dados.nome, dados.username, dados.email, dados.senha);
     setLoading(false);
 
     if (result.error) {
       setErrorMessage(result.error);
     } else if (result.confirmarEmail) {
-      setSuccessMessage(`Quase lá! Enviamos um link de confirmação para ${email.trim()}. Abra o e-mail para ativar a conta e depois entre.`);
+      setSuccessMessage(`Quase lá! Enviamos um link de confirmação para ${dados.email}. Abra o e-mail para ativar a conta e depois entre.`);
       setTimeout(() => {
         router.replace('/(auth)/login');
       }, 4000);
