@@ -34,7 +34,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { usePrivacidade } from '../../lib/privacidade';
 import { useIrPara } from '../../lib/navigation';
-import { SITE_URL } from '../../constants/site';
+import { SITE_URL } from '../../lib/api';
 
 const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 

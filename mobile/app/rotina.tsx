@@ -17,9 +17,11 @@ import {
   resumoCronograma,
   rotuloResumoCronograma,
   textoDescartados,
-  validarRotina,
+  adicionarHorarioLivre,
+  carregarHorariosLivres,
+  removerHorarioLivre,
   type BlocoEstudo,
-  type RotinaSlot,
+  type HorarioLivre,
 } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
@@ -31,12 +33,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { salvarBlocosCronograma, useAgenda } from '../lib/agenda';
 
-type Slot = RotinaSlot & { id: string };
-
 const dois = (n: number) => String(n).padStart(2, '0');
-const hhmm = (valor: string) => String(valor).slice(0, 5);
-const ordenar = (lista: Slot[]) =>
-  [...lista].sort((a, b) => a.dia_semana - b.dia_semana || a.hora_inicio.localeCompare(b.hora_inicio));
 const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 /** Rotina semanal e geração de cronograma (mesmas regras do site, via @studyflow/shared). */
@@ -47,7 +44,7 @@ export default function RotinaScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState<string | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<HorarioLivre[]>([]);
 
   const [dia, setDia] = useState(1);
   const [inicio, setInicio] = useState('');
@@ -73,18 +70,9 @@ export default function RotinaScreen() {
       const id = data.session?.user?.id ?? null;
       setUserId(id);
       if (!id) return;
-      const rotinaRes = await supabase.from('rotinas_semanais').select('id,dia_semana,hora_inicio,hora_fim').eq('user_id', id);
-      setSlots(
-        ordenar(
-          (rotinaRes.data ?? []).map((r) => ({
-            id: r.id,
-            dia_semana: r.dia_semana,
-            hora_inicio: hhmm(r.hora_inicio),
-            hora_fim: hhmm(r.hora_fim),
-          })),
-        ),
-      );
-      setErroCarga(rotinaRes.error ? 'Não foi possível carregar sua rotina. Verifique a conexão e tente novamente.' : null);
+      const r = await carregarHorariosLivres(supabase, id);
+      if (r.ok) setSlots(r.horarios);
+      setErroCarga(r.ok ? null : r.erros[0]);
     } catch {
       setErroCarga('Não foi possível carregar sua rotina. Verifique a conexão e tente novamente.');
     } finally {
@@ -101,45 +89,27 @@ export default function RotinaScreen() {
   const adicionar = async () => {
     setSucesso(null);
     setPrevia(null);
-    if (!inicio || !fim) {
-      setErrosRotina(['Informe o horário de início e o de fim.']);
-      return;
-    }
-    const novo: RotinaSlot = { dia_semana: dia, hora_inicio: inicio, hora_fim: fim };
-    const erros = validarRotina([...slots, novo]);
-    if (erros.length > 0) {
-      setErrosRotina(erros);
-      return;
-    }
     if (!userId) return;
-    setErrosRotina([]);
     setSalvandoSlot(true);
-    const { data, error } = await supabase
-      .from('rotinas_semanais')
-      .insert({ user_id: userId, ...novo })
-      .select('id')
-      .single();
+    const r = await adicionarHorarioLivre(supabase, userId, slots, { dia_semana: dia, hora_inicio: inicio, hora_fim: fim });
     setSalvandoSlot(false);
-    if (error || !data) {
-      setErrosRotina(['Não foi possível salvar o horário. Tente novamente.']);
+    if (!r.ok) {
+      setErrosRotina(r.erros);
       return;
     }
-    setSlots((atual) => ordenar([...atual, { ...novo, id: data.id }]));
+    setSlots(r.horarios);
+    setErrosRotina([]);
     setInicio('');
     setFim('');
   };
 
-  const remover = async (slot: Slot) => {
+  const remover = async (slot: HorarioLivre) => {
     if (!userId) return;
     setSucesso(null);
     setPrevia(null);
-    const { error } = await supabase.from('rotinas_semanais').delete().eq('id', slot.id).eq('user_id', userId);
-    if (error) {
-      setErrosRotina(['Não foi possível remover o horário. Tente novamente.']);
-      return;
-    }
-    setSlots((atual) => atual.filter((s) => s.id !== slot.id));
-    setErrosRotina([]);
+    const r = await removerHorarioLivre(supabase, userId, slots, slot.id);
+    if (r.ok) setSlots(r.horarios);
+    setErrosRotina(r.ok ? [] : r.erros);
   };
 
   const gerar = () => {

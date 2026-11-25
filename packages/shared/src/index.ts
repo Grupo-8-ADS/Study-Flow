@@ -14,3 +14,4 @@ export * from './privacidade';
 export * from './cronograma';
 export * from './conteudo';
 export * from './login';
+export * from './horarios-livres';

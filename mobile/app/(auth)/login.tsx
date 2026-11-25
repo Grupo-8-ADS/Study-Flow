@@ -18,7 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase';
-import { SITE_URL } from '../../constants/site';
+import { SITE_URL } from '../../lib/api';
 
 const LINK_REDEFINIR = `${SITE_URL}/redefinir-senha`;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarClock, Clock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -14,10 +14,12 @@ import {
   planejarCronograma,
   resumoCronograma,
   rotuloResumoCronograma,
+  adicionarHorarioLivre,
+  carregarHorariosLivres,
+  removerHorarioLivre,
   textoDescartados,
-  validarRotina,
   type BlocoEstudo,
-  type RotinaSlot,
+  type HorarioLivre,
 } from "@studyflow/shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -25,16 +27,6 @@ import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { RotinaFixaCard } from "@/components/rotina-fixa";
-
-type Slot = RotinaSlot & { id: string };
-
-const TABELA_AUSENTE = "PGRST205";
-
-/** Normaliza "19:00:00" (tipo time do Postgres) para "19:00". */
-const hhmm = (valor: string) => String(valor).slice(0, 5);
-
-const ordenar = (lista: Slot[]) =>
-  [...lista].sort((a, b) => a.dia_semana - b.dia_semana || a.hora_inicio.localeCompare(b.hora_inicio));
 
 const dois = (n: number) => String(n).padStart(2, "0");
 
@@ -47,9 +39,9 @@ export default function RotinaPage() {
   const { dados: agenda, carregando: carregandoAgenda } = useAgenda();
   const [email, setEmail] = useState<string | null>(null);
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
-  const [rotinaLocal, setRotinaLocal] = useState(false);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<HorarioLivre[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
 
   const [dia, setDia] = useState("1");
   const [inicio, setInicio] = useState("");
@@ -69,132 +61,75 @@ export default function RotinaPage() {
   /** Dia (AAAA-MM-DD) do primeiro bloco salvo, para abrir o calendário direto nele. */
   const [primeiroDiaSalvo, setPrimeiroDiaSalvo] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function carregar() {
-      const parsed = getStoredSession();
-      if (!parsed) return;
-      setEmail(parsed.email);
-
-      const chaveRotina = `studyflow_rotina_${parsed.email}`;
-      const lerRotinaLocal = () => {
-        const salvo = localStorage.getItem(chaveRotina);
-        return salvo ? (JSON.parse(salvo) as Slot[]) : [];
-      };
-
-      try {
-        const userId = await getCurrentSupabaseUserId(parsed);
-        setSupabaseUserId(userId);
-        if (!userId) {
-          setRotinaLocal(true);
-          setSlots(ordenar(lerRotinaLocal()));
-          return;
-        }
-
-        const [rotinaRes, perfilRes] = await Promise.all([
-          supabase.from("rotinas_semanais").select("id,dia_semana,hora_inicio,hora_fim").eq("user_id", userId).order("dia_semana", { ascending: true }),
-          supabase.from("profiles").select("horas_diarias").eq("id", userId).maybeSingle(),
-        ]);
-        setLimiteHoras(String(limiteDiarioInicial(perfilRes.data?.horas_diarias)));
-
-        if (rotinaRes.error) {
-          // Tabela ainda inexistente no banco (ou falha de rede): usa o armazenamento local.
-          setRotinaLocal(true);
-          setSlots(ordenar(lerRotinaLocal()));
-        } else {
-          setSlots(
-            ordenar(
-              (rotinaRes.data ?? []).map((r) => ({
-                id: r.id,
-                dia_semana: r.dia_semana,
-                hora_inicio: hhmm(r.hora_inicio),
-                hora_fim: hhmm(r.hora_fim),
-              })),
-            ),
-          );
-        }
-      } finally {
-        setLoadingData(false);
-      }
+  const carregar = useCallback(async () => {
+    const parsed = getStoredSession();
+    if (!parsed) return;
+    setEmail(parsed.email);
+    setLoadingData(true);
+    setErroCarga(null);
+    try {
+      // O layout (app) só abre com sessão; sem usuário no Supabase não há o que carregar.
+      const userId = await getCurrentSupabaseUserId(parsed);
+      setSupabaseUserId(userId);
+      if (!userId) return;
+      const [horarios, perfilRes] = await Promise.all([
+        carregarHorariosLivres(supabase, userId),
+        supabase.from("profiles").select("horas_diarias").eq("id", userId).maybeSingle(),
+      ]);
+      setLimiteHoras(String(limiteDiarioInicial(perfilRes.data?.horas_diarias)));
+      if (horarios.ok) setSlots(horarios.horarios);
+      else setErroCarga(horarios.erros[0]);
+    } finally {
+      setLoadingData(false);
     }
-
-    void carregar();
   }, []);
+
+  useEffect(() => {
+    // Carga assíncrona: os setState ocorrem após o await, não em cascata.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void carregar();
+  }, [carregar]);
 
   const blocosFuturos = useMemo(
     () => (agenda?.compromissos ?? []).filter((c) => c.origem === "cronograma" && !c.concluido && intervaloDe(c).inicio >= new Date()),
     [agenda],
   );
 
-  const persistirLocal = (lista: Slot[]) => {
-    if (email) localStorage.setItem(`studyflow_rotina_${email}`, JSON.stringify(lista));
-  };
-
   const adicionar = async (event: FormEvent) => {
     event.preventDefault();
     setSucesso(null);
     setPrevia(null);
+    if (!supabaseUserId) return;
 
-    if (!inicio || !fim) {
-      setErrosRotina(["Informe o horário de início e o de fim."]);
-      return;
-    }
-
-    const novo: RotinaSlot = { dia_semana: Number(dia), hora_inicio: inicio, hora_fim: fim };
-    const erros = validarRotina([...slots, novo]);
-    if (erros.length > 0) {
-      setErrosRotina(erros);
-      return;
-    }
-    setErrosRotina([]);
+    const novo = { dia_semana: Number(dia), hora_inicio: inicio, hora_fim: fim };
     // Limpa o formulário já no envio: se limpasse após o await, apagaria o que o
     // usuário digitasse enquanto o horário anterior ainda está sendo salvo.
     setInicio("");
     setFim("");
-
-    let salvo: Slot = { ...novo, id: crypto.randomUUID() };
-    let usarLocal = rotinaLocal || !supabaseUserId;
-
-    if (!usarLocal && supabaseUserId) {
-      setSalvandoSlot(true);
-      const { data, error } = await supabase
-        .from("rotinas_semanais")
-        .insert({ user_id: supabaseUserId, dia_semana: novo.dia_semana, hora_inicio: novo.hora_inicio, hora_fim: novo.hora_fim })
-        .select("id")
-        .single();
-      setSalvandoSlot(false);
-
-      if (error && error.code === TABELA_AUSENTE) {
-        usarLocal = true;
-        setRotinaLocal(true);
-      } else if (error || !data) {
-        setErrosRotina(["Não foi possível salvar o horário. Tente novamente."]);
-        setInicio(novo.hora_inicio);
-        setFim(novo.hora_fim);
-        return;
-      } else {
-        salvo = { ...salvo, id: data.id };
-      }
+    setSalvandoSlot(true);
+    const r = await adicionarHorarioLivre(supabase, supabaseUserId, slots, novo);
+    setSalvandoSlot(false);
+    if (r.ok) {
+      setSlots(r.horarios);
+      setErrosRotina([]);
+    } else {
+      setErrosRotina(r.erros);
+      setInicio(novo.hora_inicio);
+      setFim(novo.hora_fim);
     }
-
-    const proxima = ordenar([...slots, salvo]);
-    setSlots(proxima);
-    if (usarLocal) persistirLocal(proxima);
   };
 
-  const remover = async (slot: Slot) => {
+  const remover = async (slot: HorarioLivre) => {
     setSucesso(null);
     setPrevia(null);
-    if (!rotinaLocal && supabaseUserId) {
-      const { error } = await supabase.from("rotinas_semanais").delete().eq("id", slot.id).eq("user_id", supabaseUserId);
-      if (error) {
-        setErrosRotina(["Não foi possível remover o horário. Tente novamente."]);
-        return;
-      }
+    if (!supabaseUserId) return;
+    const r = await removerHorarioLivre(supabase, supabaseUserId, slots, slot.id);
+    if (r.ok) {
+      setSlots(r.horarios);
+      setErrosRotina([]);
+    } else {
+      setErrosRotina(r.erros);
     }
-    const proxima = slots.filter((s) => s.id !== slot.id);
-    setSlots(proxima);
-    if (rotinaLocal || !supabaseUserId) persistirLocal(proxima);
-    setErrosRotina([]);
   };
 
   const gerar = () => {
@@ -246,9 +181,12 @@ export default function RotinaPage() {
 
         <Card aria-labelledby="titulo-rotina" className="lg:col-span-5">
           <CardHeader icon={<CalendarClock size={18} />} id="titulo-rotina" title="2. Horários livres para estudar" />
-          {rotinaLocal && !loadingData ? (
-            <Alert className="mb-4" tone="warning">
-              <span data-testid="aviso-rotina-local">Sua rotina está sendo salva apenas neste dispositivo.</span>
+          {erroCarga ? (
+            <Alert className="mb-4" tone="danger">
+              {erroCarga}{" "}
+              <button className="font-semibold underline underline-offset-2" onClick={() => void carregar()} type="button">
+                Tentar de novo
+              </button>
             </Alert>
           ) : null}
 
