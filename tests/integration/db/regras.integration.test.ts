@@ -382,4 +382,36 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       await expect(pool().query(sql, [id])).rejects.toMatchObject({ code: "23505" });
     });
   });
+
+  describe("Privacidade no perfil (profiles.privacidade)", () => {
+    it("o usuário deve gravar a própria privacidade, e a coluna começa nula", async () => {
+      const id = await criarUsuario("privado@unifei.edu.br");
+      const antes = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [id]);
+      expect(antes.rows[0].privacidade).toBeNull();
+
+      const valor = { permitir_compartilhar: false, perfil_publico: false, mostrar_horas: false, mostrar_conquistas: true };
+      await comoUsuario(id, (c) => c.query("UPDATE public.profiles SET privacidade = $2::jsonb WHERE id = $1", [id, JSON.stringify(valor)]), true);
+
+      const { rows } = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [id]);
+      expect(rows[0].privacidade).toEqual(valor);
+    });
+
+    it("deve recusar chaves desconhecidas ou valores que não são booleanos (23514)", async () => {
+      const id = await criarUsuario("privado2@unifei.edu.br");
+      for (const invalido of [{ mostrar_horas: "nao" }, { outra: true }, [true]]) {
+        await expect(
+          comoUsuario(id, (c) => c.query("UPDATE public.profiles SET privacidade = $2::jsonb WHERE id = $1", [id, JSON.stringify(invalido)]))
+        ).rejects.toMatchObject({ code: "23514" });
+      }
+    });
+
+    it("um usuário não deve alterar a privacidade de outro (RLS)", async () => {
+      const ana = await criarUsuario("ana.priv@unifei.edu.br");
+      const bia = await criarUsuario("bia.priv@unifei.edu.br");
+      await comoUsuario(ana, (c) => c.query("UPDATE public.profiles SET privacidade = '{\"mostrar_horas\": false}'::jsonb WHERE id = $1", [bia]), true);
+
+      const { rows } = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [bia]);
+      expect(rows[0].privacidade).toBeNull();
+    });
+  });
 });

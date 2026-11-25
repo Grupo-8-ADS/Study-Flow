@@ -10,3 +10,6 @@ export * from './agenda';
 export * from './pomodoro';
 export * from './recompensas';
 export * from './horarios';
+export * from './privacidade';
+export * from './cronograma';
+export * from './conteudo';

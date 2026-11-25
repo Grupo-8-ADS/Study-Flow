@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { conflitosDeHorario, descreverConflito, horariosSeSobrepoem, validarHorarios, type ItemComHorarios } from './horarios';
+import {
+  AVISO_CONFLITO,
+  conflitosAoSalvar,
+  conflitosDeHorario,
+  descreverConflito,
+  horariosSeSobrepoem,
+  resumoHorarios,
+  validarHorarios,
+  type ItemComHorarios,
+} from './horarios';
 
 const h = (dia_semana: number, inicio: string, fim: string) => ({ dia_semana, inicio, fim });
 
@@ -67,5 +76,37 @@ describe('conflitosDeHorario', () => {
   it('quandoSemSobreposicao_deveRetornarListaVazia', () => {
     const item: ItemComHorarios = { nome: 'Academia', tipo: 'rotina', horarios: [h(1, '17:00', '19:00'), h(0, '08:00', '09:00')] };
     expect(conflitosDeHorario(item, [calculo, trabalho])).toEqual([]);
+  });
+});
+
+describe('resumoHorarios', () => {
+  it('quandoVazio_deveUsarOTextoInformado', () => {
+    expect(resumoHorarios([], 'Sem horário de aula')).toBe('Sem horário de aula');
+    expect(resumoHorarios([])).toBe('Sem horário');
+  });
+
+  it('ordenaPorDiaEHoraComDiaCurto', () => {
+    expect(resumoHorarios([h(3, '19:00', '20:40'), h(1, '21:00', '22:00'), h(1, '19:00', '20:40')])).toBe('Seg 19:00–20:40 · Seg 21:00–22:00 · Qua 19:00–20:40');
+  });
+});
+
+describe('conflitosAoSalvar', () => {
+  const aula: ItemComHorarios = { id: 'd1', nome: 'Cálculo', tipo: 'disciplina', horarios: [h(1, '19:00', '21:00')] };
+
+  it('quandoFormularioIncompletoOuInvalido_naoAvisaConflito', () => {
+    expect(conflitosAoSalvar({ nome: ' ', tipo: 'rotina', horarios: [h(1, '19:00', '20:00')] }, [aula])).toEqual([]);
+    expect(conflitosAoSalvar({ nome: 'Academia', tipo: 'rotina', horarios: [] }, [aula])).toEqual([]);
+    expect(conflitosAoSalvar({ nome: 'Academia', tipo: 'rotina', horarios: [h(1, '20:00', '19:00')] }, [aula])).toEqual([]);
+  });
+
+  it('quandoValidoEBate_deveDevolverOsConflitosComNomeLimpo', () => {
+    const r = conflitosAoSalvar({ nome: ' Academia ', tipo: 'rotina', horarios: [h(1, '20:00', '22:00')] }, [aula]);
+    expect(r).toHaveLength(1);
+    expect(descreverConflito(r[0])).toBe('Segunda-feira 20:00–22:00 bate com a aula de Cálculo (19:00–21:00)');
+  });
+
+  it('avisoTemTextoNoSingularENoPlural', () => {
+    expect(AVISO_CONFLITO.introducao(1)).toMatch(/^Este horário/);
+    expect(AVISO_CONFLITO.introducao(3)).toMatch(/^3 horários/);
   });
 });
