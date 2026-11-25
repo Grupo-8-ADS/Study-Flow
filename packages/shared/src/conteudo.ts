@@ -4,15 +4,12 @@
  * @packageDocumentation
  */
 
-import { XP_BASE_NIVEL } from './gamificacao';
+import { XP_BASE_NIVEL, XP_MAXIMO_POR_SESSAO } from './gamificacao';
 
 export interface PerguntaFrequente {
   pergunta: string;
   resposta: string;
 }
-
-/** Limite de XP por sessão: o banco credita no máximo 240 min (trigger preparar_sessao_estudo). */
-export const XP_MAXIMO_POR_SESSAO = 240;
 
 /** Como se ganha XP e se sobe de nível (mesma regra de public.nivel_por_xp e dos triggers). */
 export const REGRAS_XP: readonly string[] = [

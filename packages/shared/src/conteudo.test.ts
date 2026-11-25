@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FAQ, REGRAS_XP, TERMOS_SERVICO, XP_MAXIMO_POR_SESSAO, contaDemonstracao } from './conteudo';
+import { FAQ, REGRAS_XP, TERMOS_SERVICO, contaDemonstracao } from './conteudo';
 import { PRIVACIDADE_PADRAO } from './privacidade';
-import { xpParaNivel } from './gamificacao';
+import { XP_MAXIMO_POR_SESSAO, xpParaNivel } from './gamificacao';
 
 const migration = (nome: string) => readFileSync(resolve(__dirname, '../../../supabase/migrations', nome), 'utf8');
 

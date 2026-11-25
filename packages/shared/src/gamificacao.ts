@@ -12,6 +12,12 @@
  */
 export const XP_BASE_NIVEL = 100;
 
+/** Limite de XP por sessão: o banco credita no máximo 240 min (trigger preparar_sessao_estudo). */
+export const XP_MAXIMO_POR_SESSAO = 240;
+
+/** XP que uma sessão de foco de `minutos` rende (1 por minuto, com o teto do banco). */
+export const xpDaSessao = (minutos: number) => Math.min(Math.max(Math.round(Number(minutos) || 0), 0), XP_MAXIMO_POR_SESSAO);
+
 /** XP total necessário para chegar ao nível (nível 1 = 0 XP). */
 export function xpParaNivel(nivel: number): number {
   const n = Math.max(Math.floor(nivel), 1);

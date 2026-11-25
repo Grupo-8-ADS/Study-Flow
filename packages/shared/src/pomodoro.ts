@@ -3,6 +3,8 @@
  * avanço automático. Usado pelo timer do site e do app.
  */
 
+import { xpDaSessao } from './gamificacao';
+
 export type ModoPomodoro = 'foco' | 'pausa_curta' | 'pausa_longa';
 
 export interface ConfigPomodoro {
@@ -91,3 +93,15 @@ export const ROTULO_MODO: Record<ModoPomodoro, string> = {
   pausa_curta: 'Pausa curta',
   pausa_longa: 'Pausa longa',
 };
+
+/**
+ * Aviso exibido quando um ciclo termina. No fim de um foco, diz quanto foi registrado e o
+ * XP ganho (mesma regra do banco); no fim de uma pausa, chama de volta ao foco.
+ */
+export function avisoFimDeCiclo(terminado: ModoPomodoro, proximo: ModoPomodoro, foco?: { minutos: number; disciplina: string }): string {
+  if (terminado !== 'foco') return 'A pausa acabou. Pronto para voltar ao foco?';
+  const hora = `Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`;
+  if (!foco) return `Sessão de foco registrada. ${hora}`;
+  const minutos = Math.max(Math.round(foco.minutos), 0);
+  return `${minutos} min de foco em "${foco.disciplina}" registrados (+${xpDaSessao(minutos)} XP). ${hora}`;
+}
