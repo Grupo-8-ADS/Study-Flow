@@ -7,6 +7,7 @@ import {
   isTimeIntervalValid,
   applyDateMask,
   applyTimeMask,
+  isValidEmail,
 } from './validation';
 
 describe('validation.ts - Suíte de Testes Unitários Comportamentais', () => {
@@ -281,5 +282,16 @@ describe('validation.ts - Suíte de Testes Unitários Comportamentais', () => {
     it('applyTimeMask_quandoHouverCaracteresNaoNumericos_deveSanitizar', () => {
       expect(applyTimeMask('08h30m')).toBe('08:30');
     });
+  });
+});
+
+describe('isValidEmail', () => {
+  it('isValidEmail_quandoFormatoComum_deveAceitar', () => {
+    for (const e of ['ana@gmail.com', 'joao.silva@ufg.edu.br', ' maria+estudos@outlook.com ']) expect(isValidEmail(e)).toBe(true);
+  });
+
+  it('isValidEmail_quandoFormatoInvalido_deveRecusar', () => {
+    for (const e of ['', 'ana', 'ana@', 'ana@gmail', 'ana@gmail.c', 'ana gmail@x.com', 'ana@@x.com', '@x.com', 'ana@.com', 'ana@x..com']) expect(isValidEmail(e)).toBe(false);
+    expect(isValidEmail(`${'a'.repeat(250)}@x.com`)).toBe(false);
   });
 });

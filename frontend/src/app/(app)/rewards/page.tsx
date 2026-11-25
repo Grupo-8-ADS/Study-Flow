@@ -11,12 +11,13 @@ import {
   gradienteCss,
   nomeConquista,
   progressoNivel,
+  xpParaNivel,
 } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { ConquistaIcone } from "@/components/conquista-icone";
-import { MolduraAvatar } from "@/components/moldura-avatar";
+import { MolduraAvatar, PreviaBanner } from "@/components/moldura-avatar";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -137,7 +138,7 @@ export default function RewardsPage() {
   const feitos = Object.values(contagem).reduce((s, c) => s + c.feitos, 0);
   const progressoGeral = total > 0 ? Math.round((feitos / total) * 100) : 0;
   const proximo = [...MOLDURAS, ...BANNERS].filter((i) => i.nivel > perfil.nivel).sort((a, b) => a.nivel - b.nivel)[0];
-  const xpParaProximo = proximo ? Math.max(0, (proximo.nivel - 1) * 100 - perfil.xp) : 0;
+  const xpParaProximo = proximo ? Math.max(0, xpParaNivel(proximo.nivel) - perfil.xp) : 0;
 
   async function equipar(campo: "moldura" | "banner_url", valor: string | null) {
     if (!userId) return;
@@ -342,7 +343,8 @@ export default function RewardsPage() {
                 const equipado = perfil.banner_url === valor;
                 return (
                   <li className={`overflow-hidden rounded-control border ${equipado ? "border-primary-500 ring-2 ring-primary-100" : "border-line"}`} key={b.id}>
-                    <div className={`relative h-20 ${livre ? "" : "opacity-40 grayscale"}`} style={{ background: gradienteCss(b.cores) }}>
+                    <div className={`relative h-20 ${livre ? "" : "opacity-40 grayscale"}`}>
+                      <PreviaBanner banner={b} miniatura />
                       {livre ? null : (
                         <span className="absolute inset-0 flex items-center justify-center text-white">
                           <Lock size={18} />

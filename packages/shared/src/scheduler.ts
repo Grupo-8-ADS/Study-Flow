@@ -28,6 +28,8 @@ export interface DisciplinaPlanejamento {
   peso?: number;
   /** Data da próxima prova no formato YYYY-MM-DD. */
   proximaProva?: string | null;
+  /** Data da próxima entrega de trabalho no formato YYYY-MM-DD. */
+  proximaEntrega?: string | null;
 }
 
 export interface BlocoEstudo {
@@ -56,6 +58,11 @@ export interface GerarCronogramaParams {
   ocupados?: Array<{ inicio: Date; fim: Date }>;
   /** Blocos que começam antes deste instante são descartados (ex.: "agora", para não agendar no passado). */
   naoAntesDe?: Date;
+  /**
+   * Máximo de minutos de estudo por dia. Quando o dia atinge o limite, os horários livres
+   * restantes dele ficam vagos e o estudo segue para os dias seguintes.
+   */
+  limiteDiarioMin?: number;
 }
 
 export type CronogramaErrorCode =
@@ -91,6 +98,7 @@ export const NOMES_DIAS_SEMANA = [
 export const PESO_MIN = 1;
 export const PESO_MAX = 5;
 export const FATOR_PROVA_PROXIMA = 2;
+export const FATOR_ENTREGA_PROXIMA = 1.5;
 export const SEMANAS_MIN = 1;
 export const SEMANAS_MAX = 8;
 
@@ -168,6 +176,10 @@ function chaveData(d: Date): string {
  * - Disciplinas são distribuídas por "smooth weighted round robin" (determinístico),
  *   proporcional ao peso efetivo: peso (1-5) x 2 quando a prova cai dentro do
  *   período e o bloco ocorre até a data da prova (blocos posteriores usam o peso normal).
+ * - Entregas de trabalho dentro do período multiplicam o peso por 1,5 até a data da entrega
+ *   (somam-se ao reforço de prova).
+ * - Com `limiteDiarioMin`, cada dia recebe no máximo esse total de estudo; os horários que
+ *   sobram ficam livres, e o estudo é distribuído pelos dias do período.
  * - Evita a mesma disciplina em blocos consecutivos quando há outra disponível.
  *
  * @throws CronogramaError
@@ -191,6 +203,11 @@ export function gerarCronograma(params: GerarCronogramaParams): BlocoEstudo[] {
   }
   if (!Number.isFinite(duracao) || duracao <= 0 || !Number.isFinite(intervalo) || intervalo < 0) {
     throw new CronogramaError('PARAMETROS_INVALIDOS', 'Duração do bloco e intervalo devem ser positivos.');
+  }
+
+  const limiteDiario = params.limiteDiarioMin;
+  if (limiteDiario !== undefined && (!Number.isFinite(limiteDiario) || limiteDiario <= 0)) {
+    throw new CronogramaError('PARAMETROS_INVALIDOS', 'O limite de estudo por dia deve ser positivo.');
   }
 
   const erros = validarRotina(rotina);
@@ -249,16 +266,39 @@ export function gerarCronograma(params: GerarCronogramaParams): BlocoEstudo[] {
   // 2) Smooth weighted round robin com pesos por bloco.
   const atual = disciplinas.map(() => 0);
   const base = disciplinas.map(pesoBase);
+  const noPeriodo = (data: string | null | undefined) => {
+    const p = data ? data.slice(0, 10) : null;
+    return p && p >= inicioPeriodo && p <= fimPeriodo ? p : null;
+  };
+  const entregaNoPeriodo = disciplinas.map((d) => noPeriodo(d.proximaEntrega));
   const provaNoPeriodo = disciplinas.map((d) => {
     const p = d.proximaProva ? d.proximaProva.slice(0, 10) : null;
     return p && p >= inicioPeriodo && p <= fimPeriodo ? p : null;
   });
 
+  // 1c) Limite diário: mantém só os primeiros blocos de cada dia que cabem no limite.
+  const minutosNoDia = new Map<string, number>();
+  const escolhidos =
+    limiteDiario === undefined
+      ? livres
+      : livres.filter((oc) => {
+          const usado = minutosNoDia.get(oc.dia) ?? 0;
+          if (usado + duracao > limiteDiario) return false;
+          minutosNoDia.set(oc.dia, usado + duracao);
+          return true;
+        });
+  if (escolhidos.length === 0) {
+    throw new CronogramaError('SEM_BLOCOS', 'O limite de estudo por dia é menor que a duração de um bloco.');
+  }
+
   let anterior = -1;
-  return livres.map((oc) => {
+  return escolhidos.map((oc) => {
     const pesos = base.map((b, i) => {
       const prova = provaNoPeriodo[i];
-      return prova && oc.dia <= prova ? b * FATOR_PROVA_PROXIMA : b;
+      const entrega = entregaNoPeriodo[i];
+      const fatorProva = prova && oc.dia <= prova ? FATOR_PROVA_PROXIMA : 1;
+      const fatorEntrega = entrega && oc.dia <= entrega ? FATOR_ENTREGA_PROXIMA : 1;
+      return b * fatorProva * fatorEntrega;
     });
     const total = pesos.reduce((acc, p) => acc + p, 0);
     pesos.forEach((p, i) => {

@@ -54,6 +54,11 @@ export default function CadastroScreen() {
 
     if (result.error) {
       setErrorMessage(result.error);
+    } else if (result.confirmarEmail) {
+      setSuccessMessage(`Quase lá! Enviamos um link de confirmação para ${email.trim()}. Abra o e-mail para ativar a conta e depois entre.`);
+      setTimeout(() => {
+        router.replace('/(auth)/login');
+      }, 4000);
     } else {
       setSuccessMessage('Conta criada com sucesso! Redirecionando...');
       setTimeout(() => {

@@ -29,6 +29,11 @@ import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
+/** Ilustrações dos banners prontos (versão do app das imagens de frontend/public/recompensas). */
+const IMAGENS_BANNER: Record<string, number> = {
+  'raposa-outono': require('../assets/images/recompensas/banner-raposa-outono.jpg'),
+};
+
 export default function PerfilScreen() {
   const router = useRouter();
   const { session, updateSession, signOut, refreshProfile } = useAuth();
@@ -260,12 +265,17 @@ export default function PerfilScreen() {
         <View style={styles.bannerContainer}>
           <View style={[styles.bannerBg, { backgroundColor: bgColor }]}>
             {bannerPreset(bannerUrl) ? (
-              <LinearGradient
-                colors={bannerPreset(bannerUrl)!.cores}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
+              <>
+                <LinearGradient
+                  colors={bannerPreset(bannerUrl)!.cores}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                {bannerPreset(bannerUrl)!.imagem && IMAGENS_BANNER[bannerPreset(bannerUrl)!.id] ? (
+                  <Image source={IMAGENS_BANNER[bannerPreset(bannerUrl)!.id]} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : null}
+              </>
             ) : bannerUrl ? (
               <Image
                 source={{ uri: bannerUrl }}

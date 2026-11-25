@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  XP_POR_NIVEL,
+  XP_BASE_NIVEL,
+  xpParaNivel,
   nivelPorXp,
   progressoNivel,
   progressoConquista,
@@ -16,11 +17,22 @@ const stats = (parcial: Partial<EstatisticasConquista> = {}): EstatisticasConqui
   ...parcial,
 });
 
-describe('nivelPorXp', () => {
-  it('xpPorNivel_quandoConsultado_deveSer100', () => {
-    expect(XP_POR_NIVEL).toBe(100);
+describe('xpParaNivel', () => {
+  it('xpBaseNivel_quandoConsultado_deveSer100', () => {
+    expect(XP_BASE_NIVEL).toBe(100);
   });
 
+  it('xpParaNivel_quandoNiveisIniciais_deveCrescerProgressivamente', () => {
+    expect([1, 2, 3, 4, 5, 10].map(xpParaNivel)).toEqual([0, 100, 300, 600, 1000, 4500]);
+  });
+
+  it('xpParaNivel_quandoNivelMenorQue1_deveTratarComoNivel1', () => {
+    expect(xpParaNivel(0)).toBe(0);
+    expect(xpParaNivel(-3)).toBe(0);
+  });
+});
+
+describe('nivelPorXp', () => {
   it('nivelPorXp_quandoXpZero_deveRetornarNivel1', () => {
     expect(nivelPorXp(0)).toBe(1);
   });
@@ -33,10 +45,18 @@ describe('nivelPorXp', () => {
     expect(nivelPorXp(100)).toBe(2);
   });
 
-  it('nivelPorXp_quandoXp199e200_deveRespeitarFronteiraDoNivel', () => {
-    expect(nivelPorXp(199)).toBe(2);
-    expect(nivelPorXp(200)).toBe(3);
-    expect(nivelPorXp(950)).toBe(10);
+  it('nivelPorXp_quandoNaFronteiraDosNiveis_deveRespeitarACurva', () => {
+    expect(nivelPorXp(299)).toBe(2);
+    expect(nivelPorXp(300)).toBe(3);
+    expect(nivelPorXp(4499)).toBe(9);
+    expect(nivelPorXp(4500)).toBe(10);
+  });
+
+  it('nivelPorXp_quandoQualquerXp_deveSerOInversoDeXpParaNivel', () => {
+    for (let n = 1; n <= 60; n++) {
+      expect(nivelPorXp(xpParaNivel(n))).toBe(n);
+      expect(nivelPorXp(xpParaNivel(n + 1) - 1)).toBe(n);
+    }
   });
 
   it('nivelPorXp_quandoXpFracionario_deveTruncarAntesDeCalcular', () => {
@@ -57,30 +77,30 @@ describe('nivelPorXp', () => {
 
 describe('progressoNivel', () => {
   it('progressoNivel_quandoXpZero_deveFaltar100ParaOProximo', () => {
-    expect(progressoNivel(0)).toEqual({ nivel: 1, xpNoNivel: 0, faltam: 100, progresso: 0 });
+    expect(progressoNivel(0)).toEqual({ nivel: 1, xpNoNivel: 0, xpDoNivel: 100, faltam: 100, progresso: 0 });
   });
 
   it('progressoNivel_quandoXp99_deveFaltarUmParaSubir', () => {
-    expect(progressoNivel(99)).toEqual({ nivel: 1, xpNoNivel: 99, faltam: 1, progresso: 0.99 });
+    expect(progressoNivel(99)).toEqual({ nivel: 1, xpNoNivel: 99, xpDoNivel: 100, faltam: 1, progresso: 0.99 });
   });
 
-  it('progressoNivel_quandoXp100_deveZerarProgressoNoNivel2', () => {
-    expect(progressoNivel(100)).toEqual({ nivel: 2, xpNoNivel: 0, faltam: 100, progresso: 0 });
+  it('progressoNivel_quandoXp100_deveZerarProgressoNoNivel2EExigir200', () => {
+    expect(progressoNivel(100)).toEqual({ nivel: 2, xpNoNivel: 0, xpDoNivel: 200, faltam: 200, progresso: 0 });
   });
 
-  it('progressoNivel_quandoXp250_deveCalcularMetadeDoNivel3', () => {
-    expect(progressoNivel(250)).toEqual({ nivel: 3, xpNoNivel: 50, faltam: 50, progresso: 0.5 });
+  it('progressoNivel_quandoXp450_deveCalcularMetadeDoNivel3', () => {
+    expect(progressoNivel(450)).toEqual({ nivel: 3, xpNoNivel: 150, xpDoNivel: 300, faltam: 150, progresso: 0.5 });
   });
 
   it('progressoNivel_quandoXpFracionario_deveTruncar', () => {
     const p = progressoNivel(130.9);
     expect(p.nivel).toBe(2);
     expect(p.xpNoNivel).toBe(30);
-    expect(p.faltam).toBe(70);
+    expect(p.faltam).toBe(170);
   });
 
   it('progressoNivel_quandoXpInvalido_deveTratarComoZero', () => {
-    const esperado = { nivel: 1, xpNoNivel: 0, faltam: 100, progresso: 0 };
+    const esperado = { nivel: 1, xpNoNivel: 0, xpDoNivel: 100, faltam: 100, progresso: 0 };
     expect(progressoNivel(-10)).toEqual(esperado);
     expect(progressoNivel(Number.NaN)).toEqual(esperado);
     expect(progressoNivel(Number.POSITIVE_INFINITY)).toEqual(esperado);
@@ -202,6 +222,16 @@ describe('textoCompartilhamento', () => {
     expect(t).toBe(
       'Estou no nível 4 no Study Flow e estudei 5 h (semana). Minha disciplina mais estudada foi Cálculo.',
     );
+  });
+
+  it('textoCompartilhamento_quandoOcultarHoras_naoDeveMencionarHoras', () => {
+    const t = textoCompartilhamento({ nivel: 3, periodo: 'Semana', horas: 5, topico: 'Física', ocultarHoras: true });
+    expect(t).toBe('Estou no nível 3 no Study Flow. Minha disciplina mais estudada foi Física.');
+  });
+
+  it('textoCompartilhamento_quandoLinkInformado_deveTerminarComOLink', () => {
+    const t = textoCompartilhamento({ nivel: 1, periodo: 'Mês', horas: 2, topico: null, link: 'https://exemplo.app' });
+    expect(t).toBe('Estou no nível 1 no Study Flow e estudei 2 h (mês). https://exemplo.app');
   });
 
   it('textoCompartilhamento_quandoTopicoNulo_deveOmitirDisciplina', () => {

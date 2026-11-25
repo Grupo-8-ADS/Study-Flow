@@ -13,6 +13,7 @@
 
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { validarHorarios, type HorarioSemanal, type ItemComHorarios } from "./horarios";
 
 /** Id aleatório (UUID v4) também em ambientes sem crypto.randomUUID (React Native/Hermes). */
 export function gerarId(): string {
@@ -34,12 +35,13 @@ export const TIPOS_COMPROMISSO: Array<{ value: TipoCompromisso; label: string }>
   { value: "estudo", label: "Estudo" },
 ];
 
-export const ROTULO_TIPO: Record<TipoCompromisso | "aula", string> = {
+export const ROTULO_TIPO: Record<TipoCompromisso | "aula" | "rotina", string> = {
   prova: "Prova",
   trabalho: "Trabalho",
   atividade: "Atividade",
   estudo: "Estudo",
   aula: "Aula",
+  rotina: "Rotina",
 };
 
 export type Compromisso = {
@@ -71,7 +73,21 @@ export type DisciplinaAgenda = {
   notas: string;
 };
 
-export type AgendaDados = { disciplinas: DisciplinaAgenda[]; compromissos: Compromisso[] };
+/**
+ * Atividade fixa da rotina (trabalho, academia, curso...): como uma disciplina, tem
+ * horários que se repetem toda semana. Aparece no calendário e o cronograma não marca
+ * estudo por cima dela.
+ */
+export type RotinaFixa = {
+  id: string;
+  nome: string;
+  horarios: HorarioSemanal[];
+  notas: string;
+};
+
+export type RotinaFixaForm = Omit<RotinaFixa, "id">;
+
+export type AgendaDados = { disciplinas: DisciplinaAgenda[]; compromissos: Compromisso[]; rotinas: RotinaFixa[] };
 
 /** Rascunho do formulário de compromisso. */
 export type CompromissoForm = Omit<Compromisso, "id" | "concluido" | "origem">;
@@ -275,6 +291,75 @@ export function aulasNoPeriodo(disciplinas: DisciplinaAgenda[], de: string, ate:
   return lista;
 }
 
+/** Ocorrências das atividades fixas da rotina entre duas datas (inclusive), como compromissos de exibição. */
+export function rotinasNoPeriodo(rotinas: RotinaFixa[], de: string, ate: string) {
+  const lista: Array<Compromisso & { rotina: true }> = [];
+  const fim = dataLocal(ate);
+  for (let d = dataLocal(de); d <= fim; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    const dia = d.getDay();
+    const data = dataStr(d);
+    rotinas.forEach((r) =>
+      r.horarios
+        .filter((h) => h.dia_semana === dia)
+        .forEach((h) =>
+          lista.push({
+            rotina: true,
+            id: `rotina-${r.id}-${data}-${h.inicio}`,
+            titulo: r.nome,
+            tipo: "atividade",
+            disciplinaId: null,
+            data,
+            horaInicio: h.inicio,
+            horaFim: h.fim,
+            notas: r.notas,
+            concluido: false,
+            origem: null,
+          }),
+        ),
+    );
+  }
+  return lista;
+}
+
+/** Disciplinas (aulas) e atividades da rotina no formato usado pela detecção de conflitos. */
+export function itensComHorarios(dados: Pick<AgendaDados, "disciplinas" | "rotinas">): ItemComHorarios[] {
+  return [
+    ...dados.disciplinas.map((d) => ({ id: d.id, nome: d.nome, tipo: "disciplina" as const, horarios: d.aulas })),
+    ...dados.rotinas.map((r) => ({ id: r.id, nome: r.nome, tipo: "rotina" as const, horarios: r.horarios })),
+  ];
+}
+
+/**
+ * Períodos já ocupados entre duas datas: aulas, atividades da rotina e compromissos com
+ * horário. Com `ignorarBlocosGerados`, os blocos do cronograma ainda pendentes não contam
+ * (eles serão substituídos). Compromisso só com horário de início ocupa 1 h.
+ */
+export function ocupadosNoPeriodo(dados: AgendaDados, de: string, ate: string, ignorarBlocosGerados = false) {
+  return [
+    ...aulasNoPeriodo(dados.disciplinas, de, ate),
+    ...rotinasNoPeriodo(dados.rotinas, de, ate),
+    ...dados.compromissos.filter(
+      (c) => c.horaInicio && c.data >= de && c.data <= ate && !(ignorarBlocosGerados && c.origem === "cronograma" && !c.concluido),
+    ),
+  ].map((c) => {
+    const { inicio, fim } = intervaloDe(c);
+    return { inicio, fim: fim > inicio ? fim : new Date(inicio.getTime() + 60 * 60 * 1000) };
+  });
+}
+
+/** Próximo prazo (AAAA-MM-DD, hoje ou depois) de cada disciplina para um tipo de compromisso. */
+function proximosPrazos(compromissos: Compromisso[], tipo: TipoCompromisso) {
+  const hoje = hojeStr();
+  const mapa = new Map<string, string>();
+  ordenarCompromissos(compromissos).forEach((c) => {
+    if (c.tipo === tipo && !c.concluido && c.disciplinaId && c.data >= hoje && !mapa.has(c.disciplinaId)) mapa.set(c.disciplinaId, c.data);
+  });
+  return mapa;
+}
+
+/** Próxima entrega de trabalho (AAAA-MM-DD, hoje ou depois e não concluída) de cada disciplina. */
+export const proximasEntregas = (compromissos: Compromisso[]) => proximosPrazos(compromissos, "trabalho");
+
 /** Próxima prova (AAAA-MM-DD, hoje ou depois) de cada disciplina. */
 export function proximasProvas(compromissos: Compromisso[]) {
   const hoje = hojeStr();
@@ -287,6 +372,24 @@ export function proximasProvas(compromissos: Compromisso[]) {
 
 
 export type DisciplinaForm = Omit<DisciplinaAgenda, "id">;
+
+// ---------------------------------------------------------------------------
+// Atividades fixas da rotina
+// ---------------------------------------------------------------------------
+
+const TABELA_ROTINAS = "atividades_rotina";
+
+type LinhaRotina = { id: string; nome: string; horarios: unknown; notas: string | null };
+
+function deRotina(l: LinhaRotina): RotinaFixa {
+  const horarios = Array.isArray(l.horarios) ? (l.horarios as HorarioSemanal[]) : [];
+  return {
+    id: l.id,
+    nome: l.nome,
+    horarios: horarios.filter((h) => Number.isInteger(h?.dia_semana) && /^\d{2}:\d{2}$/.test(h?.inicio) && /^\d{2}:\d{2}$/.test(h?.fim)),
+    notas: l.notas ?? "",
+  };
+}
 
 export type EstadoAgenda = { dados: AgendaDados | null; userId: string | null; local: boolean; carregando: boolean; erro: string | null };
 
@@ -313,6 +416,8 @@ export function criarAgenda(cfg: AgendaConfig) {
   type Estado = EstadoAgenda;
 
   let estado: Estado = { dados: null, userId: null, local: false, carregando: false, erro: null };
+  /** false quando a tabela de rotinas não existe no servidor. */
+  let rotinasNoServidor = true;
   let emAndamento: Promise<void> | null = null;
   /** Incrementa ao limpar o cache: cargas iniciadas antes disso são descartadas. */
   let geracao = 0;
@@ -399,10 +504,12 @@ export function criarAgenda(cfg: AgendaConfig) {
       if (!userId) {
         const salvo = await cfg.storage.get(await cfg.chaveLocal());
         if (!valida()) return;
+        const lido = salvo ? (JSON.parse(salvo) as Partial<AgendaDados>) : {};
         definir({
           userId: null,
           local: true,
-          dados: salvo ? (JSON.parse(salvo) as AgendaDados) : { disciplinas: [], compromissos: [] },
+          // Dados salvos por versões antigas não têm a lista de rotinas.
+          dados: { disciplinas: lido.disciplinas ?? [], compromissos: lido.compromissos ?? [], rotinas: lido.rotinas ?? [] },
         });
         return;
       }
@@ -415,14 +522,17 @@ export function criarAgenda(cfg: AgendaConfig) {
             .select("id,nome,tipo,disciplina_id,data_inicio,data_fim,descricao,completed,origem_externa_id")
             .eq("user_id", userId)
             .order("data_inicio", { ascending: true }),
+          cfg.client.from(TABELA_ROTINAS).select("id,nome,horarios,notas").eq("user_id", userId).order("created_at"),
         ]);
 
-      let [disc, itens] = await consultar();
+      let [disc, itens, rot] = await consultar();
       if (disc.data && (await migrarAvaliacoesAntigas(userId, disc.data as LinhaDisciplina[]))) {
-        [disc, itens] = await consultar();
+        [disc, itens, rot] = await consultar();
       }
       if (!valida()) return;
       if (disc.error || itens.error) throw disc.error ?? itens.error;
+      // Sem a tabela de rotinas (migration ainda não aplicada) o resto da agenda continua funcionando.
+      rotinasNoServidor = !rot.error;
 
       definir({
         userId,
@@ -432,6 +542,7 @@ export function criarAgenda(cfg: AgendaConfig) {
           compromissos: ordenarCompromissos(
             (itens.data as LinhaItem[]).map(deLinha).filter((c): c is Compromisso => c !== null),
           ),
+          rotinas: rot.error ? [] : ((rot.data ?? []) as LinhaRotina[]).map(deRotina),
         },
       });
     } catch {
@@ -525,10 +636,8 @@ export function criarAgenda(cfg: AgendaConfig) {
 
   async function salvarDisciplina(form: DisciplinaForm, id?: string): Promise<string | null> {
     if (!form.nome.trim()) return "Informe o nome da disciplina.";
-    for (const a of form.aulas) {
-      if (!a.inicio || !a.fim) return "Preencha o início e o fim de cada aula.";
-      if (a.fim <= a.inicio) return "Em cada aula, o fim deve ser depois do início.";
-    }
+    const erroAulas = validarHorarios(form.aulas, "aula");
+    if (erroAulas) return erroAulas;
     const limpo = { ...form, nome: form.nome.trim(), professor: form.professor.trim() };
 
     if (estado.local || !estado.userId) {
@@ -560,17 +669,64 @@ export function criarAgenda(cfg: AgendaConfig) {
     return null;
   }
 
+  /**
+   * Exclui a disciplina junto com tudo o que é dela na agenda (provas, trabalhos,
+   * atividades e blocos de estudo). As sessões de estudo já feitas continuam nas estatísticas.
+   */
   async function excluirDisciplina(id: string) {
     if (!estado.local && estado.userId) {
+      // Apaga os compromissos antes: se falhar, nada foi perdido. (O banco também apaga em
+      // cascata; este passo cobre bancos em que a migration ainda não foi aplicada.)
+      const itens = await cfg.client.from("itens_cronograma").delete().eq("disciplina_id", id).eq("user_id", estado.userId);
+      if (itens.error) return false;
       const { error } = await cfg.client.from("disciplinas").delete().eq("id", id).eq("user_id", estado.userId);
-      if (error) return false;
+      if (error) {
+        await recarregarAgenda();
+        return false;
+      }
     }
     atualizarLocal((d) => ({
       ...d,
       disciplinas: d.disciplinas.filter((x) => x.id !== id),
-      // No banco a FK é "on delete set null": os compromissos ficam, sem disciplina.
-      compromissos: d.compromissos.map((c) => (c.disciplinaId === id ? { ...c, disciplinaId: null } : c)),
+      compromissos: d.compromissos.filter((c) => c.disciplinaId !== id),
     }));
+    return true;
+  }
+
+  async function salvarRotina(form: RotinaFixaForm, id?: string): Promise<string | null> {
+    const nome = form.nome.trim();
+    if (!nome) return "Informe o nome da atividade.";
+    if (form.horarios.length === 0) return "Adicione pelo menos um horário.";
+    const erroHorarios = validarHorarios(form.horarios);
+    if (erroHorarios) return erroHorarios;
+    const limpo: RotinaFixaForm = { nome, horarios: form.horarios.map((h) => ({ ...h })), notas: form.notas.trim() };
+
+    if (estado.local || !estado.userId) {
+      const nova: RotinaFixa = { ...limpo, id: id ?? gerarId() };
+      atualizarLocal((d) => ({ ...d, rotinas: id ? d.rotinas.map((r) => (r.id === id ? nova : r)) : [...d.rotinas, nova] }));
+      return null;
+    }
+    if (!rotinasNoServidor) return "As atividades da rotina ainda não estão disponíveis no servidor. Tente mais tarde.";
+
+    const payload = { nome: limpo.nome, horarios: limpo.horarios, notas: limpo.notas || null, user_id: estado.userId };
+    if (id) {
+      const { error } = await cfg.client.from(TABELA_ROTINAS).update(payload).eq("id", id).eq("user_id", estado.userId);
+      if (error) return "Não foi possível salvar. Tente novamente.";
+      atualizarLocal((d) => ({ ...d, rotinas: d.rotinas.map((r) => (r.id === id ? { ...limpo, id } : r)) }));
+      return null;
+    }
+    const { data, error } = await cfg.client.from(TABELA_ROTINAS).insert(payload).select("id").single();
+    if (error || !data) return "Não foi possível salvar. Tente novamente.";
+    atualizarLocal((d) => ({ ...d, rotinas: [...d.rotinas, { ...limpo, id: data.id as string }] }));
+    return null;
+  }
+
+  async function excluirRotina(id: string) {
+    if (!estado.local && estado.userId) {
+      const { error } = await cfg.client.from(TABELA_ROTINAS).delete().eq("id", id).eq("user_id", estado.userId);
+      if (error) return false;
+    }
+    atualizarLocal((d) => ({ ...d, rotinas: d.rotinas.filter((r) => r.id !== id) }));
     return true;
   }
 
@@ -659,6 +815,8 @@ export function criarAgenda(cfg: AgendaConfig) {
     alternarConcluido,
     salvarDisciplina,
     excluirDisciplina,
+    salvarRotina,
+    excluirRotina,
     salvarBlocosCronograma,
   };
 }

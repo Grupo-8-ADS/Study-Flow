@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CircleHelp, FileText, LogOut, Settings, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
+import { defaultPrivacy, lerPrivacidade, chavePrivacidade, type PrivacySettings } from "@/lib/studyflow-data";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, PageLoading } from "@/components/ui/feedback";
@@ -18,26 +19,13 @@ type UserSession = {
   avatar_url?: string | null;
 };
 
-type PrivacySettings = {
-  allowSharing: boolean;
-  publicProfile: boolean;
-  showAchievements: boolean;
-  showStudyHours: boolean;
-};
-
-const defaultPrivacy: PrivacySettings = {
-  allowSharing: true,
-  publicProfile: false,
-  showAchievements: true,
-  showStudyHours: true,
-};
 
 const faqItems = [
   ["Como adicionar uma disciplina?", "Em Disciplinas, use Adicionar disciplina e informe o nome, o professor e as avaliações."],
   ["Como funciona o Timer Pomodoro?", "Escolha o período de foco ou pausa, selecione uma disciplina e inicie o cronômetro."],
   ["Como as horas estudadas são registradas?", "As sessões concluídas serão usadas para alimentar seu histórico e a página de Estatísticas."],
   ["Como desbloquear conquistas?", "Conclua sessões, mantenha sequências de estudo e alcance metas relacionadas às disciplinas."],
-  ["Como compartilhar meu progresso?", "Na página de Estatísticas, use o botão Compartilhar progresso para copiar um resumo."],
+  ["Como compartilhar meu progresso?", "Na página de Estatísticas, use o botão Compartilhar progresso: dá para copiar o resumo ou enviar direto pelo WhatsApp ou X."],
   ["Como excluir minha conta?", "Em Conta › Preferências, use Excluir minha conta e confirme no aviso de segurança. A conta e todos os seus dados são apagados de forma permanente."],
 ];
 
@@ -67,10 +55,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         const parsedSession = JSON.parse(storedSession) as UserSession;
         setUser(parsedSession);
 
-        const storedPrivacy = localStorage.getItem(`studyflow_privacy_${parsedSession.email}`);
-        if (storedPrivacy) {
-          setPrivacy(JSON.parse(storedPrivacy) as PrivacySettings);
-        }
+        setPrivacy(lerPrivacidade(parsedSession.email));
 
         const storedNotif = localStorage.getItem(`studyflow_notifications_${parsedSession.email}`);
         if (storedNotif !== null) {
@@ -168,7 +153,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
     setPrivacy((current) => {
       const next = { ...current, [key]: !current[key] };
-      localStorage.setItem(`studyflow_privacy_${user.email}`, JSON.stringify(next));
+      localStorage.setItem(chavePrivacidade(user.email), JSON.stringify(next));
       return next;
     });
   };

@@ -110,3 +110,13 @@ export function applyTimeMask(raw: string): string {
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
 }
+
+/**
+ * Formato de e-mail aceitável no cadastro: algo@dominio.tld, sem espaços e com TLD de 2+ letras.
+ * Não garante que a caixa existe; isso é papel do e-mail de confirmação.
+ */
+export function isValidEmail(email: string): boolean {
+  const valor = email.trim();
+  if (valor.length > 254) return false;
+  return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)*\.[a-z]{2,}$/i.test(valor);
+}

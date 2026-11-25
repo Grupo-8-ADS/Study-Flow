@@ -1,6 +1,6 @@
 /**
  * Calendário da Agenda: grade mensal com provas, trabalhos, atividades, blocos de estudo
- * e as aulas semanais das disciplinas. Criar e editar usa o mesmo formulário da lista de compromissos.
+ * e os horários fixos da semana (aulas das disciplinas e atividades da rotina). Criar e editar usa o mesmo formulário da lista de compromissos.
  * @packageDocumentation
  */
 
@@ -19,6 +19,7 @@ import {
   formatarHorario,
   hojeStr,
   ordenarCompromissos,
+  rotinasNoPeriodo,
   useAgenda,
   type Compromisso,
   type CompromissoForm,
@@ -30,11 +31,13 @@ import { Badge, Card } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
 import { PageHeader } from "@/components/ui/page-header";
 
-type Evento = Compromisso & { aula?: true };
+/** Aulas e atividades da rotina são ocorrências semanais (só exibição, não se editam aqui). */
+type Evento = Compromisso & { aula?: true; rotina?: true };
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-const chaveEstilo = (e: Evento) => (e.aula ? "aula" : e.tipo);
+const chaveEstilo = (e: Evento) => (e.aula ? "aula" : e.rotina ? "rotina" : e.tipo);
+const ehFixo = (e: Evento) => Boolean(e.aula || e.rotina);
 
 function CalendarioConteudo() {
   const searchParams = useSearchParams();
@@ -64,6 +67,7 @@ function CalendarioConteudo() {
     const eventos: Evento[] = [
       ...dados.compromissos.filter((c) => c.data >= de && c.data <= ate),
       ...aulasNoPeriodo(dados.disciplinas, de, ate),
+      ...rotinasNoPeriodo(dados.rotinas, de, ate),
     ];
     ordenarCompromissos(eventos).forEach((e) => {
       const lista = mapa.get(e.data) ?? [];
@@ -183,7 +187,7 @@ function CalendarioConteudo() {
           </div>
 
           <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-1 pt-3 text-xs text-ink-500">
-            {(["prova", "trabalho", "atividade", "estudo", "aula"] as const).map((t) => (
+            {(["prova", "trabalho", "atividade", "estudo", "aula", "rotina"] as const).map((t) => (
               <li className="flex items-center gap-1.5" key={t}>
                 <span aria-hidden className={`h-2 w-2 rounded-full ${ESTILO_TIPO[t].dot}`} />
                 {ROTULO_TIPO[t]}
@@ -206,8 +210,8 @@ function CalendarioConteudo() {
             <ul className="flex max-h-[460px] flex-col gap-2 overflow-y-auto">
               {doDia.map((e) => (
                 <li className="flex items-start gap-2 rounded-control border border-line p-2.5" key={e.id}>
-                  {e.aula ? (
-                    <span aria-hidden className={`mx-2 mt-1 h-8 w-1 shrink-0 rounded-full ${ESTILO_TIPO.aula.dot}`} />
+                  {ehFixo(e) ? (
+                    <span aria-hidden className={`mx-2 mt-1 h-8 w-1 shrink-0 rounded-full ${ESTILO_TIPO[chaveEstilo(e)].dot}`} />
                   ) : (
                     <button
                       aria-label={e.concluido ? `Marcar ${e.titulo} como pendente` : `Marcar ${e.titulo} como feito`}
@@ -218,8 +222,8 @@ function CalendarioConteudo() {
                       {e.concluido ? <CheckCircle2 className="text-success" size={20} /> : <Circle size={20} />}
                     </button>
                   )}
-                  {e.aula ? (
-                    <Link className="min-w-0 flex-1 rounded-[6px] text-left" href="/disciplinas">
+                  {ehFixo(e) ? (
+                    <Link className="min-w-0 flex-1 rounded-[6px] text-left" href={e.aula ? "/disciplinas" : "/rotina"}>
                       <ItemDia evento={e} />
                     </Link>
                   ) : (
@@ -251,8 +255,8 @@ function ItemDia({ evento, disciplina }: { evento: Evento; disciplina?: string }
       <p className={`text-sm font-medium leading-snug ${evento.concluido ? "text-ink-500 line-through" : "text-ink-900"}`}>{evento.titulo}</p>
       <p className="tabular mt-0.5 text-xs text-ink-500">{formatarHorario(evento)}</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <Badge tone={estilo.tone}>{evento.aula ? "Aula" : ROTULO_TIPO[evento.tipo]}</Badge>
-        {!evento.aula && disciplina ? <Badge>{disciplina}</Badge> : null}
+        <Badge tone={estilo.tone}>{ROTULO_TIPO[chaveEstilo(evento)]}</Badge>
+        {!ehFixo(evento) && disciplina ? <Badge>{disciplina}</Badge> : null}
       </div>
     </>
   );

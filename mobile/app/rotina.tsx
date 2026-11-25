@@ -8,12 +8,13 @@ import {
   CronogramaError,
   NOMES_DIAS_SEMANA,
   RADII,
-  aulasNoPeriodo,
   dataStr,
   gerarCronograma,
   hojeStr,
   horaStr,
   intervaloDe,
+  ocupadosNoPeriodo,
+  proximasEntregas,
   proximasProvas,
   validarRotina,
   type BlocoEstudo,
@@ -173,21 +174,20 @@ export default function RotinaScreen() {
     const hoje = hojeStr();
     const fimPeriodo = dataStr(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + semanas * 7 - 1));
     const provas = proximasProvas(agenda.compromissos);
-    // O que já ocupa o tempo: aulas, compromissos com horário e (se não for substituir) blocos já salvos.
-    const ocupados = [
-      ...aulasNoPeriodo(agenda.disciplinas, hoje, fimPeriodo),
-      ...agenda.compromissos.filter(
-        (c) => c.horaInicio && c.data >= hoje && c.data <= fimPeriodo && !(substituir && c.origem === 'cronograma' && !c.concluido),
-      ),
-    ].map((c) => {
-      const { inicio: ini, fim: f } = intervaloDe(c);
-      // Compromisso só com horário de início ocupa 1 h.
-      return { inicio: ini, fim: f > ini ? f : new Date(ini.getTime() + 60 * 60 * 1000) };
-    });
+    const entregas = proximasEntregas(agenda.compromissos);
+    // O que já ocupa o tempo: aulas, atividades da rotina, compromissos com horário e
+    // (se não for substituir) blocos já salvos.
+    const ocupados = ocupadosNoPeriodo(agenda, hoje, fimPeriodo, substituir);
 
     try {
       const params = {
-        disciplinas: agenda.disciplinas.map((d) => ({ id: d.id, nome: d.nome, peso: d.prioridade, proximaProva: provas.get(d.id) ?? null })),
+        disciplinas: agenda.disciplinas.map((d) => ({
+          id: d.id,
+          nome: d.nome,
+          peso: d.prioridade,
+          proximaProva: provas.get(d.id) ?? null,
+          proximaEntrega: entregas.get(d.id) ?? null,
+        })),
         rotina: slots,
         dataInicio: agora,
         semanas,

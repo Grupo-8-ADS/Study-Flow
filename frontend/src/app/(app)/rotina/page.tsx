@@ -6,11 +6,12 @@ import { CalendarClock, Clock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import {
-  aulasNoPeriodo,
   dataStr,
   hojeStr,
   horaStr,
   intervaloDe,
+  ocupadosNoPeriodo,
+  proximasEntregas,
   proximasProvas,
   salvarBlocosCronograma,
   useAgenda,
@@ -28,6 +29,10 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
+import { RotinaFixaCard } from "@/components/rotina-fixa";
+
+/** Limite diário sugerido quando o perfil não tem meta de horas por dia. */
+const LIMITE_DIARIO_PADRAO_H = 4;
 
 type Slot = RotinaSlot & { id: string };
 
@@ -61,6 +66,8 @@ export default function RotinaPage() {
 
   const [semanas, setSemanas] = useState("2");
   const [duracao, setDuracao] = useState("50");
+  /** Máximo de horas de estudo por dia ("" = sem limite). Começa pela meta diária do perfil. */
+  const [limiteHoras, setLimiteHoras] = useState(String(LIMITE_DIARIO_PADRAO_H));
   const [erroGeracao, setErroGeracao] = useState<{ mensagem: string; linkDisciplinas?: boolean } | null>(null);
   const [previa, setPrevia] = useState<{ blocos: BlocoEstudo[]; duracaoMin: number; descartados: number } | null>(null);
   const [substituir, setSubstituir] = useState(true);
@@ -91,11 +98,12 @@ export default function RotinaPage() {
           return;
         }
 
-        const rotinaRes = await supabase
-          .from("rotinas_semanais")
-          .select("id,dia_semana,hora_inicio,hora_fim")
-          .eq("user_id", userId)
-          .order("dia_semana", { ascending: true });
+        const [rotinaRes, perfilRes] = await Promise.all([
+          supabase.from("rotinas_semanais").select("id,dia_semana,hora_inicio,hora_fim").eq("user_id", userId).order("dia_semana", { ascending: true }),
+          supabase.from("profiles").select("horas_diarias").eq("id", userId).maybeSingle(),
+        ]);
+        const meta = Number(perfilRes.data?.horas_diarias);
+        if (Number.isFinite(meta) && meta > 0) setLimiteHoras(String(meta));
 
         if (rotinaRes.error) {
           // Tabela ainda inexistente no banco (ou falha de rede): usa o armazenamento local.
@@ -220,40 +228,46 @@ export default function RotinaPage() {
       return;
     }
 
+    const horasPorDia = limiteHoras.trim() === "" ? null : Number(limiteHoras.replace(",", "."));
+    if (horasPorDia !== null && (!Number.isFinite(horasPorDia) || horasPorDia <= 0 || horasPorDia > 24)) {
+      setErroGeracao({ mensagem: "Informe um máximo de horas por dia entre 0,5 e 24, ou deixe em branco para não limitar." });
+      return;
+    }
+    const limiteDiarioMin = horasPorDia === null ? undefined : Math.round(horasPorDia * 60);
+
     const nSemanas = Number(semanas);
     const hoje = hojeStr();
     const fimPeriodo = dataStr(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + nSemanas * 7 - 1));
     const provas = proximasProvas(agenda.compromissos);
+    const entregas = proximasEntregas(agenda.compromissos);
 
-    // O que já ocupa o tempo: aulas, compromissos com horário e (se não for substituir) blocos já salvos.
-    const ocupados = [
-      ...aulasNoPeriodo(agenda.disciplinas, hoje, fimPeriodo),
-      ...agenda.compromissos.filter(
-        (c) =>
-          c.horaInicio && c.data >= hoje && c.data <= fimPeriodo && !(substituir && c.origem === "cronograma" && !c.concluido),
-      ),
-    ].map((c) => {
-      const { inicio: ini, fim: f } = intervaloDe(c);
-      // Compromisso só com horário de início ocupa 1 h.
-      return { inicio: ini, fim: f > ini ? f : new Date(ini.getTime() + 60 * 60 * 1000) };
-    });
+    // O que já ocupa o tempo: aulas, atividades da rotina, compromissos com horário e
+    // (se não for substituir) blocos já salvos.
+    const ocupados = ocupadosNoPeriodo(agenda, hoje, fimPeriodo, substituir);
 
     try {
       const params = {
-        disciplinas: agenda.disciplinas.map((d) => ({ id: d.id, nome: d.nome, peso: d.prioridade, proximaProva: provas.get(d.id) ?? null })),
+        disciplinas: agenda.disciplinas.map((d) => ({
+          id: d.id,
+          nome: d.nome,
+          peso: d.prioridade,
+          proximaProva: provas.get(d.id) ?? null,
+          proximaEntrega: entregas.get(d.id) ?? null,
+        })),
         rotina: slots,
         dataInicio: agora,
         semanas: nSemanas,
         duracaoBlocoMin: duracaoMin,
       };
+      // Quantos horários seriam usados sem conflitos, para avisar quantos foram pulados.
       const todos = (() => {
         try {
-          return gerarCronograma(params).length;
+          return gerarCronograma({ ...params, limiteDiarioMin }).length;
         } catch {
           return 0;
         }
       })();
-      const blocos = gerarCronograma({ ...params, ocupados, naoAntesDe: agora });
+      const blocos = gerarCronograma({ ...params, ocupados, naoAntesDe: agora, limiteDiarioMin });
       setPrevia({ blocos, duracaoMin, descartados: Math.max(0, todos - blocos.length) });
     } catch (e) {
       setErroGeracao({ mensagem: e instanceof CronogramaError ? e.message : "Não foi possível gerar o cronograma." });
@@ -289,8 +303,12 @@ export default function RotinaPage() {
       <PageHeader title="Rotina e cronograma" />
 
       <div className="grid gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-12">
+          {agenda ? <RotinaFixaCard dados={agenda} titulo="1. Sua rotina fixa" /> : null}
+        </div>
+
         <Card aria-labelledby="titulo-rotina" className="lg:col-span-5">
-          <CardHeader icon={<CalendarClock size={18} />} id="titulo-rotina" title="1. Horários livres para estudar" />
+          <CardHeader icon={<CalendarClock size={18} />} id="titulo-rotina" title="2. Horários livres para estudar" />
           {rotinaLocal && !loadingData ? (
             <Alert className="mb-4" tone="warning">
               <span data-testid="aviso-rotina-local">Sua rotina está sendo salva apenas neste dispositivo.</span>
@@ -354,8 +372,8 @@ export default function RotinaPage() {
         </Card>
 
         <Card aria-labelledby="titulo-gerar" className="lg:col-span-7">
-          <CardHeader icon={<Sparkles size={18} />} id="titulo-gerar" title="2. Gerar cronograma" />
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <CardHeader icon={<Sparkles size={18} />} id="titulo-gerar" title="3. Gerar cronograma" />
+          <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
             <Field htmlFor="cron-semanas" label="Semanas">
               <Select id="cron-semanas" onChange={(e) => setSemanas(e.target.value)} value={semanas}>
                 {[1, 2, 3, 4].map((n) => (
@@ -368,7 +386,10 @@ export default function RotinaPage() {
             <Field htmlFor="cron-duracao" label="Duração do bloco (min)">
               <Input id="cron-duracao" max={240} min={10} onChange={(e) => setDuracao(e.target.value)} type="number" value={duracao} />
             </Field>
-            <Button onClick={gerar}>
+            <Field htmlFor="cron-limite" label="Máximo por dia (h)">
+              <Input id="cron-limite" inputMode="decimal" max={24} min={0.5} onChange={(e) => setLimiteHoras(e.target.value)} placeholder="Sem limite" step={0.5} type="number" value={limiteHoras} />
+            </Field>
+            <Button className="sm:col-span-3" onClick={gerar}>
               <Sparkles aria-hidden size={18} />
               Gerar cronograma
             </Button>
@@ -393,9 +414,10 @@ export default function RotinaPage() {
             <summary className="cursor-pointer font-medium text-ink-800">Como o cronograma é montado</summary>
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>Cada horário livre é dividido em blocos do tamanho escolhido, com 10 min de pausa entre eles.</li>
-              <li>Horários que batem com aulas, compromissos com horário ou que já passaram são pulados.</li>
+              <li>Horários que batem com aulas, atividades da rotina, compromissos com horário ou que já passaram são pulados.</li>
+              <li>Cada dia recebe no máximo as horas de estudo escolhidas (começa pela sua meta diária do perfil); o resto do estudo vai para os dias seguintes.</li>
               <li>As disciplinas se revezam de forma proporcional à prioridade (alta = 3×, média = 2×, baixa = 1×), sem repetir a mesma em sequência.</li>
-              <li>Disciplinas com prova dentro do período ganham o dobro de peso até o dia da prova.</li>
+              <li>Disciplinas com prova dentro do período ganham o dobro de peso até o dia da prova, e as com entrega de trabalho ganham 1,5× até a entrega.</li>
               <li>Não há sorteio: as mesmas entradas geram sempre o mesmo cronograma.</li>
             </ul>
           </details>
@@ -428,7 +450,7 @@ export default function RotinaPage() {
               <h3 className="text-base font-semibold text-ink-900">Prévia do cronograma</h3>
               {previa.descartados > 0 ? (
                 <p className="mt-1 text-sm text-ink-500">
-                  {previa.descartados} {previa.descartados === 1 ? "horário foi pulado" : "horários foram pulados"} por já ter passado ou bater com outro compromisso.
+                  {previa.descartados} {previa.descartados === 1 ? "horário foi pulado" : "horários foram pulados"} por já ter passado ou bater com aula, rotina ou outro compromisso.
                 </p>
               ) : null}
               <ul className="mt-3 flex flex-wrap gap-2" data-testid="resumo-disciplinas">

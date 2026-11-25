@@ -4,18 +4,38 @@
  * aqui ficam só os cálculos de apresentação, com a MESMA regra de nível do banco.
  */
 
-export const XP_POR_NIVEL = 100;
+/**
+ * Curva de nível progressiva: subir do nível n para o n+1 custa XP_BASE_NIVEL × n XP
+ * (100, 200, 300...). Com 1 XP por minuto de foco, o nível 2 vem com ~1h40 de estudo, o 5
+ * com ~17 h e o 10 com ~75 h. Precisa bater com public.nivel_por_xp (migration
+ * 20261125000200_curva_nivel_e_recompensas).
+ */
+export const XP_BASE_NIVEL = 100;
 
-/** Nível a partir do XP: 100 XP por nível, começando no 1 (igual a public.nivel_por_xp). */
+/** XP total necessário para chegar ao nível (nível 1 = 0 XP). */
+export function xpParaNivel(nivel: number): number {
+  const n = Math.max(Math.floor(nivel), 1);
+  return (XP_BASE_NIVEL * n * (n - 1)) / 2;
+}
+
+const xpSeguro = (xp: number) => (Number.isFinite(xp) ? Math.max(Math.floor(xp), 0) : 0);
+
+/** Nível a partir do XP, começando no 1 (igual a public.nivel_por_xp). */
 export function nivelPorXp(xp: number): number {
-  const seguro = Number.isFinite(xp) ? Math.max(Math.floor(xp), 0) : 0;
-  return Math.floor(seguro / XP_POR_NIVEL) + 1;
+  const seguro = xpSeguro(xp);
+  // Inverso de xpParaNivel: n = floor((1 + sqrt(1 + 8·xp/100)) / 2), com ajuste de arredondamento.
+  let nivel = Math.max(Math.floor((1 + Math.sqrt(1 + (8 * seguro) / XP_BASE_NIVEL)) / 2), 1);
+  while (xpParaNivel(nivel + 1) <= seguro) nivel++;
+  while (nivel > 1 && xpParaNivel(nivel) > seguro) nivel--;
+  return nivel;
 }
 
 export interface ProgressoNivel {
   nivel: number;
-  /** XP acumulado dentro do nível atual (0 a 99). */
+  /** XP acumulado dentro do nível atual. */
   xpNoNivel: number;
+  /** XP total do nível atual (do início dele ao próximo). */
+  xpDoNivel: number;
   /** XP que falta para o próximo nível. */
   faltam: number;
   /** Fração de 0 a 1 do nível atual. */
@@ -23,13 +43,16 @@ export interface ProgressoNivel {
 }
 
 export function progressoNivel(xp: number): ProgressoNivel {
-  const seguro = Number.isFinite(xp) ? Math.max(Math.floor(xp), 0) : 0;
-  const xpNoNivel = seguro % XP_POR_NIVEL;
+  const seguro = xpSeguro(xp);
+  const nivel = nivelPorXp(seguro);
+  const xpNoNivel = seguro - xpParaNivel(nivel);
+  const xpDoNivel = xpParaNivel(nivel + 1) - xpParaNivel(nivel);
   return {
-    nivel: nivelPorXp(seguro),
+    nivel,
     xpNoNivel,
-    faltam: XP_POR_NIVEL - xpNoNivel,
-    progresso: xpNoNivel / XP_POR_NIVEL,
+    xpDoNivel,
+    faltam: xpDoNivel - xpNoNivel,
+    progresso: xpNoNivel / xpDoNivel,
   };
 }
 
@@ -161,6 +184,10 @@ export interface DadosCompartilhamento {
   horas: number;
   /** Disciplina mais estudada no período (ou null se não houver dados). */
   topico: string | null;
+  /** Privacidade: sem as horas, o texto fala só do nível e da disciplina. */
+  ocultarHoras?: boolean;
+  /** Link do app, acrescentado no fim (ex.: o endereço do site). */
+  link?: string;
 }
 
 /** Texto do RF007 (compartilhar progresso), com dados reais do usuário. */
@@ -168,6 +195,9 @@ export function textoCompartilhamento(dados: DadosCompartilhamento): string {
   const horas = Math.max(dados.horas, 0);
   const horasTexto = Number.isInteger(horas) ? `${horas}` : horas.toFixed(1).replace('.', ',');
   const periodo = dados.periodo.trim().toLowerCase();
-  const base = `Estou no nível ${dados.nivel} no Study Flow e estudei ${horasTexto} h (${periodo}).`;
-  return dados.topico ? `${base} Minha disciplina mais estudada foi ${dados.topico}.` : base;
+  const base = dados.ocultarHoras
+    ? `Estou no nível ${dados.nivel} no Study Flow.`
+    : `Estou no nível ${dados.nivel} no Study Flow e estudei ${horasTexto} h (${periodo}).`;
+  const texto = dados.topico ? `${base} Minha disciplina mais estudada foi ${dados.topico}.` : base;
+  return dados.link ? `${texto} ${dados.link}` : texto;
 }

@@ -168,7 +168,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
 
       expect(await conquistasDe(id)).toEqual(["Estudante dedicado", "Foco inicial"]);
       // 6*25 + 50 + 120 = 320 XP -> nível 4
-      expect(await perfil(id)).toMatchObject({ xp: 320, nivel_atual: 4 });
+      expect(await perfil(id)).toMatchObject({ xp: 320, nivel_atual: 3 });
     });
 
     it("deve conceder 'Mestre do Tempo' ao acumular 600 minutos", async () => {

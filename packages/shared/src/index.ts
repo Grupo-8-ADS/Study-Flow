@@ -9,3 +9,4 @@ export * from './gmail';
 export * from './agenda';
 export * from './pomodoro';
 export * from './recompensas';
+export * from './horarios';

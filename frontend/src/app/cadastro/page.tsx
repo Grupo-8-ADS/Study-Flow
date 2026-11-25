@@ -10,7 +10,8 @@ import type { NextPage } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { reenviarConfirmacao, supabase, urlConfirmacaoEmail } from "@/lib/supabase";
+import { isValidEmail } from "@studyflow/shared";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
@@ -51,6 +52,10 @@ const Cadastro: NextPage = () => {
   /** Estado de envio do formulário para evitar cadastros duplicados */
   const [isLoading, setIsLoading] = useState(false);
 
+  /** E-mail que aguarda confirmação (o cadastro só vale depois de clicar no link). */
+  const [aguardandoConfirmacao, setAguardandoConfirmacao] = useState<string | null>(null);
+  const [reenvio, setReenvio] = useState<{ enviando: boolean; mensagem: string; erro: boolean }>({ enviando: false, mensagem: "", erro: false });
+
   /**
    * Executa o fluxo de registro do usuário via Supabase Auth.
    * Valida se todos os campos estão preenchidos, se as senhas coincidem e possuem tamanho mínimo.
@@ -72,6 +77,11 @@ const Cadastro: NextPage = () => {
         return;
       }
 
+      if (!isValidEmail(cleanEmail)) {
+        setErrorMsg("Informe um e-mail válido.");
+        return;
+      }
+
       if (senha !== confirmarSenha) {
         setErrorMsg("As senhas não coincidem.");
         return;
@@ -89,6 +99,7 @@ const Cadastro: NextPage = () => {
           email: cleanEmail,
           password: senha,
           options: {
+            emailRedirectTo: urlConfirmacaoEmail(),
             data: {
               nome: cleanNome,
               full_name: cleanNome,
@@ -107,6 +118,19 @@ const Cadastro: NextPage = () => {
           return;
         }
 
+        // Com a confirmação de e-mail ligada, um e-mail já cadastrado volta sem identidades
+        // (o Supabase não revela se a conta existe, mas também não manda o link).
+        if (data.user && data.user.identities?.length === 0) {
+          setErrorMsg("Este e-mail já está cadastrado.");
+          return;
+        }
+
+        // Confirmação de e-mail ligada: sem sessão até o usuário clicar no link do e-mail.
+        if (data.user && !data.session) {
+          setAguardandoConfirmacao(cleanEmail);
+          return;
+        }
+
         if (data.user) {
           localStorage.setItem(
             "studyflow_session",
@@ -116,7 +140,6 @@ const Cadastro: NextPage = () => {
               username: cleanUsername,
               loginTime: new Date().getTime(),
               rememberMe: true,
-              pendingEmailConfirmation: !data.session,
             })
           );
 
@@ -134,6 +157,32 @@ const Cadastro: NextPage = () => {
     },
     [nome, username, email, senha, confirmarSenha, router]
   );
+
+  if (aguardandoConfirmacao) {
+    const reenviar = async () => {
+      setReenvio({ enviando: true, mensagem: "", erro: false });
+      const erro = await reenviarConfirmacao(aguardandoConfirmacao);
+      setReenvio({ enviando: false, mensagem: erro ?? "Enviamos o link de novo.", erro: Boolean(erro) });
+    };
+    return (
+      <AuthLayout title="Confirme seu e-mail">
+        <div className="flex flex-col gap-4 text-sm text-ink-600" data-testid="aguardando-confirmacao">
+          <p>
+            Enviamos um link de confirmação para <strong className="font-semibold text-ink-900">{aguardandoConfirmacao}</strong>. Abra o e-mail e clique no
+            link para ativar a conta — depois é só entrar.
+          </p>
+          <p>Não chegou? Confira a caixa de spam ou reenvie.</p>
+          {reenvio.mensagem ? <Alert tone={reenvio.erro ? "danger" : "success"}>{reenvio.mensagem}</Alert> : null}
+          <Button disabled={reenvio.enviando} onClick={() => void reenviar()} variant="secondary">
+            {reenvio.enviando ? "Reenviando..." : "Reenviar e-mail"}
+          </Button>
+          <Link className="text-center font-semibold text-primary-700 underline-offset-2 hover:underline" href="/">
+            Ir para o login
+          </Link>
+        </div>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout title="Criar cadastro">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Check, Download, FileText, Share2, Trophy } from "lucide-react";
+import { CompartilharProgressoModal } from "@/components/compartilhar-progresso";
 import { ConquistaIcone } from "@/components/conquista-icone";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
@@ -11,6 +12,7 @@ import {
   getCurrentSupabaseUserId,
   getLocalStudyMinutes,
   getStoredSession,
+  lerPrivacidade,
 } from "@/lib/studyflow-data";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
@@ -124,7 +126,7 @@ export default function EstatisticasPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
-  const [shared, setShared] = useState(false);
+  const [compartilhando, setCompartilhando] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
   const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
@@ -252,30 +254,18 @@ export default function EstatisticasPage() {
   }, [router]);
 
 
-  const shareStats = async () => {
+  /** Texto do compartilhamento do período escolhido, respeitando a privacidade do usuário. */
+  const textoParaCompartilhar = () => {
     const current = statsData[period];
     const hours = current.chart.reduce((sum, item) => sum + item.value, 0);
-    const text = textoCompartilhamento({
+    return textoCompartilhamento({
       horas: Number(hours.toFixed(1)),
       nivel: level.nivel,
       periodo: current.label,
       topico: current.chart.length > 0 ? current.topic : null,
+      ocultarHoras: user ? !lerPrivacidade(user.email).showStudyHours : false,
+      link: typeof window !== "undefined" ? window.location.origin : undefined,
     });
-
-    try {
-      if (typeof navigator.share === "function") {
-        await navigator.share({ title: "Study Flow", text });
-      } else {
-        await navigator.clipboard.writeText(text);
-      }
-    } catch (error) {
-      // Cancelar o compartilhamento não é erro: sem feedback.
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      // O feedback visual permanece útil caso a API de clipboard não esteja disponível.
-    }
-
-    setShared(true);
-    setTimeout(() => setShared(false), 2200);
   };
 
   const buildReport = () => {
@@ -325,13 +315,21 @@ export default function EstatisticasPage() {
     <>
       <PageHeader
         actions={
-          <Button onClick={shareStats} variant={shared ? "secondary" : "primary"}>
-            {shared ? <Check aria-hidden size={18} /> : <Share2 aria-hidden size={18} />}
-            {shared ? "Resumo copiado" : "Compartilhar progresso"}
+          <Button onClick={() => setCompartilhando(true)}>
+            <Share2 aria-hidden size={18} />
+            Compartilhar progresso
           </Button>
         }
         title="Estatísticas"
       />
+
+      {compartilhando ? (
+        <CompartilharProgressoModal
+          onClose={() => setCompartilhando(false)}
+          permitido={lerPrivacidade(user.email).allowSharing}
+          texto={textoParaCompartilhar()}
+        />
+      ) : null}
 
       <section aria-label="Total de horas estudadas" className="grid gap-4 sm:grid-cols-3">
         <SummaryRing label="Semana" note={`${hasGoal ? "Meta" : "Meta sugerida"}: ${formatHours(weeklyGoal)}`} progress={weeklyProgress} value={formatHours(weeklyHours)} />
@@ -342,7 +340,7 @@ export default function EstatisticasPage() {
             <p className="text-[13px] font-medium text-ink-500">Nível atual</p>
             <p className="text-lg font-semibold text-ink-900">Nível {level.nivel}</p>
             <p className="tabular text-xs text-ink-500">
-              {level.xpNoNivel}/100 XP · faltam {level.faltam}
+              {level.xpNoNivel}/{level.xpDoNivel} XP · faltam {level.faltam}
             </p>
           </div>
         </Card>

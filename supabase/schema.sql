@@ -99,7 +99,8 @@ create table if not exists public.metas (
 create table if not exists public.itens_cronograma (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  disciplina_id uuid references public.disciplinas(id) on delete set null,
+  -- Excluir a disciplina remove os itens dela da agenda (migration 20261125000100).
+  disciplina_id uuid references public.disciplinas(id) on delete cascade,
   topico_id uuid references public.topicos(id) on delete set null,
   nome text not null,
   tipo text not null default 'atividade',
@@ -367,6 +368,30 @@ create table if not exists public.rotinas_semanais (
 
 create index if not exists idx_rotinas_semanais_user on public.rotinas_semanais(user_id);
 
+-- Atividades fixas da rotina (trabalho, academia...), com horários semanais como as aulas.
+create table if not exists public.atividades_rotina (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  nome text not null check (length(btrim(nome)) between 1 and 120),
+  horarios jsonb not null default '[]'::jsonb check (jsonb_typeof(horarios) = 'array'),
+  notas text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_atividades_rotina_user on public.atividades_rotina(user_id);
+
+alter table public.atividades_rotina enable row level security;
+
+drop policy if exists "atividades_rotina_all_own" on public.atividades_rotina;
+create policy "atividades_rotina_all_own" on public.atividades_rotina
+for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+
+drop trigger if exists set_atividades_rotina_updated_at on public.atividades_rotina;
+create trigger set_atividades_rotina_updated_at
+before update on public.atividades_rotina
+for each row execute function public.set_updated_at();
+
 alter table public.rotinas_semanais enable row level security;
 
 drop policy if exists "rotinas_semanais_all_own" on public.rotinas_semanais;
@@ -418,14 +443,15 @@ $$;
 revoke all on function public.delete_own_account() from public, anon;
 grant execute on function public.delete_own_account() to authenticated;
 
--- RF004: nível a partir do XP (100 XP por nível, começando no nível 1).
+-- RF004: nível a partir do XP, curva progressiva: chegar ao nível n custa 50·n·(n−1) XP
+-- (nível 2 = 100, 3 = 300, 5 = 1000, 10 = 4500). Migration 20261125000200.
 create or replace function public.nivel_por_xp(p_xp integer)
 returns integer
 language sql
 immutable
-as $$
-  select floor(greatest(coalesce(p_xp, 0), 0) / 100.0)::integer + 1;
-$$;
+as $
+  select greatest(floor((1 + sqrt(1 + 8 * greatest(coalesce(p_xp, 0), 0) / 100.0)) / 2)::integer, 1);
+$;
 
 -- RF004: ao concluir uma sessão, soma o XP, concede as conquistas cujo critério foi
 -- atingido (com o bônus de pontos de cada uma) e avisa o usuário.

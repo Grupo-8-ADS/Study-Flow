@@ -52,13 +52,16 @@ export default function DisciplinasScreen() {
   const vista = vendo ? dados?.disciplinas.find((d) => d.id === vendo) ?? null : null;
 
   const confirmarExclusao = (d: DisciplinaAgenda) =>
-    Alert.alert('Excluir disciplina', `Excluir “${d.nome}”? Provas e blocos de estudo ligados a ela continuam na agenda, sem disciplina.`, [
+    Alert.alert('Excluir disciplina', `Excluir “${d.nome}”? As provas, trabalhos e blocos de estudo dela também saem da agenda. As sessões já feitas continuam nas estatísticas.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Excluir',
         style: 'destructive',
         onPress: async () => {
-          await excluirDisciplina(d.id);
+          if (!(await excluirDisciplina(d.id))) {
+            Alert.alert('Excluir disciplina', 'Não foi possível excluir. Tente novamente.');
+            return;
+          }
           setVendo(null);
         },
       },

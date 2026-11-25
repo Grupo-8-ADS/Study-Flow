@@ -8,16 +8,16 @@
 
 import { useState, type FormEvent } from "react";
 import { BookOpen, Clock, Pencil, Plus, Trash2 } from "lucide-react";
-import { NOMES_DIAS_SEMANA } from "@studyflow/shared";
+import { conflitosDeHorario, validarHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
   excluirDisciplina,
   formatarData,
   formatarHorario,
   hojeStr,
+  itensComHorarios,
   salvarDisciplina,
   useAgenda,
-  type Aula,
   type Compromisso,
   type CompromissoForm,
   type Disciplina,
@@ -25,10 +25,11 @@ import {
 } from "@/lib/agenda";
 import { ESTILO_TIPO } from "@/lib/agenda-estilos";
 import { CompromissoEditor } from "@/components/compromisso-editor";
+import { ConflitosHorarioModal, HorariosSemanaisField, resumoHorarios } from "@/components/horarios-semanais";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
-import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -40,15 +41,7 @@ const PRIORIDADES: Array<[1 | 2 | 3, string]> = [
   [3, "Alta"],
 ];
 
-const diaCurto = (d: number) => NOMES_DIAS_SEMANA[d].slice(0, 3);
-
-function resumoAulas(aulas: Aula[]) {
-  if (aulas.length === 0) return "Sem horário de aula";
-  return [...aulas]
-    .sort((a, b) => a.dia_semana - b.dia_semana || a.inicio.localeCompare(b.inicio))
-    .map((a) => `${diaCurto(a.dia_semana)} ${a.inicio}–${a.fim}`)
-    .join(" · ");
-}
+const resumoAulas = (aulas: Disciplina["aulas"]) => resumoHorarios(aulas, "Sem horário de aula");
 
 export default function DisciplinasPage() {
   const { dados, carregando, erro } = useAgenda();
@@ -56,6 +49,7 @@ export default function DisciplinasPage() {
   const [vendo, setVendo] = useState<string | null>(null);
   const [excluindo, setExcluindo] = useState<Disciplina | null>(null);
   const [compromisso, setCompromisso] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null);
 
   if (carregando || !dados) return erro ? <Alert tone="danger">{erro}</Alert> : <PageLoading label="Carregando disciplinas..." />;
 
@@ -67,9 +61,16 @@ export default function DisciplinasPage() {
 
   const remover = async () => {
     if (!excluindo) return;
-    await excluirDisciplina(excluindo.id);
+    if (!(await excluirDisciplina(excluindo.id))) {
+      setErroExclusao("Não foi possível excluir a disciplina. Tente novamente.");
+      return;
+    }
     setExcluindo(null);
     setVendo(null);
+  };
+  const fecharExclusao = () => {
+    setExcluindo(null);
+    setErroExclusao(null);
   };
 
   return (
@@ -139,7 +140,7 @@ export default function DisciplinasPage() {
         </ul>
       )}
 
-      {editando ? <DisciplinaEditor inicial={editando} onClose={() => setEditando(null)} /> : null}
+      {editando ? <DisciplinaEditor inicial={editando} onClose={() => setEditando(null)} outros={itensComHorarios(dados)} /> : null}
 
       {disciplinaVista ? (
         <Modal
@@ -219,7 +220,7 @@ export default function DisciplinasPage() {
         <Modal
           footer={
             <>
-              <Button onClick={() => setExcluindo(null)} variant="secondary">
+              <Button onClick={fecharExclusao} variant="secondary">
                 Cancelar
               </Button>
               <Button onClick={() => void remover()} variant="danger">
@@ -227,119 +228,139 @@ export default function DisciplinasPage() {
               </Button>
             </>
           }
-          onClose={() => setExcluindo(null)}
+          onClose={fecharExclusao}
           size="sm"
           title="Excluir disciplina"
         >
-          <p className="text-sm text-ink-600">
-            Excluir “{excluindo.nome}”? Provas, trabalhos e blocos de estudo ligados a ela continuam na agenda, sem disciplina.
-          </p>
+          <div className="grid gap-3 text-sm text-ink-600">
+            {erroExclusao ? <Alert tone="danger">{erroExclusao}</Alert> : null}
+            <p>Excluir “{excluindo.nome}”?</p>
+            <ResumoExclusao itens={dados.compromissos.filter((c) => c.disciplinaId === excluindo.id)} />
+            <p>As sessões de estudo já feitas continuam nas suas estatísticas.</p>
+          </div>
         </Modal>
       ) : null}
     </>
   );
 }
 
-function DisciplinaEditor({ inicial, onClose }: { inicial: { id?: string; form: DisciplinaForm }; onClose: () => void }) {
+/** "Também saem do calendário: 2 provas, 1 trabalho e 4 blocos de estudo." */
+function ResumoExclusao({ itens }: { itens: Compromisso[] }) {
+  if (itens.length === 0) return <p>Ela não tem provas, trabalhos nem blocos de estudo na agenda.</p>;
+  const contar = (tipo: Compromisso["tipo"], um: string, varios: string) => {
+    const n = itens.filter((c) => c.tipo === tipo).length;
+    return n === 0 ? null : `${n} ${n === 1 ? um : varios}`;
+  };
+  const partes = [
+    contar("prova", "prova", "provas"),
+    contar("trabalho", "trabalho", "trabalhos"),
+    contar("atividade", "atividade", "atividades"),
+    contar("estudo", "bloco de estudo", "blocos de estudo"),
+  ].filter((p): p is string => p !== null);
+  const lista = partes.length > 1 ? `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}` : partes[0];
+  return (
+    <p>
+      Também {itens.length === 1 ? "sai" : "saem"} do calendário: <strong className="font-semibold text-ink-800">{lista}</strong>.
+    </p>
+  );
+}
+
+function DisciplinaEditor({ inicial, onClose, outros }: { inicial: { id?: string; form: DisciplinaForm }; onClose: () => void; outros: ItemComHorarios[] }) {
   const [form, setForm] = useState<DisciplinaForm>(() => ({ ...inicial.form, aulas: inicial.form.aulas.map((a) => ({ ...a })) }));
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [conflitos, setConflitos] = useState<ConflitoHorario[] | null>(null);
 
   const mudar = (parcial: Partial<DisciplinaForm>) => {
     setErro(null);
     setForm((f) => ({ ...f, ...parcial }));
   };
-  const mudarAula = (i: number, parcial: Partial<Aula>) => mudar({ aulas: form.aulas.map((a, j) => (j === i ? { ...a, ...parcial } : a)) });
 
-  const enviar = async (event: FormEvent) => {
-    event.preventDefault();
+  const salvar = async () => {
     setSalvando(true);
     const msg = await salvarDisciplina(form, inicial.id);
     setSalvando(false);
+    setConflitos(null);
     if (msg) setErro(msg);
     else onClose();
   };
 
-  return (
-    <Modal
-      footer={
-        <>
-          <Button onClick={onClose} variant="secondary">
-            Cancelar
-          </Button>
-          <Button disabled={salvando} form="form-disciplina" type="submit">
-            {salvando ? "Salvando..." : "Salvar"}
-          </Button>
-        </>
+  const enviar = async (event: FormEvent) => {
+    event.preventDefault();
+    // Horário inválido é erro do formulário; só depois procura conflito com o que já existe.
+    if (!validarHorarios(form.aulas, "aula")) {
+      const achados = conflitosDeHorario({ id: inicial.id, nome: form.nome.trim(), tipo: "disciplina", horarios: form.aulas }, outros);
+      if (achados.length > 0) {
+        setConflitos(achados);
+        return;
       }
-      onClose={onClose}
-      title={inicial.id ? "Editar disciplina" : "Nova disciplina"}
-    >
-      <form className="grid gap-4" id="form-disciplina" noValidate onSubmit={enviar}>
-        {erro ? <Alert tone="danger">{erro}</Alert> : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field htmlFor="disciplina-nome" label="Nome">
-            <Input id="disciplina-nome" onChange={(e) => mudar({ nome: e.target.value })} placeholder="Ex.: Cálculo I" value={form.nome} />
-          </Field>
-          <Field htmlFor="disciplina-professor" label="Professor (opcional)">
-            <Input id="disciplina-professor" onChange={(e) => mudar({ professor: e.target.value })} value={form.professor} />
-          </Field>
-        </div>
+    }
+    await salvar();
+  };
 
-        <fieldset>
-          <legend className="mb-1.5 text-[13px] font-medium text-ink-700">Prioridade no cronograma</legend>
-          <div className="flex gap-2">
-            {PRIORIDADES.map(([p, rotulo]) => (
-              <label
-                className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-500 ${
-                  form.prioridade === p ? "bg-primary-700 text-white ring-primary-700" : "bg-white text-ink-700 ring-line hover:bg-ink-50"
-                }`}
-                key={p}
-              >
-                <input checked={form.prioridade === p} className="sr-only" name="prioridade" onChange={() => mudar({ prioridade: p })} type="radio" />
-                {rotulo}
-              </label>
-            ))}
-          </div>
-          <p className="mt-1.5 text-xs text-ink-500">Prioridade alta recebe até 3× mais blocos de estudo que a baixa.</p>
-        </fieldset>
-
-        <fieldset className="rounded-card border border-line bg-ink-50/60 p-3.5">
-          <div className="mb-2.5 flex items-center justify-between gap-2">
-            <legend className="text-sm font-semibold text-ink-800">Horários de aula</legend>
-            <Button onClick={() => mudar({ aulas: [...form.aulas, { dia_semana: 1, inicio: "19:00", fim: "20:40" }] })} size="sm" variant="secondary">
-              <Plus aria-hidden size={14} />
-              Adicionar aula
+  return (
+    <>
+      <Modal
+        footer={
+          <>
+            <Button onClick={onClose} variant="secondary">
+              Cancelar
             </Button>
+            <Button disabled={salvando} form="form-disciplina" type="submit">
+              {salvando ? "Salvando..." : "Salvar"}
+            </Button>
+          </>
+        }
+        onClose={onClose}
+        title={inicial.id ? "Editar disciplina" : "Nova disciplina"}
+      >
+        <form className="grid gap-4" id="form-disciplina" noValidate onSubmit={enviar}>
+          {erro ? <Alert tone="danger">{erro}</Alert> : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field htmlFor="disciplina-nome" label="Nome">
+              <Input id="disciplina-nome" onChange={(e) => mudar({ nome: e.target.value })} placeholder="Ex.: Cálculo I" value={form.nome} />
+            </Field>
+            <Field htmlFor="disciplina-professor" label="Professor (opcional)">
+              <Input id="disciplina-professor" onChange={(e) => mudar({ professor: e.target.value })} value={form.professor} />
+            </Field>
           </div>
-          {form.aulas.length === 0 ? (
-            <p className="text-sm text-ink-500">Nenhum horário. As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas.</p>
-          ) : (
-            <ul className="grid gap-2">
-              {form.aulas.map((a, i) => (
-                <li className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2" key={i}>
-                  <Select aria-label={`Dia da aula ${i + 1}`} onChange={(e) => mudarAula(i, { dia_semana: Number(e.target.value) })} value={a.dia_semana}>
-                    {NOMES_DIAS_SEMANA.map((nome, d) => (
-                      <option key={nome} value={d}>
-                        {nome}
-                      </option>
-                    ))}
-                  </Select>
-                  <Input aria-label={`Início da aula ${i + 1}`} className="!w-28" onChange={(e) => mudarAula(i, { inicio: e.target.value })} type="time" value={a.inicio} />
-                  <Input aria-label={`Fim da aula ${i + 1}`} className="!w-28" onChange={(e) => mudarAula(i, { fim: e.target.value })} type="time" value={a.fim} />
-                  <Button aria-label={`Remover aula ${i + 1}`} onClick={() => mudar({ aulas: form.aulas.filter((_, j) => j !== i) })} size="icon-sm" variant="danger-ghost">
-                    <Trash2 size={16} />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </fieldset>
 
-        <Field htmlFor="disciplina-notas" label="Anotações">
-          <Textarea className="min-h-20 resize-y" id="disciplina-notas" onChange={(e) => mudar({ notas: e.target.value })} placeholder="Sala, links úteis, critérios de avaliação..." value={form.notas} />
-        </Field>
-      </form>
-    </Modal>
+          <fieldset>
+            <legend className="mb-1.5 text-[13px] font-medium text-ink-700">Prioridade no cronograma</legend>
+            <div className="flex gap-2">
+              {PRIORIDADES.map(([p, rotulo]) => (
+                <label
+                  className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-500 ${
+                    form.prioridade === p ? "bg-primary-700 text-white ring-primary-700" : "bg-white text-ink-700 ring-line hover:bg-ink-50"
+                  }`}
+                  key={p}
+                >
+                  <input checked={form.prioridade === p} className="sr-only" name="prioridade" onChange={() => mudar({ prioridade: p })} type="radio" />
+                  {rotulo}
+                </label>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-500">Prioridade alta recebe até 3× mais blocos de estudo que a baixa.</p>
+          </fieldset>
+
+          <HorariosSemanaisField
+            artigo="da"
+            horarios={form.aulas}
+            novo={{ dia_semana: 1, inicio: "19:00", fim: "20:40" }}
+            onChange={(aulas) => mudar({ aulas })}
+            rotulo="aula"
+            titulo="Horários de aula"
+            vazio="Nenhum horário. As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas."
+          />
+
+          <Field htmlFor="disciplina-notas" label="Anotações">
+            <Textarea className="min-h-20 resize-y" id="disciplina-notas" onChange={(e) => mudar({ notas: e.target.value })} placeholder="Sala, links úteis, critérios de avaliação..." value={form.notas} />
+          </Field>
+        </form>
+      </Modal>
+      {conflitos ? (
+        <ConflitosHorarioModal conflitos={conflitos} onAjustar={() => setConflitos(null)} onSalvarMesmoAssim={() => void salvar()} salvando={salvando} />
+      ) : null}
+    </>
   );
 }

@@ -36,6 +36,8 @@ export const {
   alternarConcluido,
   salvarDisciplina,
   excluirDisciplina,
+  salvarRotina,
+  excluirRotina,
   salvarBlocosCronograma,
 } = agenda;
 
@@ -65,4 +67,5 @@ export const COR_TIPO = {
   atividade: { cor: '#29645e', fundo: '#e3f3f0', badge: 'primary' },
   estudo: { cor: '#0f8a5f', fundo: '#e7f6ef', badge: 'success' },
   aula: { cor: '#8a9996', fundo: '#f1f5f4', badge: 'gray' },
+  rotina: { cor: '#8a6bbf', fundo: '#efe9f8', badge: 'gray' },
 } as const;

@@ -5,6 +5,7 @@ import {
   COLORS,
   ROTULO_TIPO,
   aulasNoPeriodo,
+  rotinasNoPeriodo,
   dataLocal,
   dataStr,
   formatarHorario,
@@ -22,11 +23,14 @@ import { CompromissoEditor } from '../../components/CompromissoEditor';
 import { COR_TIPO, alternarConcluido, useAgenda } from '../../lib/agenda';
 import { useIrPara } from '../../lib/navigation';
 
-type Evento = Compromisso & { aula?: true };
+/** Aulas e atividades da rotina são ocorrências semanais (só exibição). */
+type Evento = Compromisso & { aula?: true; rotina?: true };
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-const corDe = (e: Evento) => COR_TIPO[e.aula ? 'aula' : e.tipo];
+const chaveDe = (e: Evento) => (e.aula ? 'aula' : e.rotina ? 'rotina' : e.tipo);
+const corDe = (e: Evento) => COR_TIPO[chaveDe(e)];
+const ehFixo = (e: Evento) => Boolean(e.aula || e.rotina);
 
 export default function CalendarioScreen() {
   const { dados, carregando, atualizando, recarregar } = useAgenda();
@@ -48,6 +52,7 @@ export default function CalendarioScreen() {
     const eventos: Evento[] = [
       ...dados.compromissos.filter((c) => c.data >= primeiro && c.data <= ultimo),
       ...aulasNoPeriodo(dados.disciplinas, primeiro, ultimo),
+      ...rotinasNoPeriodo(dados.rotinas, primeiro, ultimo),
     ];
     ordenarCompromissos(eventos).forEach((e) => porDia.set(e.data, [...(porDia.get(e.data) ?? []), e as Evento]));
   }
@@ -150,7 +155,7 @@ export default function CalendarioScreen() {
           doDia.map((e) => (
             <Card key={e.id} style={styles.eventCard}>
               <View style={[styles.eventLeftBar, { backgroundColor: corDe(e).cor }]} />
-              {e.aula ? null : (
+              {ehFixo(e) ? null : (
                 <TouchableOpacity
                   accessibilityLabel={e.concluido ? `Marcar ${e.titulo} como pendente` : `Marcar ${e.titulo} como feito`}
                   onPress={() => void alternarConcluido(e.id)}
@@ -162,13 +167,13 @@ export default function CalendarioScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 style={styles.eventContent}
-                onPress={() => (e.aula ? irPara('/disciplinas') : setEditor(e))}
+                onPress={() => (e.aula ? irPara('/disciplinas') : e.rotina ? irPara('/rotina') : setEditor(e))}
               >
                 <Text style={[styles.eventTitle, e.concluido && styles.riscado]}>{e.titulo}</Text>
                 <Text style={styles.eventTimeText}>{formatarHorario(e)}</Text>
                 <View style={styles.badges}>
-                  <Badge label={e.aula ? 'Aula' : ROTULO_TIPO[e.tipo]} variant={corDe(e).badge} size="sm" />
-                  {!e.aula && nomeDisciplina(e.disciplinaId) ? <Badge label={nomeDisciplina(e.disciplinaId)!} variant="gray" size="sm" /> : null}
+                  <Badge label={ROTULO_TIPO[chaveDe(e)]} variant={corDe(e).badge} size="sm" />
+                  {!ehFixo(e) && nomeDisciplina(e.disciplinaId) ? <Badge label={nomeDisciplina(e.disciplinaId)!} variant="gray" size="sm" /> : null}
                 </View>
               </TouchableOpacity>
             </Card>

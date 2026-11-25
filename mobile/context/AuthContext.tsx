@@ -8,7 +8,8 @@ interface AuthContextType {
   session: StudyFlowSession | null;
   isLoading: boolean;
   signIn: (identifier: string, pass: string) => Promise<{ error?: string }>;
-  signUp: (nome: string, username: string, email: string, pass: string) => Promise<{ error?: string }>;
+  /** `confirmarEmail`: a conta foi criada mas só vale depois do link enviado por e-mail. */
+  signUp: (nome: string, username: string, email: string, pass: string) => Promise<{ error?: string; confirmarEmail?: boolean }>;
   signOut: () => Promise<void>;
   updateSession: (partial: Partial<StudyFlowSession>) => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -150,6 +151,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password: pass,
       });
 
+      if (error?.code === 'email_not_confirmed') {
+        return { error: 'Confirme seu e-mail antes de entrar: abra o link que enviamos no cadastro.' };
+      }
+
       if (error) {
         return { error: 'Email e/ou senha informados são inválidos.' };
       }
@@ -167,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: 'Email e/ou senha informados são inválidos.' };
   };
 
-  const signUp = async (nome: string, username: string, email: string, pass: string): Promise<{ error?: string }> => {
+  const signUp = async (nome: string, username: string, email: string, pass: string): Promise<{ error?: string; confirmarEmail?: boolean }> => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
@@ -185,12 +190,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: error.message || 'Erro ao realizar cadastro.' };
       }
 
+      // Com a confirmação de e-mail ligada no Supabase, e-mail já cadastrado volta sem identidades.
+      if (data.user && data.user.identities?.length === 0) {
+        return { error: 'Este e-mail já está cadastrado.' };
+      }
+
+      // Confirmação de e-mail ligada: sem sessão até o usuário abrir o link do e-mail.
+      if (data.user && !data.session) {
+        return { confirmarEmail: true };
+      }
+
       if (data.user) {
         const userSession: StudyFlowSession = {
           email: email.trim(),
           nome: nome.trim(),
           username: username.trim(),
-          pendingEmailConfirmation: !data.session,
           bg_color: '#29645e',
           nivel_atual: 1,
           xp: 0,
