@@ -30,11 +30,16 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { usePrivacidade } from '../../lib/privacidade';
+import { useIrPara } from '../../lib/navigation';
+import { SITE_URL } from '../../constants/site';
 
 const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 
 export default function EstatisticasScreen() {
   const { session } = useAuth();
+  const { privacidade } = usePrivacidade();
+  const irPara = useIrPara();
 
   const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
@@ -153,6 +158,13 @@ export default function EstatisticasScreen() {
   }, [session]);
 
   const handleShareProgress = async () => {
+    if (!privacidade.permitir_compartilhar) {
+      Alert.alert('Compartilhamento desativado', 'O compartilhamento está desativado nas suas configurações de privacidade.', [
+        { text: 'Fechar', style: 'cancel' },
+        { text: 'Abrir configurações', onPress: () => irPara('/configuracoes') },
+      ]);
+      return;
+    }
     try {
       const periodoAtual = period === 'semana' ? weekHours : period === 'mes' ? monthHours : totalHours;
       const rotulo = period === 'semana' ? 'Semana' : period === 'mes' ? 'Mês' : 'Acumulado';
@@ -162,6 +174,8 @@ export default function EstatisticasScreen() {
           periodo: rotulo,
           horas: periodoAtual,
           topico: topSubject,
+          ocultarHoras: !privacidade.mostrar_horas,
+          link: SITE_URL,
         }),
       });
     } catch (error: any) {

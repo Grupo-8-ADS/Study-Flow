@@ -17,9 +17,8 @@ import {
   LogOut,
   AlertTriangle,
   ChevronRight,
-  User,
 } from 'lucide-react-native';
-import { COLORS } from '@studyflow/shared';
+import { COLORS, FAQ, OPCOES_PRIVACIDADE, TERMOS_SERVICO, TEXTO_EXCLUIR_CONTA, contaDemonstracao } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
@@ -29,6 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { cancelarLembretes } from '../lib/notifications';
+import { usePrivacidade } from '../lib/privacidade';
 
 export default function ConfiguracoesScreen() {
   const router = useRouter();
@@ -70,9 +70,8 @@ export default function ConfiguracoesScreen() {
     }
   };
 
-  const [publicProfile, setPublicProfile] = useState(true);
-  const [showHours, setShowHours] = useState(true);
-  const [showAchievements, setShowAchievements] = useState(true);
+  const { privacidade, alternar: alternarPrivacidade, erro: erroPrivacidade } = usePrivacidade();
+  const demonstracao = contaDemonstracao(session);
 
   // Modals
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
@@ -81,21 +80,6 @@ export default function ConfiguracoesScreen() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
-
-  const faqs = [
-    {
-      q: 'Como funciona o temporizador Pomodoro?',
-      a: 'O método Pomodoro divide o estudo em blocos de foco de 25 minutos com pausas curtas de 5 minutos. Após 4 ciclos, recomenda-se uma pausa longa de 15 minutos.',
-    },
-    {
-      q: 'Minhas anotações são salvas por matéria?',
-      a: 'Sim! Toda vez que você altera a disciplina ativa no timer e digita notas, o texto é vinculado exclusivamente àquela matéria e ao seu usuário.',
-    },
-    {
-      q: 'Como subo de nível e ganho XP?',
-      a: 'Você ganha XP a cada sessão de foco concluída, tarefas entregues no prazo e mantendo sua sequência diária ativa.',
-    },
-  ];
 
   const handleLogout = () => {
     Alert.alert('Sair', 'Deseja encerrar a sessão no aplicativo?', [
@@ -113,9 +97,10 @@ export default function ConfiguracoesScreen() {
 
   const handleDeleteAccount = () => {
     setDeleteModalVisible(false);
+    if (demonstracao) return;
     Alert.alert(
       'Excluir conta',
-      'Tem certeza? Sua conta e todos os seus dados serão removidos permanentemente.',
+      TEXTO_EXCLUIR_CONTA.confirmacao,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -151,15 +136,17 @@ export default function ConfiguracoesScreen() {
         {/* Account Info Card */}
         <Card style={styles.accountCard}>
           <Avatar
-            name={session?.nome || 'Carlos'}
+            name={session?.nome || 'Usuário'}
             size={56}
-            level={session?.nivel_atual || 12}
+            level={session?.nivel_atual || 1}
+            moldura={session?.moldura}
             showLevel
+            uri={session?.avatar_url}
           />
           <View style={styles.accountInfo}>
-            <Text style={styles.accountName}>{session?.nome || 'Carlos Eduardo'}</Text>
-            <Text style={styles.accountUsername}>@{session?.username || 'carlosedu'}</Text>
-            <Text style={styles.accountEmail}>{session?.email || 'admin@studyflow.com'}</Text>
+            <Text style={styles.accountName}>{session?.nome}</Text>
+            <Text style={styles.accountUsername}>@{session?.username}</Text>
+            <Text style={styles.accountEmail}>{session?.email}</Text>
           </View>
         </Card>
 
@@ -259,13 +246,15 @@ export default function ConfiguracoesScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             style={[styles.dangerRow, { borderTopWidth: 1, borderTopColor: '#fee2e2', marginTop: 10, paddingTop: 10 }]}
+            disabled={demonstracao}
             onPress={() => setDeleteModalVisible(true)}
           >
-            <AlertTriangle size={18} color={COLORS.danger} />
-            <Text style={[styles.dangerOptionText, { color: COLORS.danger, fontWeight: '700' }]}>
-              Excluir Minha Conta
+            <AlertTriangle size={18} color={demonstracao ? COLORS.textMuted : COLORS.danger} />
+            <Text style={[styles.dangerOptionText, { color: demonstracao ? COLORS.textMuted : COLORS.danger, fontWeight: '700' }]}>
+              {demonstracao ? 'Conta demo protegida' : 'Excluir Minha Conta'}
             </Text>
           </TouchableOpacity>
+          <Text style={styles.dangerHint}>{demonstracao ? TEXTO_EXCLUIR_CONTA.avisoDemonstracao : TEXTO_EXCLUIR_CONTA.aviso}</Text>
         </Card>
       </ScrollView>
 
@@ -277,44 +266,23 @@ export default function ConfiguracoesScreen() {
         variant="bottom"
       >
         <View style={{ paddingVertical: 6 }}>
-          <View style={styles.modalToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalToggleTitle}>Perfil Público</Text>
-              <Text style={styles.modalToggleDesc}>Permitir que outros alunos vejam seu nível</Text>
+          <Text style={styles.modalToggleDesc}>As preferências são salvas na sua conta e valem no site e no app.</Text>
+          {erroPrivacidade ? <Text style={styles.privacyError}>{erroPrivacidade}</Text> : null}
+          {OPCOES_PRIVACIDADE.map((opcao) => (
+            <View key={opcao.chave} style={styles.modalToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalToggleTitle}>{opcao.titulo}</Text>
+                <Text style={styles.modalToggleDesc}>{opcao.descricao}</Text>
+              </View>
+              <Switch
+                accessibilityLabel={opcao.titulo}
+                value={privacidade[opcao.chave]}
+                onValueChange={() => void alternarPrivacidade(opcao.chave)}
+                trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
+                thumbColor={privacidade[opcao.chave] ? COLORS.primary : '#f4f3f4'}
+              />
             </View>
-            <Switch
-              value={publicProfile}
-              onValueChange={setPublicProfile}
-              trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
-              thumbColor={publicProfile ? COLORS.primary : '#f4f3f4'}
-            />
-          </View>
-
-          <View style={styles.modalToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalToggleTitle}>Exibir Horas de Foco</Text>
-              <Text style={styles.modalToggleDesc}>Mostrar resumo de horas no seu perfil</Text>
-            </View>
-            <Switch
-              value={showHours}
-              onValueChange={setShowHours}
-              trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
-              thumbColor={showHours ? COLORS.primary : '#f4f3f4'}
-            />
-          </View>
-
-          <View style={styles.modalToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalToggleTitle}>Exibir Conquistas</Text>
-              <Text style={styles.modalToggleDesc}>Compartilhar troféus desbloqueados</Text>
-            </View>
-            <Switch
-              value={showAchievements}
-              onValueChange={setShowAchievements}
-              trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}
-              thumbColor={showAchievements ? COLORS.primary : '#f4f3f4'}
-            />
-          </View>
+          ))}
 
           <Button
             title="Concluir"
@@ -332,16 +300,16 @@ export default function ConfiguracoesScreen() {
         variant="bottom"
       >
         <View style={{ paddingVertical: 6 }}>
-          {faqs.map((faq, index) => (
+          {FAQ.map((faq, index) => (
             <TouchableOpacity
               key={index}
               activeOpacity={0.8}
               style={styles.faqItem}
               onPress={() => setExpandedFaq(expandedFaq === index ? null : index)}
             >
-              <Text style={styles.faqQuestion}>{faq.q}</Text>
+              <Text style={styles.faqQuestion}>{faq.pergunta}</Text>
               {expandedFaq === index && (
-                <Text style={styles.faqAnswer}>{faq.a}</Text>
+                <Text style={styles.faqAnswer}>{faq.resposta}</Text>
               )}
             </TouchableOpacity>
           ))}
@@ -356,15 +324,13 @@ export default function ConfiguracoesScreen() {
         variant="bottom"
       >
         <ScrollView style={{ maxHeight: 300, paddingVertical: 8 }}>
-          <Text style={styles.termsText}>
-            O Study Flow é uma ferramenta desenvolvida com finalidade acadêmica e de produtividade pessoal.
-            {'\n\n'}
-            1. Os dados armazenados são de uso individual do estudante.
-            {'\n\n'}
-            2. O aplicativo não compartilha dados confidenciais com terceiros.
-            {'\n\n'}
-            3. O usuário é responsável pela veracidade dos dados cadastrados e conformidade de sua rotina de estudos.
-          </Text>
+          <Text style={styles.termsText}>{TERMOS_SERVICO.introducao}</Text>
+          {TERMOS_SERVICO.secoes.map((secao) => (
+            <View key={secao.titulo} style={{ marginTop: 12 }}>
+              <Text style={[styles.termsText, { fontWeight: '700' }]}>{secao.titulo}</Text>
+              <Text style={styles.termsText}>{secao.texto}</Text>
+            </View>
+          ))}
         </ScrollView>
         <Button
           title="Entendido"
@@ -385,9 +351,7 @@ export default function ConfiguracoesScreen() {
           <Text style={styles.deleteModalTitle}>
             Tem certeza que deseja excluir a sua conta?
           </Text>
-          <Text style={styles.deleteModalSubtitle}>
-            Esta ação é definitiva. Todo o seu histórico de foco, disciplinas cadastradas e conquistas serão apagados permanentemente.
-          </Text>
+          <Text style={styles.deleteModalSubtitle}>{TEXTO_EXCLUIR_CONTA.aviso}</Text>
 
           <View style={styles.deleteModalButtons}>
             <Button
@@ -505,6 +469,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textSecondary,
+  },
+  privacyError: {
+    backgroundColor: COLORS.dangerLight,
+    color: COLORS.danger,
+    padding: 10,
+    borderRadius: 10,
+    marginVertical: 8,
+    fontSize: 13,
+  },
+  dangerHint: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 8,
   },
   modalToggleRow: {
     flexDirection: 'row',
