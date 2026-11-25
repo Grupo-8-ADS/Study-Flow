@@ -1,39 +1,44 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { POST, GET } from "@/app/api/disciplinas/route";
 import { createRouteServer } from "../setup/http-adapter";
 import { DisciplinaOutputSchema } from "@studyflow/shared";
 import { DisciplinaBuilder } from "@studyflow/shared/testing/disciplina.builder";
 import { getTestPool, cleanTables, seedProfile, closeTestPool } from "../setup/db-helper";
+import { tokenDeTeste } from "../setup/repositorio-disciplinas-pg";
+
+// A rota real, com o banco real: só o acesso ao Supabase (Auth + PostgREST) é trocado pelo
+// adaptador que fala direto com o Postgres de integração, rodando como o usuário (RLS ligado).
+vi.mock("@/lib/repositorio-disciplinas", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/repositorio-disciplinas")>();
+  const { acessoPeloPostgres } = await import("../setup/repositorio-disciplinas-pg");
+  return { ...real, acessoDoToken: acessoPeloPostgres(real) };
+});
+
+function pool() {
+  const p = getTestPool();
+  if (!p) throw new Error("DATABASE_URL não definido: banco de integração indisponível");
+  return p;
+}
 
 describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
   const server = createRouteServer({ POST, GET });
   const testUserId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-  const validAuthHeader = `Bearer ${testUserId}`;
+  const validAuthHeader = `Bearer ${tokenDeTeste(testUserId)}`;
 
   beforeAll(async () => {
-    // Se o banco estiver ativo (Testcontainers ou DATABASE_URL)
-    const pool = getTestPool();
-    if (pool) {
-      await cleanTables(["disciplinas", "profiles", "auth.users"]);
-      await seedProfile(testUserId, "Carlos Estudante", "carlos@unifei.edu.br");
-    }
+    await cleanTables(["disciplinas", "profiles", "auth.users"]);
+    await seedProfile(testUserId, "Carlos Estudante", "carlos@unifei.edu.br");
   });
 
   afterAll(async () => {
-    const pool = getTestPool();
-    if (pool) {
-      await cleanTables(["disciplinas", "profiles", "auth.users"]);
-    }
+    await cleanTables(["disciplinas", "profiles", "auth.users"]);
     await closeTestPool();
   });
 
   beforeEach(async () => {
-    const pool = getTestPool();
-    if (pool) {
-      // Limpeza de disciplinas entre testes para isolamento de estado (Slide 11)
-      await pool.query("DELETE FROM public.disciplinas WHERE user_id = $1;", [testUserId]);
-    }
+    // Limpeza de disciplinas entre testes para isolamento de estado (Slide 11)
+    await pool().query("DELETE FROM public.disciplinas WHERE user_id = $1;", [testUserId]);
   });
 
   describe("Dimensão 1 & 2: Status Code Semântico e Cabeçalhos de Resposta", () => {
@@ -81,7 +86,7 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
       expect(response.body.code).toBe("VALIDATION_ERROR");
       expect(response.body.issues).toBeInstanceOf(Array);
       // Confirma que o erro decorre de campos não reconhecidos pelo .strict()
-      const unrecognizedKeys = response.body.issues.map((i: any) => i.code);
+      const unrecognizedKeys = response.body.issues.map((i: { code: string }) => i.code);
       expect(unrecognizedKeys).toContain("unrecognized_keys");
     });
 
@@ -124,23 +129,20 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
       expect(validatedBody.success).toBe(true);
       expect(response.body.nome).toBe("Arquitetura e Desenho de Software III");
       expect(response.body.professor).toBe("Prof. Dr. Wendell Diniz");
+      expect(response.body.data_inicio).toBe("2026-02-10");
+      expect(response.body.data_fim).toBe("2026-07-15");
+      expect(response.body.anotacoes).toEqual({ cargaHoraria: 64, sala: "Lab 2" });
       expect(response.body.user_id).toBe(testUserId);
       expect(response.body.id).toBeDefined();
 
       // Dimensão 4: Efeito Colateral Físico (A Essência da Integração - Slide 14)
-      const pool = getTestPool();
-      if (pool) {
-        const dbResult = await pool.query(
-          "SELECT * FROM public.disciplinas WHERE id = $1;",
-          [response.body.id]
-        );
+      const dbResult = await pool().query("SELECT * FROM public.disciplinas WHERE id = $1;", [response.body.id]);
 
-        expect(dbResult.rows.length).toBe(1);
-        const row = dbResult.rows[0];
-        expect(row.nome).toBe("Arquitetura e Desenho de Software III");
-        expect(row.professor).toBe("Prof. Dr. Wendell Diniz");
-        expect(row.user_id).toBe(testUserId);
-      }
+      expect(dbResult.rows.length).toBe(1);
+      const row = dbResult.rows[0];
+      expect(row.nome).toBe("Arquitetura e Desenho de Software III");
+      expect(row.professor).toBe("Prof. Dr. Wendell Diniz");
+      expect(row.user_id).toBe(testUserId);
     });
 
     it("deve retornar 409 Conflict ao tentar cadastrar disciplina com o mesmo nome para o mesmo usuário", async () => {
@@ -156,19 +158,31 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
 
       expect(firstResponse.status).toBe(201);
 
-      // Segunda inserção com o mesmo nome: 409 Conflict
+      // Segunda inserção com o mesmo nome (em outra caixa): 409 Conflict
       const secondResponse = await request(server)
         .post("/api/disciplinas")
         .set("Authorization", validAuthHeader)
-        .send(payload);
+        .send({ ...payload, nome: "ENGENHARIA DE SOFTWARE" });
 
       expect(secondResponse.status).toBe(409);
       expect(secondResponse.body.code).toBe("DUPLICATE_RESOURCE");
     });
 
+    it("não trata * ou % do nome como curinga ao checar duplicidade", async () => {
+      await request(server).post("/api/disciplinas").set("Authorization", validAuthHeader).send(DisciplinaBuilder.aDisciplina().withNome("Cálculo I").build());
+
+      for (const nome of ["C*", "C%"]) {
+        const response = await request(server)
+          .post("/api/disciplinas")
+          .set("Authorization", validAuthHeader)
+          .send(DisciplinaBuilder.aDisciplina().withNome(nome).build());
+        expect(response.status).toBe(201);
+      }
+    });
+
     it("deve listar disciplinas persistidas com 200 OK via GET", async () => {
-      const disciplina1 = DisciplinaBuilder.aDisciplina().withNome("Algoritmos").build();
-      const disciplina2 = DisciplinaBuilder.aDisciplina().withNome("Banco de Dados").build();
+      const disciplina1 = DisciplinaBuilder.aDisciplina().withNome("Banco de Dados").build();
+      const disciplina2 = DisciplinaBuilder.aDisciplina().withNome("Algoritmos").build();
 
       await request(server).post("/api/disciplinas").set("Authorization", validAuthHeader).send(disciplina1);
       await request(server).post("/api/disciplinas").set("Authorization", validAuthHeader).send(disciplina2);
@@ -183,6 +197,7 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
       expect(response.body.length).toBe(2);
       expect(response.body[0].nome).toBe("Algoritmos");
       expect(response.body[1].nome).toBe("Banco de Dados");
+      expect(response.body.every((d: unknown) => DisciplinaOutputSchema.safeParse(d).success)).toBe(true);
     });
   });
 
@@ -194,10 +209,10 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
       expect(response.body.code).toBe("AUTH_INVALID");
     });
 
-    it("deve retornar 401 quando o token não for um UUID válido (ex.: 'Bearer abc')", async () => {
+    it("deve retornar 401 quando o token não pertencer a nenhum usuário", async () => {
       const response = await request(server)
         .get("/api/disciplinas")
-        .set("Authorization", "Bearer abc");
+        .set("Authorization", `Bearer ${tokenDeTeste("c3d4e5f6-a7b8-4901-8cde-f12345678902")}`);
 
       expect(response.status).toBe(401);
       expect(response.body.code).toBe("AUTH_INVALID");
@@ -216,23 +231,42 @@ describe("Testes de Integração de Rotas HTTP: /api/disciplinas", () => {
 
     it("deve listar somente as disciplinas do usuário autenticado (isolamento entre usuários)", async () => {
       const outroUserId = "b2c3d4e5-f6a7-4890-8bcd-ef1234567891";
+      const outroAuthHeader = `Bearer ${tokenDeTeste(outroUserId)}`;
       await seedProfile(outroUserId, "Outra Pessoa", "outra@unifei.edu.br");
       const minha = DisciplinaBuilder.aDisciplina().withNome("Minha Disciplina").build();
       const alheia = DisciplinaBuilder.aDisciplina().withNome("Disciplina Alheia").build();
 
       try {
         await request(server).post("/api/disciplinas").set("Authorization", validAuthHeader).send(minha);
-        await request(server).post("/api/disciplinas").set("Authorization", `Bearer ${outroUserId}`).send(alheia);
+        await request(server).post("/api/disciplinas").set("Authorization", outroAuthHeader).send(alheia);
 
         const responseMinha = await request(server).get("/api/disciplinas").set("Authorization", validAuthHeader);
-        const responseOutro = await request(server).get("/api/disciplinas").set("Authorization", `Bearer ${outroUserId}`);
+        const responseOutro = await request(server).get("/api/disciplinas").set("Authorization", outroAuthHeader);
 
         expect(responseMinha.status).toBe(200);
         expect(responseMinha.body.map((d: { nome: string }) => d.nome)).toEqual(["Minha Disciplina"]);
         expect(responseOutro.body.map((d: { nome: string }) => d.nome)).toEqual(["Disciplina Alheia"]);
         expect(responseOutro.body[0].user_id).toBe(outroUserId);
       } finally {
-        await getTestPool()!.query("DELETE FROM auth.users WHERE id = $1;", [outroUserId]);
+        await pool().query("DELETE FROM auth.users WHERE id = $1;", [outroUserId]);
+      }
+    });
+
+    it("o RLS barra um usuário de gravar disciplina em nome de outro, mesmo indo direto ao banco", async () => {
+      const outroUserId = "d4e5f6a7-b8c9-4012-8def-123456789013";
+      await seedProfile(outroUserId, "Terceira Pessoa", "terceira@unifei.edu.br");
+      const conexao = await pool().connect();
+      try {
+        await conexao.query("begin");
+        await conexao.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: testUserId, role: "authenticated" })]);
+        await conexao.query("set local role authenticated");
+        await expect(
+          conexao.query("insert into public.disciplinas (user_id, nome) values ($1, 'Invasão')", [outroUserId]),
+        ).rejects.toMatchObject({ code: "42501" });
+      } finally {
+        await conexao.query("rollback");
+        conexao.release();
+        await pool().query("DELETE FROM auth.users WHERE id = $1;", [outroUserId]);
       }
     });
   });
