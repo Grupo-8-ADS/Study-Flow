@@ -416,8 +416,6 @@ export function criarAgenda(cfg: AgendaConfig) {
   type Estado = EstadoAgenda;
 
   let estado: Estado = { dados: null, userId: null, local: false, carregando: false, erro: null };
-  /** false quando a tabela de rotinas não existe no servidor. */
-  let rotinasNoServidor = true;
   let emAndamento: Promise<void> | null = null;
   /** Incrementa ao limpar o cache: cargas iniciadas antes disso são descartadas. */
   let geracao = 0;
@@ -530,9 +528,7 @@ export function criarAgenda(cfg: AgendaConfig) {
         [disc, itens, rot] = await consultar();
       }
       if (!valida()) return;
-      if (disc.error || itens.error) throw disc.error ?? itens.error;
-      // Sem a tabela de rotinas (migration ainda não aplicada) o resto da agenda continua funcionando.
-      rotinasNoServidor = !rot.error;
+      if (disc.error || itens.error || rot.error) throw disc.error ?? itens.error ?? rot.error;
 
       definir({
         userId,
@@ -542,7 +538,7 @@ export function criarAgenda(cfg: AgendaConfig) {
           compromissos: ordenarCompromissos(
             (itens.data as LinhaItem[]).map(deLinha).filter((c): c is Compromisso => c !== null),
           ),
-          rotinas: rot.error ? [] : ((rot.data ?? []) as LinhaRotina[]).map(deRotina),
+          rotinas: ((rot.data ?? []) as LinhaRotina[]).map(deRotina),
         },
       });
     } catch {
@@ -706,7 +702,6 @@ export function criarAgenda(cfg: AgendaConfig) {
       atualizarLocal((d) => ({ ...d, rotinas: id ? d.rotinas.map((r) => (r.id === id ? nova : r)) : [...d.rotinas, nova] }));
       return null;
     }
-    if (!rotinasNoServidor) return "As atividades da rotina ainda não estão disponíveis no servidor. Tente mais tarde.";
 
     const payload = { nome: limpo.nome, horarios: limpo.horarios, notas: limpo.notas || null, user_id: estado.userId };
     if (id) {
