@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { getTestPool, cleanTables, closeTestPool } from "../setup/db-helper";
 
 /**
- * Regras de negócio implementadas no banco (supabase/migrations/20261103_regras_negocio.sql):
+ * Regras de negócio implementadas no banco (supabase/migrations/20261103000100_regras_negocio.sql e seguintes):
  * RF003, RNF001, RF004, RF010 e RF012. As chamadas "como usuário" rodam com o papel
  * authenticated e o JWT simulado, exatamente como o PostgREST do Supabase faz.
  */
@@ -69,7 +69,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
   }
 
   beforeAll(async () => {
-    // Os privilégios padrão do Supabase vêm do stub do setup global (antes do schema.sql).
+    // Os privilégios padrão do Supabase vêm do stub do setup global (antes das migrations).
     await cleanTables(tabelas);
   });
 
@@ -181,20 +181,28 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       expect(await conquistasDe(id)).toContain("Mestre do Tempo");
     });
 
-    it("deve conceder a conquista de disciplina só com sessão na disciplina do critério", async () => {
-      const id = await criarUsuario("historia@unifei.edu.br");
+    it("deve conceder 'Especialista em {disciplina}' com 5 sessões na disciplina mais estudada, guardando qual foi", async () => {
+      const id = await criarUsuario("especialista@unifei.edu.br");
       const { rows } = await pool().query(
-        "INSERT INTO public.disciplinas (user_id, nome) VALUES ($1, 'Geografia'), ($1, 'história') RETURNING id, nome",
+        "INSERT INTO public.disciplinas (user_id, nome) VALUES ($1, 'Geografia'), ($1, 'História') RETURNING id, nome",
         [id]
       );
       const geografia = rows.find((r) => r.nome === "Geografia").id;
-      const historia = rows.find((r) => r.nome === "história").id;
+      const historia = rows.find((r) => r.nome === "História").id;
+
+      for (let i = 0; i < 4; i++) await concluirSessao(id, 25, 0, geografia);
+      await concluirSessao(id, 25, 0, historia);
+      // 5 sessões no total, mas só 4 na disciplina mais estudada.
+      expect(await conquistasDe(id)).not.toContain("Especialista em {disciplina}");
 
       await concluirSessao(id, 25, 0, geografia);
-      expect(await conquistasDe(id)).not.toContain("Especialista em História I");
-      await concluirSessao(id, 25, 0, historia);
 
-      expect(await conquistasDe(id)).toContain("Especialista em História I");
+      const { rows: ganhas } = await pool().query(
+        `SELECT uc.detalhe FROM public.user_conquistas uc JOIN public.conquistas c ON c.id = uc.conquista_id
+          WHERE uc.user_id = $1 AND c.nome = 'Especialista em {disciplina}'`,
+        [id]
+      );
+      expect(ganhas).toEqual([{ detalhe: "Geografia" }]);
     });
 
     it("não deve dar XP para sessão ainda ativa, e deve dar ao mudar o status para concluída", async () => {

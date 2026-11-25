@@ -1,14 +1,17 @@
-import fs from "node:fs";
 import net from "node:net";
-import path from "node:path";
 import { Client } from "pg";
+import { montarBanco } from "./migrations";
 
 /**
  * Setup global dos testes de integração.
  *
+ * O banco é montado aplicando `supabase/migrations` em ordem, exatamente o que vai para
+ * produção (ver ./migrations.ts).
+ *
  * Motores de banco (variável INTEGRATION_DB):
  *  - "testcontainers": PostgreSQL 16 real em contêiner Docker (padrão no CI).
- *  - "pglite": PostgreSQL real em processo (WASM) exposto via socket TCP local.
+ *  - "pglite": PostgreSQL real em processo (WASM) exposto via socket TCP local; é o que roda
+ *    em máquinas sem Docker. Os testes são os mesmos nos dois motores.
  *  - não definido: tenta Testcontainers e, se o Docker não estiver disponível, cai para PGlite.
  *
  * Se nenhum motor funcionar, lança erro (nunca executa contra o Supabase de produção).
@@ -18,58 +21,11 @@ type Engine = "testcontainers" | "pglite";
 
 let stopEngine: (() => Promise<void>) | null = null;
 
-/** Stub mínimo do schema `auth` do Supabase, necessário para aplicar supabase/schema.sql. */
-const AUTH_STUB_SQL = `
-  create extension if not exists "pgcrypto";
-  create schema if not exists auth;
-
-  create table if not exists auth.users (
-    id uuid primary key default gen_random_uuid(),
-    email text unique,
-    raw_user_meta_data jsonb not null default '{}'::jsonb,
-    created_at timestamptz default now()
-  );
-
-  do $$ begin
-    if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
-    if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
-  end $$;
-
-  -- Privilégios padrão do Supabase: o RLS isola os dados e o schema.sql restringe o que precisar.
-  grant usage on schema public to anon, authenticated;
-  alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
-
-  create or replace function auth.uid() returns uuid
-  language sql stable as $$
-    select coalesce(
-      nullif(current_setting('request.jwt.claim.sub', true), ''),
-      (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
-    )::uuid
-  $$;
-
-  create or replace function auth.role() returns text
-  language sql stable as $$
-    select coalesce(
-      nullif(current_setting('request.jwt.claim.role', true), ''),
-      (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')
-    )::text
-  $$;
-`;
-
-function readSchemaSql(): string {
-  const schemaPath = path.resolve(__dirname, "../../../supabase/schema.sql");
-  if (!fs.existsSync(schemaPath)) {
-    throw new Error(`schema.sql não encontrado em ${schemaPath}`);
-  }
-  return fs.readFileSync(schemaPath, "utf-8");
-}
-
-async function applySchemaViaClient(connectionUri: string) {
+async function montarBancoViaClient(connectionUri: string) {
   const client = new Client({ connectionString: connectionUri });
   await client.connect();
   try {
-    await client.query(AUTH_STUB_SQL);
-    await client.query(readSchemaSql());
+    await montarBanco((sql) => client.query(sql));
   } finally {
     await client.end();
   }
@@ -105,7 +61,7 @@ async function startTestcontainers(): Promise<string> {
     await container.stop();
   };
   const uri = container.getConnectionUri();
-  await applySchemaViaClient(uri);
+  await montarBancoViaClient(uri);
   return uri;
 }
 
@@ -129,9 +85,8 @@ async function startPglite(): Promise<string> {
     await db.close();
   };
 
-  // Schema aplicado direto na instância (mais rápido e sem depender de conexão TCP)
-  await db.exec(AUTH_STUB_SQL);
-  await db.exec(readSchemaSql());
+  // Migrations aplicadas direto na instância (mais rápido e sem depender da conexão TCP).
+  await montarBanco((sql) => db.exec(sql));
 
   return `postgres://postgres:postgres@127.0.0.1:${port}/postgres?sslmode=disable`;
 }
