@@ -80,7 +80,10 @@ de migrations:
 
 Em **Authentication**:
 
-- **Sign In / Providers > Email > Confirm email**: ligado.
+- **Sign In / Providers > Email > Confirm email**: ligado. Antes de ligar, ajuste os testes E2E:
+  hoje o cadastro pela tela e o `criarUsuarioViaApi` contam com a confirmação automática (o
+  usuário entra direto no dashboard). Com a confirmação ligada, os usuários de teste precisam
+  ser criados já confirmados pela API admin (`/auth/v1/admin/users`, com a chave secreta).
 - **Rate Limits > IP Address Forwarding**: ligado. Assim o limite de tentativas de login conta o
   IP de quem está entrando (enviado pela rota no header `Sb-Forwarded-For`), e não o IP do
   servidor da Vercel.

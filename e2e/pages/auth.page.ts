@@ -15,7 +15,7 @@ export class LoginPage {
   }
 
   mensagemErro() {
-    return this.page.getByText("Email/usuário ou senha informados são inválidos.");
+    return this.page.getByText("E-mail/usuário ou senha inválidos.");
   }
 }
 
