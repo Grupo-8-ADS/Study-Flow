@@ -5,21 +5,16 @@ import Link from "next/link";
 import { CalendarClock, Clock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { dataStr, horaStr, intervaloDe, salvarBlocosCronograma, useAgenda } from "@/lib/agenda";
 import {
-  dataStr,
-  hojeStr,
-  horaStr,
-  intervaloDe,
-  ocupadosNoPeriodo,
-  proximasEntregas,
-  proximasProvas,
-  salvarBlocosCronograma,
-  useAgenda,
-} from "@/lib/agenda";
-import {
-  CronogramaError,
+  COMO_O_CRONOGRAMA_E_MONTADO,
+  DURACAO_BLOCO_MIN,
   NOMES_DIAS_SEMANA,
-  gerarCronograma,
+  limiteDiarioInicial,
+  planejarCronograma,
+  resumoCronograma,
+  rotuloResumoCronograma,
+  textoDescartados,
   validarRotina,
   type BlocoEstudo,
   type RotinaSlot,
@@ -30,9 +25,6 @@ import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { RotinaFixaCard } from "@/components/rotina-fixa";
-
-/** Limite diário sugerido quando o perfil não tem meta de horas por dia. */
-const LIMITE_DIARIO_PADRAO_H = 4;
 
 type Slot = RotinaSlot & { id: string };
 
@@ -65,9 +57,9 @@ export default function RotinaPage() {
   const [errosRotina, setErrosRotina] = useState<string[]>([]);
 
   const [semanas, setSemanas] = useState("2");
-  const [duracao, setDuracao] = useState("50");
+  const [duracao, setDuracao] = useState(String(DURACAO_BLOCO_MIN.padrao));
   /** Máximo de horas de estudo por dia ("" = sem limite). Começa pela meta diária do perfil. */
-  const [limiteHoras, setLimiteHoras] = useState(String(LIMITE_DIARIO_PADRAO_H));
+  const [limiteHoras, setLimiteHoras] = useState(String(limiteDiarioInicial(null)));
   const [erroGeracao, setErroGeracao] = useState<{ mensagem: string; linkDisciplinas?: boolean } | null>(null);
   const [previa, setPrevia] = useState<{ blocos: BlocoEstudo[]; duracaoMin: number; descartados: number } | null>(null);
   const [substituir, setSubstituir] = useState(true);
@@ -102,8 +94,7 @@ export default function RotinaPage() {
           supabase.from("rotinas_semanais").select("id,dia_semana,hora_inicio,hora_fim").eq("user_id", userId).order("dia_semana", { ascending: true }),
           supabase.from("profiles").select("horas_diarias").eq("id", userId).maybeSingle(),
         ]);
-        const meta = Number(perfilRes.data?.horas_diarias);
-        if (Number.isFinite(meta) && meta > 0) setLimiteHoras(String(meta));
+        setLimiteHoras(String(limiteDiarioInicial(perfilRes.data?.horas_diarias)));
 
         if (rotinaRes.error) {
           // Tabela ainda inexistente no banco (ou falha de rede): usa o armazenamento local.
@@ -129,7 +120,6 @@ export default function RotinaPage() {
     void carregar();
   }, []);
 
-  const agora = new Date();
   const blocosFuturos = useMemo(
     () => (agenda?.compromissos ?? []).filter((c) => c.origem === "cronograma" && !c.concluido && intervaloDe(c).inicio >= new Date()),
     [agenda],
@@ -213,65 +203,16 @@ export default function RotinaPage() {
     setErroGeracao(null);
     if (!agenda) return;
 
-    if (agenda.disciplinas.length === 0) {
-      setErroGeracao({ mensagem: "Cadastre ao menos uma disciplina antes de gerar o cronograma.", linkDisciplinas: true });
-      return;
-    }
-    if (slots.length === 0) {
-      setErroGeracao({ mensagem: "Cadastre sua rotina semanal antes de gerar o cronograma." });
-      return;
-    }
-
-    const duracaoMin = Number(duracao);
-    if (!Number.isInteger(duracaoMin) || duracaoMin < 10 || duracaoMin > 240) {
-      setErroGeracao({ mensagem: "Informe uma duração de bloco entre 10 e 240 minutos." });
-      return;
-    }
-
-    const horasPorDia = limiteHoras.trim() === "" ? null : Number(limiteHoras.replace(",", "."));
-    if (horasPorDia !== null && (!Number.isFinite(horasPorDia) || horasPorDia <= 0 || horasPorDia > 24)) {
-      setErroGeracao({ mensagem: "Informe um máximo de horas por dia entre 0,5 e 24, ou deixe em branco para não limitar." });
-      return;
-    }
-    const limiteDiarioMin = horasPorDia === null ? undefined : Math.round(horasPorDia * 60);
-
-    const nSemanas = Number(semanas);
-    const hoje = hojeStr();
-    const fimPeriodo = dataStr(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + nSemanas * 7 - 1));
-    const provas = proximasProvas(agenda.compromissos);
-    const entregas = proximasEntregas(agenda.compromissos);
-
-    // O que já ocupa o tempo: aulas, atividades da rotina, compromissos com horário e
-    // (se não for substituir) blocos já salvos.
-    const ocupados = ocupadosNoPeriodo(agenda, hoje, fimPeriodo, substituir);
-
-    try {
-      const params = {
-        disciplinas: agenda.disciplinas.map((d) => ({
-          id: d.id,
-          nome: d.nome,
-          peso: d.prioridade,
-          proximaProva: provas.get(d.id) ?? null,
-          proximaEntrega: entregas.get(d.id) ?? null,
-        })),
-        rotina: slots,
-        dataInicio: agora,
-        semanas: nSemanas,
-        duracaoBlocoMin: duracaoMin,
-      };
-      // Quantos horários seriam usados sem conflitos, para avisar quantos foram pulados.
-      const todos = (() => {
-        try {
-          return gerarCronograma({ ...params, limiteDiarioMin }).length;
-        } catch {
-          return 0;
-        }
-      })();
-      const blocos = gerarCronograma({ ...params, ocupados, naoAntesDe: agora, limiteDiarioMin });
-      setPrevia({ blocos, duracaoMin, descartados: Math.max(0, todos - blocos.length) });
-    } catch (e) {
-      setErroGeracao({ mensagem: e instanceof CronogramaError ? e.message : "Não foi possível gerar o cronograma." });
-    }
+    const resultado = planejarCronograma({
+      agenda,
+      rotina: slots,
+      semanas: Number(semanas),
+      duracaoBloco: duracao,
+      limiteHoras,
+      substituir,
+    });
+    if (resultado.ok) setPrevia(resultado);
+    else setErroGeracao({ mensagem: resultado.mensagem, linkDisciplinas: resultado.semDisciplinas });
   };
 
   const confirmar = async () => {
@@ -290,11 +231,7 @@ export default function RotinaPage() {
     setPrevia(null);
   };
 
-  const resumo = previa
-    ? Array.from(
-        previa.blocos.reduce((mapa, b) => mapa.set(b.disciplina_nome, (mapa.get(b.disciplina_nome) ?? 0) + 1), new Map<string, number>()),
-      )
-    : [];
+  const resumo = previa ? resumoCronograma(previa.blocos) : [];
 
   if (!email || carregandoAgenda) return <PageLoading label="Carregando rotina..." />;
 
@@ -384,7 +321,7 @@ export default function RotinaPage() {
               </Select>
             </Field>
             <Field htmlFor="cron-duracao" label="Duração do bloco (min)">
-              <Input id="cron-duracao" max={240} min={10} onChange={(e) => setDuracao(e.target.value)} type="number" value={duracao} />
+              <Input id="cron-duracao" max={DURACAO_BLOCO_MIN.maximo} min={DURACAO_BLOCO_MIN.minimo} onChange={(e) => setDuracao(e.target.value)} type="number" value={duracao} />
             </Field>
             <Field htmlFor="cron-limite" label="Máximo por dia (h)">
               <Input id="cron-limite" inputMode="decimal" max={24} min={0.5} onChange={(e) => setLimiteHoras(e.target.value)} placeholder="Sem limite" step={0.5} type="number" value={limiteHoras} />
@@ -413,12 +350,9 @@ export default function RotinaPage() {
           <details className="mt-4 rounded-control border border-line bg-ink-50/60 px-3.5 py-2.5 text-sm text-ink-600">
             <summary className="cursor-pointer font-medium text-ink-800">Como o cronograma é montado</summary>
             <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Cada horário livre é dividido em blocos do tamanho escolhido, com 10 min de pausa entre eles.</li>
-              <li>Horários que batem com aulas, atividades da rotina, compromissos com horário ou que já passaram são pulados.</li>
-              <li>Cada dia recebe no máximo as horas de estudo escolhidas (começa pela sua meta diária do perfil); o resto do estudo vai para os dias seguintes.</li>
-              <li>As disciplinas se revezam de forma proporcional à prioridade (alta = 3×, média = 2×, baixa = 1×), sem repetir a mesma em sequência.</li>
-              <li>Disciplinas com prova dentro do período ganham o dobro de peso até o dia da prova, e as com entrega de trabalho ganham 1,5× até a entrega.</li>
-              <li>Não há sorteio: as mesmas entradas geram sempre o mesmo cronograma.</li>
+              {COMO_O_CRONOGRAMA_E_MONTADO.map((regra) => (
+                <li key={regra}>{regra}</li>
+              ))}
             </ul>
           </details>
 
@@ -449,19 +383,14 @@ export default function RotinaPage() {
             <div className="mt-6 border-t border-line pt-6">
               <h3 className="text-base font-semibold text-ink-900">Prévia do cronograma</h3>
               {previa.descartados > 0 ? (
-                <p className="mt-1 text-sm text-ink-500">
-                  {previa.descartados} {previa.descartados === 1 ? "horário foi pulado" : "horários foram pulados"} por já ter passado ou bater com aula, rotina ou outro compromisso.
-                </p>
+                <p className="mt-1 text-sm text-ink-500">{textoDescartados(previa.descartados)}</p>
               ) : null}
               <ul className="mt-3 flex flex-wrap gap-2" data-testid="resumo-disciplinas">
-                {resumo.map(([nome, qtd]) => {
-                  const horas = ((qtd * previa.duracaoMin) / 60).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
-                  return (
-                    <li className="rounded-full bg-primary-100 px-3 py-1 text-xs font-medium text-primary-800" key={nome}>
-                      {nome}: {qtd} {qtd === 1 ? "bloco" : "blocos"} · {horas} h
-                    </li>
-                  );
-                })}
+                {resumo.map(([nome, qtd]) => (
+                  <li className="rounded-full bg-primary-100 px-3 py-1 text-xs font-medium text-primary-800" key={nome}>
+                    {rotuloResumoCronograma(nome, qtd, previa.duracaoMin)}
+                  </li>
+                ))}
               </ul>
               <div className="mt-4 max-h-96 overflow-auto rounded-control border border-line">
                 <table className="w-full text-left text-sm">

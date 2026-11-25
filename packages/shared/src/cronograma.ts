@@ -111,3 +111,25 @@ export function planejarCronograma(p: PlanejarCronogramaParams): ResultadoCronog
 export function resumoCronograma(blocos: BlocoEstudo[]): Array<[string, number]> {
   return Array.from(blocos.reduce((mapa, b) => mapa.set(b.disciplina_nome, (mapa.get(b.disciplina_nome) ?? 0) + 1), new Map<string, number>()));
 }
+
+/** Explicação de "Como o cronograma é montado" (mesmas regras de `gerarCronograma`). */
+export const COMO_O_CRONOGRAMA_E_MONTADO: readonly string[] = [
+  'Cada horário livre é dividido em blocos do tamanho escolhido, com 10 min de pausa entre eles.',
+  'Horários que batem com aulas, atividades da rotina, compromissos com horário ou que já passaram são pulados.',
+  'Cada dia recebe no máximo as horas de estudo escolhidas (começa pela sua meta diária do perfil); o resto do estudo vai para os dias seguintes.',
+  'As disciplinas se revezam de forma proporcional à prioridade (alta = 3×, média = 2×, baixa = 1×), sem repetir a mesma em sequência.',
+  'Disciplinas com prova dentro do período ganham o dobro de peso até o dia da prova, e as com entrega de trabalho ganham 1,5× até a entrega.',
+  'Não há sorteio: as mesmas entradas geram sempre o mesmo cronograma.',
+];
+
+/** Aviso da prévia sobre os horários pulados ("" quando nenhum foi). */
+export function textoDescartados(descartados: number): string {
+  if (descartados <= 0) return '';
+  return `${descartados} ${descartados === 1 ? 'horário foi pulado' : 'horários foram pulados'} por já ter passado ou bater com aula, rotina ou outro compromisso.`;
+}
+
+/** Rótulo de uma disciplina no resumo da prévia, ex.: "Cálculo: 3 blocos · 2,5 h". */
+export function rotuloResumoCronograma(nome: string, blocos: number, duracaoMin: number): string {
+  const horas = ((blocos * duracaoMin) / 60).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  return `${nome}: ${blocos} ${blocos === 1 ? 'bloco' : 'blocos'} · ${horas} h`;
+}

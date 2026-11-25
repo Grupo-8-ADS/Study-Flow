@@ -8,7 +8,7 @@
 
 import { useState, type FormEvent } from "react";
 import { BookOpen, Clock, Pencil, Plus, Trash2 } from "lucide-react";
-import { conflitosDeHorario, validarHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
+import { conflitosAoSalvar, resumoHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
   excluirDisciplina,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/agenda";
 import { ESTILO_TIPO } from "@/lib/agenda-estilos";
 import { CompromissoEditor } from "@/components/compromisso-editor";
-import { ConflitosHorarioModal, HorariosSemanaisField, resumoHorarios } from "@/components/horarios-semanais";
+import { ConflitosHorarioModal, HorariosSemanaisField } from "@/components/horarios-semanais";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -287,13 +287,11 @@ function DisciplinaEditor({ inicial, onClose, outros }: { inicial: { id?: string
 
   const enviar = async (event: FormEvent) => {
     event.preventDefault();
-    // Horário inválido é erro do formulário; só depois procura conflito com o que já existe.
-    if (!validarHorarios(form.aulas, "aula")) {
-      const achados = conflitosDeHorario({ id: inicial.id, nome: form.nome.trim(), tipo: "disciplina", horarios: form.aulas }, outros);
-      if (achados.length > 0) {
-        setConflitos(achados);
-        return;
-      }
+    // Campo inválido é erro do formulário (mostrado pelo salvar); só depois procura conflito.
+    const achados = conflitosAoSalvar({ id: inicial.id, nome: form.nome, tipo: "disciplina", horarios: form.aulas }, outros, "aula");
+    if (achados.length > 0) {
+      setConflitos(achados);
+      return;
     }
     await salvar();
   };

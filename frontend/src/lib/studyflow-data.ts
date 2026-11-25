@@ -18,32 +18,6 @@ export type StudyDistribution = {
 
 const distributionColors = ["bg-[#29645e]", "bg-[#348e83]", "bg-[#e5a93b]", "bg-red-400", "bg-gray-300"];
 
-/** Preferências de privacidade (Configurações › Privacidade), guardadas neste navegador. */
-export type PrivacySettings = {
-  allowSharing: boolean;
-  publicProfile: boolean;
-  showAchievements: boolean;
-  showStudyHours: boolean;
-};
-
-export const defaultPrivacy: PrivacySettings = {
-  allowSharing: true,
-  publicProfile: false,
-  showAchievements: true,
-  showStudyHours: true,
-};
-
-export const chavePrivacidade = (email: string) => `studyflow_privacy_${email}`;
-
-export function lerPrivacidade(email: string): PrivacySettings {
-  try {
-    const salvo = localStorage.getItem(chavePrivacidade(email));
-    return salvo ? { ...defaultPrivacy, ...(JSON.parse(salvo) as Partial<PrivacySettings>) } : defaultPrivacy;
-  } catch {
-    return defaultPrivacy;
-  }
-}
-
 export function getStoredSession(): StudyFlowSession | null {
   const storedSession = localStorage.getItem("studyflow_session");
   if (!storedSession) return null;

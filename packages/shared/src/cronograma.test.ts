@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { AgendaDados } from './agenda';
-import { LIMITE_DIARIO_PADRAO_H, lerLimiteDiario, limiteDiarioInicial, planejarCronograma, resumoCronograma } from './cronograma';
+import {
+  COMO_O_CRONOGRAMA_E_MONTADO,
+  LIMITE_DIARIO_PADRAO_H,
+  lerLimiteDiario,
+  limiteDiarioInicial,
+  planejarCronograma,
+  resumoCronograma,
+  rotuloResumoCronograma,
+  textoDescartados,
+} from './cronograma';
 
 /** Segunda-feira, 07:00 local. */
 const AGORA = new Date(2026, 10, 23, 7, 0);
@@ -101,5 +110,19 @@ describe('resumoCronograma', () => {
       ['A', 2],
       ['B', 1],
     ]);
+  });
+});
+
+describe('textos da prévia', () => {
+  it('textoDescartados no singular, plural e vazio', () => {
+    expect(textoDescartados(0)).toBe('');
+    expect(textoDescartados(1)).toMatch(/^1 horário foi pulado/);
+    expect(textoDescartados(4)).toMatch(/^4 horários foram pulados/);
+  });
+
+  it('rotuloResumoCronograma com horas em pt-BR', () => {
+    expect(rotuloResumoCronograma('Cálculo', 3, 50)).toBe('Cálculo: 3 blocos · 2,5 h');
+    expect(rotuloResumoCronograma('Física', 1, 60)).toBe('Física: 1 bloco · 1 h');
+    expect(COMO_O_CRONOGRAMA_E_MONTADO.length).toBeGreaterThan(0);
   });
 });

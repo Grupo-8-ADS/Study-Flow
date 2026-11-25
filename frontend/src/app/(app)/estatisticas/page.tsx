@@ -12,8 +12,8 @@ import {
   getCurrentSupabaseUserId,
   getLocalStudyMinutes,
   getStoredSession,
-  lerPrivacidade,
 } from "@/lib/studyflow-data";
+import { carregarPrivacidadeUsuario } from "@/lib/privacidade";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -21,6 +21,8 @@ import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import {
+  PRIVACIDADE_PADRAO,
+  type Privacidade,
   dataLocalISO,
   gerarRelatorioPeriodo,
   intervaloDoPeriodo,
@@ -127,6 +129,7 @@ export default function EstatisticasPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
   const [compartilhando, setCompartilhando] = useState(false);
+  const [privacidade, setPrivacidade] = useState<Privacidade>({ ...PRIVACIDADE_PADRAO });
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
   const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
@@ -150,6 +153,7 @@ export default function EstatisticasPage() {
       try {
         setUser(parsedSession);
         const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+        setPrivacidade(await carregarPrivacidadeUsuario(currentUserId, parsedSession.email));
 
         if (!currentUserId) {
           const localMinutes = getLocalStudyMinutes(parsedSession.email);
@@ -263,7 +267,7 @@ export default function EstatisticasPage() {
       nivel: level.nivel,
       periodo: current.label,
       topico: current.chart.length > 0 ? current.topic : null,
-      ocultarHoras: user ? !lerPrivacidade(user.email).showStudyHours : false,
+      ocultarHoras: !privacidade.mostrar_horas,
       link: typeof window !== "undefined" ? window.location.origin : undefined,
     });
   };
@@ -326,7 +330,7 @@ export default function EstatisticasPage() {
       {compartilhando ? (
         <CompartilharProgressoModal
           onClose={() => setCompartilhando(false)}
-          permitido={lerPrivacidade(user.email).allowSharing}
+          permitido={privacidade.permitir_compartilhar}
           texto={textoParaCompartilhar()}
         />
       ) : null}
