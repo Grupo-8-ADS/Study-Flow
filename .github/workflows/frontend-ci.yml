@@ -80,18 +80,18 @@ jobs:
       run: npm ci
 
     - name: Typecheck
-      run: npx tsc --noEmit -p mobile
+      run: npm run typecheck:mobile
 
     - name: Lint
-      run: npm --workspace=mobile run lint
+      run: npm run lint:mobile
 
+    # Bloqueia por dependência incompatível com o SDK instalado (versões do package-lock,
+    # sem depender da API da Expo); patch novo publicado só gera aviso. Ver mobile/scripts/doctor.mjs.
     - name: Expo Doctor
-      working-directory: mobile
-      run: npx expo-doctor
+      run: npm run doctor:mobile
 
     - name: Bundle Android (smoke)
-      working-directory: mobile
-      run: npx expo export --platform android --output-dir dist
+      run: npm run export:mobile
       env:
         EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
