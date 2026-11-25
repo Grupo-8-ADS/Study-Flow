@@ -10,9 +10,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Input } from '../components/ui/Input';
 import { supabase } from '../lib/supabase';
-
-/** Site do Study Flow: as rotas /api/gmail/* (OAuth e sincronização) rodam lá. */
-const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL ?? 'https://study-flow-ten-olive.vercel.app';
+import { chamarApi } from '../lib/api';
 
 const LOCALIZACOES: { valor: LocalizacaoPalavra; rotulo: string }[] = [
   { valor: 'assunto', rotulo: 'Assunto' },
@@ -33,17 +31,6 @@ const RETORNO_OAUTH: Record<string, Aviso> = {
 
 type StatusGmail = { email_sinc: string | null; data_ultima_sinc: string | null } | null;
 type Palavra = { id: string; palavra: string; localizacao: LocalizacaoPalavra };
-
-/** Chama as rotas do site com o token da sessão do Supabase (as rotas aceitam Bearer). */
-async function chamarApi(caminho: string, metodo: 'POST' | 'DELETE') {
-  const { data } = await supabase.auth.getSession();
-  const resposta = await fetch(`${SITE_URL}${caminho}`, {
-    method: metodo,
-    headers: { Authorization: `Bearer ${data.session?.access_token ?? ''}` },
-  });
-  const corpo = resposta.status === 204 ? {} : await resposta.json().catch(() => ({}));
-  return { ok: resposta.ok, corpo: corpo as Record<string, unknown> };
-}
 
 /** Integração com o Gmail (RF012) no app: conectar, sincronizar, desconectar e palavras-chave. */
 export default function IntegracoesScreen() {

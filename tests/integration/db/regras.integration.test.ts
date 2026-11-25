@@ -83,15 +83,36 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
   });
 
   describe("RF003 - get_email_by_username", () => {
-    it("deve devolver o e-mail ignorando maiúsculas e espaços, mesmo para o papel anon", async () => {
+    /** Executa `fn` com o papel do servidor (chave secreta), em transação desfeita no fim. */
+    async function comoServidor<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+      const client = await pool().connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SET LOCAL ROLE service_role");
+        return await fn(client);
+      } finally {
+        await client.query("ROLLBACK").catch(() => undefined);
+        client.release();
+      }
+    }
+
+    it("o servidor (service_role) descobre o e-mail ignorando maiúsculas e espaços", async () => {
       await criarUsuario("ana@unifei.edu.br", "Ana_Souza");
 
-      const email = await comoUsuario(null, async (c) => {
+      const email = await comoServidor(async (c) => {
         const { rows } = await c.query("SELECT public.get_email_by_username($1) AS email", ["  ana_souza "]);
         return rows[0].email;
       });
 
       expect(email).toBe("ana@unifei.edu.br");
+    });
+
+    it("anon e authenticated não podem chamar: o e-mail de alguém não vaza pelo username", async () => {
+      const id = await criarUsuario("dani@unifei.edu.br", "dani");
+      const chamar = (c: PoolClient) => c.query("SELECT public.get_email_by_username('dani')");
+
+      await expect(comoUsuario(null, chamar)).rejects.toMatchObject({ code: "42501" });
+      await expect(comoUsuario(id, chamar)).rejects.toMatchObject({ code: "42501" });
     });
 
     it("deve recusar username que só difere por maiúsculas de um já existente (23505)", async () => {

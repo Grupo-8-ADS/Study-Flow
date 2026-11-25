@@ -11,7 +11,8 @@ import type { NextPage } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useEffect, useSyncExternalStore } from "react";
-import { reenviarConfirmacao, supabase } from "@/lib/supabase";
+import { ehEmail } from "@studyflow/shared";
+import { entrarNoStudyFlow, reenviarConfirmacao, supabase } from "@/lib/supabase";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
@@ -62,42 +63,6 @@ const Login: NextPage = () => {
   const [naoConfirmado, setNaoConfirmado] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
 
-  const resolveLoginEmail = useCallback(async () => {
-    const login = email.trim();
-
-    if (login.includes("@")) {
-      return login;
-    }
-
-    try {
-      const { data } = await supabase.rpc("get_email_by_username", {
-        login_username: login,
-      });
-
-      if (typeof data === "string" && data.includes("@")) {
-        return data;
-      }
-    } catch {
-      // Fallback
-    }
-
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email")
-        .ilike("username", login)
-        .maybeSingle();
-
-      if (profile?.email) {
-        return profile.email;
-      }
-    } catch {
-      // Fallback
-    }
-
-    return login;
-  }, [email]);
-
   /**
    * Efeito de inicialização para verificar se o usuário já possui uma sessão ativa.
    * Caso sim, redireciona-o automaticamente para o Início.
@@ -135,42 +100,34 @@ const Login: NextPage = () => {
     setIsLoading(true);
 
     try {
-      const loginEmail = await resolveLoginEmail();
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: senha,
-      });
-
-      if (signInError?.code === "email_not_confirmed") {
-        setNaoConfirmado(loginEmail);
-        setError("Confirme seu e-mail antes de entrar: abra o link que enviamos no cadastro.");
+      const resultado = await entrarNoStudyFlow(email, senha);
+      if (!resultado.ok) {
+        setError(resultado.mensagem);
+        // Reenviar o link só quando a pessoa digitou o e-mail: pelo username ele não é revelado.
+        if (resultado.codigo === "email_nao_confirmado" && ehEmail(email)) setNaoConfirmado(email.trim());
         return;
       }
 
-      if (signInError || !data.user) {
-        setError("Email/usuário ou senha informados são inválidos.");
-        return;
-      }
-
+      const { user } = resultado;
       const { data: profile } = await supabase
         .from("profiles")
         .select("nome, username, email")
-        .eq("id", data.user.id)
+        .eq("id", user.id)
         .maybeSingle();
 
       const sessionUser: SessionUser = {
         nome:
           profile?.nome ||
-          data.user.user_metadata?.full_name ||
-          data.user.user_metadata?.nome ||
-          data.user.email?.split("@")[0] ||
+          user.user_metadata?.full_name ||
+          user.user_metadata?.nome ||
+          user.email?.split("@")[0] ||
           "Usuário Study Flow",
         username:
           profile?.username ||
-          data.user.user_metadata?.username ||
-          data.user.email?.split("@")[0] ||
+          user.user_metadata?.username ||
+          user.email?.split("@")[0] ||
           "usuario",
-        email: profile?.email || data.user.email || loginEmail,
+        email: profile?.email || user.email || email.trim(),
       };
 
       localStorage.setItem(
@@ -190,7 +147,7 @@ const Login: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [email, senha, rememberMe, resolveLoginEmail, router]);
+  }, [email, senha, rememberMe, router]);
 
   return (
     <AuthLayout title="Entrar">
