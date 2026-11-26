@@ -11,11 +11,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@expo-google-fonts/roboto": "^0.2.3",
-    "@expo-google-fonts/rubik-bubbles": "^0.2.3",
+    "@expo-google-fonts/roboto": "^0.4.3",
+    "@expo-google-fonts/rubik-bubbles": "^0.4.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@studyflow/shared": "*",
-    "@supabase/supabase-js": "^2.110.2",
+    "@supabase/supabase-js": "^2.119.2",
     "expo": "~57.0.34",
     "expo-asset": "~57.0.22",
     "expo-constants": "~57.0.25",
@@ -32,7 +32,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "expo-web-browser": "~57.0.3",
-    "lucide-react-native": "^1.67.0",
+    "lucide-react-native": "^1.77.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -45,12 +45,12 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.2",
+    "@babel/core": "^7.29.13",
     "@types/react": "~19.2.4",
     "babel-preset-expo": "~57.0.7",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.0",
-    "semver": "^7.8.5",
+    "semver": "^7.8.6",
     "typescript": "~6.0.3"
   },
   "private": true
