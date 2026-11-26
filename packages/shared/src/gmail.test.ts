@@ -3,7 +3,10 @@ import {
   montarConsultaGmail,
   classificarTipo,
   extrairData,
-  extrairEventoDoEmail,
+  extrairEventosDoEmail,
+  limparCorpo,
+  textoDeHtml,
+  LOCALIZACOES_PALAVRA,
   type EmailResumo,
   type PalavraChave,
 } from './gmail';
@@ -239,7 +242,53 @@ describe('extrairData', () => {
   });
 });
 
-describe('extrairEventoDoEmail', () => {
+
+describe('extrairData: formatos novos e falsos positivos', () => {
+  it('extrairData_quandoNumeroDecimalOuIntervalo_deveIgnorar', () => {
+    expect(extrairData('Sua nota foi 7.5', REF)).toBeNull();
+    expect(extrairData('Leiam os capítulos 3-5', REF)).toBeNull();
+    expect(extrairData('versão 1.2.3', REF)).toBeNull();
+  });
+
+  it('extrairData_quandoDataPorExtenso_deveLerDiaEMes', () => {
+    expect(extrairData('Prova em 5 de dezembro', REF)).toBe('2026-12-05');
+    expect(extrairData('Entrega 1º de dez. de 2027', REF)).toBe('2027-12-01');
+    expect(extrairData('dia 10 de março', REF)).toBe('2027-03-10');
+  });
+
+  it('extrairData_quandoAbreviacaoSemDe_deveNaoConfundirComMes', () => {
+    expect(extrairData('Faça o 2 set de exercícios', REF)).toBeNull();
+  });
+
+  it('extrairData_quandoSoDataRelativa_deveRetornarNull', () => {
+    expect(extrairData('Prova amanhã', REF)).toBeNull();
+  });
+});
+
+describe('textoDeHtml e limparCorpo', () => {
+  it('textoDeHtml_deveTirarTagsEstilosEEntidadesMantendoQuebras', () => {
+    const html = '<style>p{color:red}</style><p>Prova&nbsp;dia <b>05/12</b></p><div>Sala 3 &amp; 4</div>';
+    expect(textoDeHtml(html).split('\n').map((l) => l.trim())).toEqual(['Prova dia  05/12', 'Sala 3 & 4', '']);
+  });
+
+  it('limparCorpo_deveCortarAMensagemCitadaDaResposta', () => {
+    const corpo = 'A P2 será 10/12.\n\nEm qui., 20 de nov. de 2026 às 10:00, Fulano <f@x.com>\nescreveu:\n> P1 dia 01/12';
+    expect(limparCorpo(corpo)).toBe('A P2 será 10/12.');
+  });
+
+  it('limparCorpo_deveTirarLinhasCitadasComMaiorQue', () => {
+    expect(limparCorpo('Oi\r\n> antigo 01/12\r\nTchau')).toBe('Oi\nTchau');
+  });
+});
+
+describe('LOCALIZACOES_PALAVRA', () => {
+  it('deveOferecerEmQualquerLugarPrimeiroLigadoABuscaSemPrefixo', () => {
+    expect(LOCALIZACOES_PALAVRA[0]).toEqual({ valor: 'corpo', rotulo: 'Em qualquer lugar' });
+    expect(montarConsultaGmail([kw('prova', LOCALIZACOES_PALAVRA[0].valor)])).toBe('prova');
+  });
+});
+
+describe('extrairEventosDoEmail', () => {
   const email = (parcial: Partial<EmailResumo> = {}): EmailResumo => ({
     id: 'abc123',
     assunto: 'Prova de Física dia 15/12',
@@ -248,61 +297,109 @@ describe('extrairEventoDoEmail', () => {
     ...parcial,
   });
 
-  it('extrairEventoDoEmail_quandoEmailValido_deveMontarEvento', () => {
-    expect(extrairEventoDoEmail(email())).toEqual({
-      nome: 'Prova de Física dia 15/12',
-      tipo: 'prova',
-      data: '2026-12-15',
-      origemExternaId: 'gmail:abc123',
-    });
+  it('quandoUmaData_deveMontarUmEventoComONomeDoAssunto', () => {
+    expect(extrairEventosDoEmail(email())).toEqual([
+      { nome: 'Prova de Física dia 15/12', tipo: 'prova', data: '2026-12-15', origemExternaId: 'gmail:abc123' },
+    ]);
   });
 
-  it('extrairEventoDoEmail_quandoIdVazio_deveRetornarNull', () => {
-    expect(extrairEventoDoEmail(email({ id: '' }))).toBeNull();
+  it('quandoIdOuAssuntoVazio_deveRetornarVazio', () => {
+    expect(extrairEventosDoEmail(email({ id: '' }))).toEqual([]);
+    expect(extrairEventosDoEmail(email({ assunto: ' \n\t ' }))).toEqual([]);
   });
 
-  it('extrairEventoDoEmail_quandoAssuntoVazioOuSoEspacos_deveRetornarNull', () => {
-    expect(extrairEventoDoEmail(email({ assunto: '' }))).toBeNull();
-    expect(extrairEventoDoEmail(email({ assunto: ' \n\t ' }))).toBeNull();
+  it('quandoAssuntoComEspacosEQuebras_deveNormalizarNome', () => {
+    expect(extrairEventosDoEmail(email({ assunto: '  Prova   de\nFísica 15/12 ' }))[0].nome).toBe('Prova de Física 15/12');
   });
 
-  it('extrairEventoDoEmail_quandoAssuntoComEspacosEQuebras_deveNormalizarNome', () => {
-    const r = extrairEventoDoEmail(email({ assunto: '  Prova   de\nFísica  ' }));
-    expect(r?.nome).toBe('Prova de Física');
-  });
-
-  it('extrairEventoDoEmail_quandoAssuntoCom120Caracteres_deveManterIntegro', () => {
-    const assunto = 'a'.repeat(120);
-    expect(extrairEventoDoEmail(email({ assunto }))?.nome).toBe(assunto);
-  });
-
-  it('extrairEventoDoEmail_quandoAssuntoCom121Caracteres_deveTruncarEmReticencias', () => {
-    const nome = extrairEventoDoEmail(email({ assunto: 'b'.repeat(121) }))?.nome;
+  it('quandoAssuntoLongo_deveTruncarEm120', () => {
+    const nome = extrairEventosDoEmail(email({ assunto: `${'b'.repeat(130)} 15/12` }))[0].nome;
     expect(nome).toBe(`${'b'.repeat(117)}...`);
-    expect(nome).toHaveLength(120);
   });
 
-  it('extrairEventoDoEmail_quandoDataSoNoTrecho_deveExtrairDoTrecho', () => {
-    const r = extrairEventoDoEmail(email({ assunto: 'Aviso importante', trecho: 'Entrega até 10/12' }));
-    expect(r?.data).toBe('2026-12-10');
-    expect(r?.tipo).toBe('entrega');
+  it('quandoSemData_deveRetornarVazio', () => {
+    expect(extrairEventosDoEmail(email({ assunto: 'Reunião de turma' }))).toEqual([]);
   });
 
-  it('extrairEventoDoEmail_quandoTipoSoNoTrecho_deveClassificarPeloTrecho', () => {
-    const r = extrairEventoDoEmail(email({ assunto: 'Aviso', trecho: 'Haverá prova' }));
-    expect(r?.tipo).toBe('prova');
+  it('quandoDataSoNoTrecho_deveUsarOTrecho', () => {
+    const [r] = extrairEventosDoEmail(email({ assunto: 'Aviso importante', trecho: 'Entrega até 10/12' }));
+    expect(r).toMatchObject({ data: '2026-12-10', tipo: 'entrega' });
   });
 
-  it('extrairEventoDoEmail_quandoSemDataETrechoNulo_deveRetornarDataNullETipoAtividade', () => {
-    const r = extrairEventoDoEmail(email({ assunto: 'Reunião de turma', trecho: null }));
-    expect(r?.data).toBeNull();
-    expect(r?.tipo).toBe('atividade');
+  it('quandoCorpoInteiroDisponivel_devePreferirOCorpoAoTrecho', () => {
+    const [r] = extrairEventosDoEmail(
+      email({ assunto: 'Aviso', trecho: 'Pessoal, segue o aviso…', corpo: `${'texto longo. '.repeat(40)}\nA prova será dia 09/12.` }),
+    );
+    expect(r).toMatchObject({ data: '2026-12-09', tipo: 'prova' });
   });
 
-  it('extrairEventoDoEmail_quandoDataSemAno_deveUsarDataDeRecebimentoComoReferencia', () => {
-    const r = extrairEventoDoEmail(email({ assunto: 'Prova 05/03', recebidoEm: new Date(2026, 5, 1) }));
-    expect(r?.data).toBe('2027-03-05');
-    const r2 = extrairEventoDoEmail(email({ assunto: 'Prova 05/03', recebidoEm: new Date(2026, 0, 1) }));
-    expect(r2?.data).toBe('2026-03-05');
+  it('quandoDataSemAno_deveUsarORecebimentoComoReferencia', () => {
+    expect(extrairEventosDoEmail(email({ assunto: 'Prova 05/03', recebidoEm: new Date(2026, 5, 1) }))[0].data).toBe('2027-03-05');
+    expect(extrairEventosDoEmail(email({ assunto: 'Prova 05/03', recebidoEm: new Date(2026, 0, 1) }))[0].data).toBe('2026-03-05');
+  });
+
+  it('quandoVariasProvasNaMesmaFrase_deveCriarUmItemPorData', () => {
+    const r = extrairEventosDoEmail(email({ assunto: 'Calendário de Cálculo', corpo: 'A P1 será dia 05/12 e a P2 dia 19/12.' }));
+    expect(r).toEqual([
+      { nome: 'Calendário de Cálculo — P1', tipo: 'prova', data: '2026-12-05', origemExternaId: 'gmail:abc123:2026-12-05' },
+      { nome: 'Calendário de Cálculo — P2', tipo: 'prova', data: '2026-12-19', origemExternaId: 'gmail:abc123:2026-12-19' },
+    ]);
+  });
+
+  it('quandoPalavraDepoisDaData_deveLigarCadaDataASuaPalavra', () => {
+    const r = extrairEventosDoEmail(email({ assunto: 'Datas', corpo: 'Datas: 05/12 (P1) e 19/12 (P2).' }));
+    expect(r.map((e) => [e.data, e.nome])).toEqual([
+      ['2026-12-05', 'Datas — P1'],
+      ['2026-12-19', 'Datas — P2'],
+    ]);
+  });
+
+  it('quandoTiposDiferentesEmFrasesDiferentes_deveClassificarCadaItem', () => {
+    const r = extrairEventosDoEmail(
+      email({ assunto: 'Redes: avisos', corpo: 'O relatório deve ser enviado até 28/11.\nA prova final será em 12 de dezembro.' }),
+    );
+    expect(r.map((e) => [e.data, e.tipo])).toEqual([
+      ['2026-11-28', 'trabalho'],
+      ['2026-12-12', 'prova'],
+    ]);
+  });
+
+  it('quandoDataDeEnvioEPrazo_deveIgnorarADataSemEvento', () => {
+    const r = extrairEventosDoEmail(email({ assunto: 'Aviso', corpo: 'Enviado em 03/11.\nA prova será dia 05/12.' }));
+    expect(r).toEqual([{ nome: 'Aviso', tipo: 'prova', data: '2026-12-05', origemExternaId: 'gmail:abc123' }]);
+  });
+
+  it('quandoDataExplicitaJaPassou_deveDescartar', () => {
+    const r = extrairEventosDoEmail(email({ assunto: 'Remarcação', corpo: 'A prova de 01/10/2026 foi remarcada para 20/11/2026.' }));
+    expect(r.map((e) => e.data)).toEqual(['2026-11-20']);
+  });
+
+  it('quandoNotaDecimal_deveNaoVirarData', () => {
+    expect(extrairEventosDoEmail(email({ assunto: 'Notas da P1', corpo: 'Sua nota foi 7.5' }))).toEqual([]);
+  });
+
+  it('quandoDataRelativaComEvento_deveCalcularPeloRecebimento', () => {
+    // REF é terça, 03/11/2026.
+    expect(extrairEventosDoEmail(email({ assunto: 'Lembrete', corpo: 'A prova é na sexta-feira.' }))[0].data).toBe('2026-11-06');
+    expect(extrairEventosDoEmail(email({ assunto: 'Lembrete', corpo: 'Entrega amanhã!' }))[0].data).toBe('2026-11-04');
+  });
+
+  it('quandoDataRelativaSemEventoOuComDataExplicita_deveIgnorarARelativa', () => {
+    expect(extrairEventosDoEmail(email({ assunto: 'Oi', corpo: 'Nos vemos na sexta-feira.' }))).toEqual([]);
+    const r = extrairEventosDoEmail(email({ assunto: 'Aviso', corpo: 'A prova é sexta-feira, 13/11.' }));
+    expect(r.map((e) => e.data)).toEqual(['2026-11-13']);
+  });
+
+  it('quandoMesmaDataRepetida_deveCriarSoUmItem', () => {
+    const r = extrairEventosDoEmail(email({ assunto: 'Prova 05/12', corpo: 'Lembrando: prova dia 05/12.' }));
+    expect(r).toHaveLength(1);
+    expect(r[0].origemExternaId).toBe('gmail:abc123');
+  });
+
+  it('quandoRespostaCitaEmailAntigo_deveIgnorarAsDatasCitadas', () => {
+    const r = extrairEventosDoEmail(
+      email({ assunto: 'Re: Prova', corpo: 'Confirmado, P2 dia 10/12.\n\nEm seg., 2 de nov. de 2026, Prof escreveu:\n> P1 dia 01/12' }),
+    );
+    expect(r.map((e) => e.data)).toEqual(['2026-12-10']);
   });
 });

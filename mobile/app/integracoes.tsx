@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacit
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Mail, Plus, RefreshCw, Tags, Trash2 } from 'lucide-react-native';
-import { APP_RETORNO_GMAIL, COLORS, RADII, type LocalizacaoPalavra } from '@studyflow/shared';
+import { APP_RETORNO_GMAIL, COLORS, LOCALIZACOES_PALAVRA as LOCALIZACOES, RADII, type LocalizacaoPalavra } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -11,13 +11,6 @@ import { Badge } from '../components/ui/Badge';
 import { Input } from '../components/ui/Input';
 import { supabase } from '../lib/supabase';
 import { chamarApi } from '../lib/api';
-
-const LOCALIZACOES: { valor: LocalizacaoPalavra; rotulo: string }[] = [
-  { valor: 'assunto', rotulo: 'Assunto' },
-  { valor: 'corpo', rotulo: 'Corpo do e-mail' },
-  { valor: 'remetente', rotulo: 'Remetente' },
-  { valor: 'destinatario', rotulo: 'Destinatário' },
-];
 
 type Aviso = { tipo: 'sucesso' | 'erro'; texto: string } | null;
 
@@ -39,7 +32,7 @@ export default function IntegracoesScreen() {
   const [status, setStatus] = useState<StatusGmail>(null);
   const [palavras, setPalavras] = useState<Palavra[]>([]);
   const [novaPalavra, setNovaPalavra] = useState('');
-  const [localizacao, setLocalizacao] = useState<LocalizacaoPalavra>('assunto');
+  const [localizacao, setLocalizacao] = useState<LocalizacaoPalavra>('corpo');
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<Aviso>(null);
 
@@ -149,8 +142,8 @@ export default function IntegracoesScreen() {
     const palavra = novaPalavra.trim();
     if (!userId || !palavra) return;
     if (palavras.some((p) => p.palavra.toLowerCase() === palavra.toLowerCase() && p.localizacao === localizacao)) {
-      const rotulo = LOCALIZACOES.find((l) => l.valor === localizacao)?.rotulo.toLowerCase();
-      setAviso({ tipo: 'erro', texto: `"${palavra}" já está cadastrada para ${rotulo}.` });
+      const rotulo = LOCALIZACOES.find((l) => l.valor === localizacao)?.rotulo;
+      setAviso({ tipo: 'erro', texto: `"${palavra}" já está cadastrada em "${rotulo}".` });
       return;
     }
     const { error } = await supabase.from('palavras_chave').insert({ user_id: userId, palavra, localizacao });

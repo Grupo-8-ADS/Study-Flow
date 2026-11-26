@@ -7,7 +7,7 @@ export class IntegracoesPage {
     await this.page.goto("/integracoes");
   }
 
-  async adicionarPalavra(palavra: string, ondeProcurar = "Assunto") {
+  async adicionarPalavra(palavra: string, ondeProcurar = "Em qualquer lugar") {
     await this.page.getByLabel("Palavra-chave").fill(palavra);
     await this.page.getByLabel("Onde procurar").selectOption({ label: ondeProcurar });
     await this.page.getByRole("button", { name: "Adicionar palavra-chave" }).click();
