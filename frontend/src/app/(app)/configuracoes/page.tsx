@@ -11,8 +11,10 @@ import {
   PRIVACIDADE_PADRAO,
   TERMOS_SERVICO,
   TEXTO_EXCLUIR_CONTA,
-  alternarPrivacidade,
+  ERRO_CARREGAR_PRIVACIDADE,
+  alternarPrivacidadeLida,
   contaDemonstracao,
+  privacidadeEfetiva,
   type ChavePrivacidade,
   type Privacidade,
 } from "@studyflow/shared";
@@ -43,6 +45,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [privacy, setPrivacy] = useState<Privacidade>({ ...PRIVACIDADE_PADRAO });
+  const [privacyLoaded, setPrivacyLoaded] = useState(false);
   const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
@@ -67,7 +70,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         // Se houver conexão com o Supabase, sincroniza preferência
         const { data: userData } = await supabase.auth.getUser();
         setUserId(userData.user?.id ?? null);
-        setPrivacy(await carregarPrivacidadeUsuario(userData.user?.id ?? null, parsedSession.email));
+        await loadPrivacy(userData.user?.id ?? null, parsedSession.email);
         if (userData.user) {
           const { data: profile } = await supabase
             .from("profiles")
@@ -152,9 +155,18 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     router.push("/");
   };
 
+  /** Lê a privacidade; se falhar, a tela fica em modo privado e não grava nada. */
+  async function loadPrivacy(id: string | null, email: string) {
+    const lida = await carregarPrivacidadeUsuario(id, email);
+    setPrivacy(lida.privacidade);
+    setPrivacyLoaded(lida.carregada);
+  }
+
   const updatePrivacy = async (key: ChavePrivacidade) => {
     const anterior = privacy;
-    const next = alternarPrivacidade(anterior, key);
+    // Sem as preferências reais lidas, não grava (seriam os padrões por cima da escolha do usuário).
+    const next = alternarPrivacidadeLida({ privacidade: anterior, carregada: privacyLoaded }, key);
+    if (!next) return;
     setPrivacy(next);
     setPrivacyError(null);
     const erro = await gravarPrivacidadeUsuario(userId, next);
@@ -309,6 +321,14 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           title="Configurações de privacidade"
           titleId="privacy-title"
         >
+          {!privacyLoaded ? (
+            <Alert className="mb-3" tone="danger">
+              {ERRO_CARREGAR_PRIVACIDADE}{" "}
+              <button className="font-semibold underline underline-offset-2" onClick={() => void loadPrivacy(userId, user.email)} type="button">
+                Tentar de novo
+              </button>
+            </Alert>
+          ) : null}
           {privacyError ? (
             <Alert className="mb-3" tone="danger">
               {privacyError}
@@ -317,7 +337,8 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           <ul className="divide-y divide-line rounded-control border border-line">
             {OPCOES_PRIVACIDADE.map((opcao) => (
               <PrivacyToggle
-                checked={privacy[opcao.chave]}
+                checked={privacidadeEfetiva({ privacidade: privacy, carregada: privacyLoaded })[opcao.chave]}
+                disabled={!privacyLoaded}
                 description={opcao.descricao}
                 key={opcao.chave}
                 label={opcao.titulo}
@@ -428,12 +449,13 @@ function SettingsRow({
   );
 }
 
-function Switch({ checked, labelledBy, onChange }: { checked: boolean; labelledBy?: string; onChange: () => void }) {
+function Switch({ checked, disabled = false, labelledBy, onChange }: { checked: boolean; disabled?: boolean; labelledBy?: string; onChange: () => void }) {
   return (
     <button
       aria-checked={checked}
       aria-labelledby={labelledBy}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? "bg-primary-700" : "bg-ink-300"}`}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-primary-700" : "bg-ink-300"}`}
+      disabled={disabled}
       onClick={onChange}
       role="switch"
       type="button"
@@ -446,11 +468,13 @@ function Switch({ checked, labelledBy, onChange }: { checked: boolean; labelledB
 function PrivacyToggle({
   checked,
   description,
+  disabled = false,
   label,
   onChange,
 }: {
   checked: boolean;
   description: string;
+  disabled?: boolean;
   label: string;
   onChange: () => void;
 }) {
@@ -463,7 +487,7 @@ function PrivacyToggle({
         </span>
         <span className="block text-sm text-ink-500">{description}</span>
       </span>
-      <Switch checked={checked} labelledBy={id} onChange={onChange} />
+      <Switch checked={checked} disabled={disabled} labelledBy={id} onChange={onChange} />
     </li>
   );
 }

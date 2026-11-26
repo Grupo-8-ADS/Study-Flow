@@ -70,7 +70,13 @@ export default function ConfiguracoesScreen() {
     }
   };
 
-  const { privacidade, alternar: alternarPrivacidade, erro: erroPrivacidade } = usePrivacidade();
+  const {
+    privacidade,
+    carregada: privacidadeCarregada,
+    alternar: alternarPrivacidade,
+    erro: erroPrivacidade,
+    recarregar: recarregarPrivacidade,
+  } = usePrivacidade();
   const demonstracao = contaDemonstracao(session);
 
   // Modals
@@ -268,6 +274,9 @@ export default function ConfiguracoesScreen() {
         <View style={{ paddingVertical: 6 }}>
           <Text style={styles.modalToggleDesc}>As preferências são salvas na sua conta e valem no site e no app.</Text>
           {erroPrivacidade ? <Text style={styles.privacyError}>{erroPrivacidade}</Text> : null}
+          {!privacidadeCarregada ? (
+            <Button title="Tentar de novo" variant="outline" size="sm" onPress={() => void recarregarPrivacidade()} style={{ alignSelf: 'flex-start', marginBottom: 8 }} />
+          ) : null}
           {OPCOES_PRIVACIDADE.map((opcao) => (
             <View key={opcao.chave} style={styles.modalToggleRow}>
               <View style={{ flex: 1 }}>
@@ -276,6 +285,7 @@ export default function ConfiguracoesScreen() {
               </View>
               <Switch
                 accessibilityLabel={opcao.titulo}
+                disabled={!privacidadeCarregada}
                 value={privacidade[opcao.chave]}
                 onValueChange={() => void alternarPrivacidade(opcao.chave)}
                 trackColor={{ false: '#e2e8f0', true: COLORS.primaryLight }}

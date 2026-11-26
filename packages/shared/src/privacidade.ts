@@ -113,3 +113,28 @@ export async function salvarPrivacidade(client: SupabaseClient, userId: string, 
   const { error } = await client.from('profiles').update({ privacidade: normalizarPrivacidade(privacidade) }).eq('id', userId);
   return error ? 'Não foi possível salvar a preferência de privacidade. Tente de novo.' : null;
 }
+
+/**
+ * Preferências tratadas como privadas, usadas enquanto as reais não foram lidas do banco
+ * (falha de rede, coluna ainda não criada): nada é compartilhado nem exibido.
+ */
+export const PRIVACIDADE_RESTRITA: Readonly<Privacidade> = Object.freeze({
+  permitir_compartilhar: false,
+  perfil_publico: false,
+  mostrar_horas: false,
+  mostrar_conquistas: false,
+});
+
+export const ERRO_CARREGAR_PRIVACIDADE = 'Não foi possível carregar suas preferências de privacidade. Verifique a conexão e tente de novo.';
+
+/** O que vale na tela: as preferências lidas ou, se a leitura falhou, as restritas. */
+export const privacidadeEfetiva = (perfil: Pick<PrivacidadePerfil, 'privacidade' | 'carregada'>): Privacidade =>
+  perfil.carregada ? perfil.privacidade : { ...PRIVACIDADE_RESTRITA };
+
+/**
+ * Inverte uma opção só se as preferências foram lidas: nunca grava os padrões por cima
+ * das escolhas reais do usuário. Devolve null quando não pode alterar.
+ */
+export function alternarPrivacidadeLida(perfil: Pick<PrivacidadePerfil, 'privacidade' | 'carregada'>, chave: ChavePrivacidade): Privacidade | null {
+  return perfil.carregada ? alternarPrivacidade(perfil.privacidade, chave) : null;
+}

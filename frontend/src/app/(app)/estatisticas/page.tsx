@@ -21,8 +21,10 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   BOM_UTF8,
+  ERRO_CARREGAR_PRIVACIDADE,
   PRIVACIDADE_PADRAO,
   SEM_DISCIPLINA,
+  privacidadeEfetiva,
   formatarDataISO,
   formatarHoras,
   formatarMinutos,
@@ -128,7 +130,17 @@ export default function EstatisticasPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
   const [compartilhando, setCompartilhando] = useState(false);
-  const [privacidade, setPrivacidade] = useState<Privacidade>({ ...PRIVACIDADE_PADRAO });
+  const [privacidadeLida, setPrivacidadeLida] = useState<{ privacidade: Privacidade; carregada: boolean }>({
+    privacidade: { ...PRIVACIDADE_PADRAO },
+    carregada: false,
+  });
+  // Enquanto as preferências não foram lidas, tudo é tratado como privado (sem horas, sem compartilhar).
+  const privacidade = privacidadeEfetiva(privacidadeLida);
+  const recarregarPrivacidade = async () => {
+    const sessao = getStoredSession();
+    if (!sessao) return;
+    setPrivacidadeLida(await carregarPrivacidadeUsuario(await getCurrentSupabaseUserId(sessao), sessao.email));
+  };
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
   const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
@@ -152,7 +164,7 @@ export default function EstatisticasPage() {
       try {
         setUser(parsedSession);
         const currentUserId = await getCurrentSupabaseUserId(parsedSession);
-        setPrivacidade(await carregarPrivacidadeUsuario(currentUserId, parsedSession.email));
+        setPrivacidadeLida(await carregarPrivacidadeUsuario(currentUserId, parsedSession.email));
 
         if (!currentUserId) {
           const localMinutes = getLocalStudyMinutes(parsedSession.email);
@@ -322,6 +334,8 @@ export default function EstatisticasPage() {
       {compartilhando ? (
         <CompartilharProgressoModal
           onClose={() => setCompartilhando(false)}
+          erroPrivacidade={privacidadeLida.carregada ? null : ERRO_CARREGAR_PRIVACIDADE}
+          onTentarDeNovo={() => void recarregarPrivacidade()}
           permitido={privacidade.permitir_compartilhar}
           texto={textoParaCompartilhar()}
         />

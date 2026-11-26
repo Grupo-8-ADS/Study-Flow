@@ -11,6 +11,7 @@ import {
   resolverPrivacidadeLegada,
   salvarPrivacidade,
   type Privacidade,
+  type PrivacidadePerfil,
 } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
 
@@ -34,12 +35,14 @@ function apagarLegada(email: string) {
 }
 
 /**
- * Preferências do usuário logado. Sem usuário no Supabase, valem os padrões.
+ * Preferências do usuário logado, com `carregada: false` quando não deu para lê-las (sem
+ * usuário no Supabase, rede, coluna ausente): a tela então trata tudo como privado e não grava.
  * Se o perfil nunca teve privacidade e há um valor antigo neste navegador, ele é gravado no banco.
  */
-export async function carregarPrivacidadeUsuario(userId: string | null, email: string): Promise<Privacidade> {
-  if (!userId) return { ...PRIVACIDADE_PADRAO };
+export async function carregarPrivacidadeUsuario(userId: string | null, email: string): Promise<Pick<PrivacidadePerfil, "privacidade" | "carregada">> {
+  if (!userId) return { privacidade: { ...PRIVACIDADE_PADRAO }, carregada: false };
   const perfil = await carregarPrivacidade(supabase, userId);
+  if (!perfil.carregada) return { privacidade: perfil.privacidade, carregada: false };
   const legada = lerLegada(email);
   const { privacidade, gravar } = resolverPrivacidadeLegada(perfil, legada);
   if (gravar) {
@@ -48,7 +51,7 @@ export async function carregarPrivacidadeUsuario(userId: string | null, email: s
     // O banco já tem a escolha do usuário: o valor antigo deste navegador não vale mais.
     apagarLegada(email);
   }
-  return privacidade;
+  return { privacidade, carregada: true };
 }
 
 /** Grava as preferências; devolve a mensagem de erro ou null. */

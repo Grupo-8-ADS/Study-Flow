@@ -46,7 +46,20 @@ const temCompartilhamentoNativo = () =>
 
 type Resultado = { tom: "success" | "danger"; mensagem: string } | null;
 
-export function CompartilharProgressoModal({ texto, permitido, onClose }: { texto: string; permitido: boolean; onClose: () => void }) {
+export function CompartilharProgressoModal({
+  texto,
+  permitido,
+  erroPrivacidade = null,
+  onTentarDeNovo,
+  onClose,
+}: {
+  texto: string;
+  permitido: boolean;
+  /** Preferências de privacidade não lidas: o compartilhamento fica bloqueado até ler. */
+  erroPrivacidade?: string | null;
+  onTentarDeNovo?: () => void;
+  onClose: () => void;
+}) {
   const [resultado, setResultado] = useState<Resultado>(null);
   const [copiado, setCopiado] = useState(false);
   const textoUrl = encodeURIComponent(texto);
@@ -114,6 +127,15 @@ export function CompartilharProgressoModal({ texto, permitido, onClose }: { text
               X (Twitter)
             </a>
           </div>
+        </div>
+      ) : erroPrivacidade ? (
+        <div className="grid gap-3 text-sm text-ink-600">
+          <Alert tone="danger">{erroPrivacidade}</Alert>
+          {onTentarDeNovo ? (
+            <Button className="w-fit" onClick={onTentarDeNovo} variant="secondary">
+              Tentar de novo
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="grid gap-3 text-sm text-ink-600">

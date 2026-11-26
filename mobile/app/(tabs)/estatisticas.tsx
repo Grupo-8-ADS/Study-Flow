@@ -24,6 +24,7 @@ import {
   intervaloDoPeriodo,
   gerarRelatorioPeriodo,
   metasDeEstudo,
+  ERRO_CARREGAR_PRIVACIDADE,
   SEM_DISCIPLINA,
   type SessaoRelatorio,
 } from '@studyflow/shared';
@@ -42,7 +43,7 @@ const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 
 export default function EstatisticasScreen() {
   const { session } = useAuth();
-  const { privacidade } = usePrivacidade();
+  const { privacidade, carregada: privacidadeCarregada, recarregar: recarregarPrivacidade } = usePrivacidade();
   const irPara = useIrPara();
 
   const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
@@ -164,6 +165,13 @@ export default function EstatisticasScreen() {
   }, [session]);
 
   const handleShareProgress = async () => {
+    if (!privacidadeCarregada) {
+      Alert.alert('Compartilhar progresso', ERRO_CARREGAR_PRIVACIDADE, [
+        { text: 'Fechar', style: 'cancel' },
+        { text: 'Tentar de novo', onPress: () => void recarregarPrivacidade() },
+      ]);
+      return;
+    }
     if (!privacidade.permitir_compartilhar) {
       Alert.alert('Compartilhamento desativado', 'O compartilhamento está desativado nas suas configurações de privacidade.', [
         { text: 'Fechar', style: 'cancel' },

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   OPCOES_PRIVACIDADE,
   PRIVACIDADE_PADRAO,
+  PRIVACIDADE_RESTRITA,
   alternarPrivacidade,
+  alternarPrivacidadeLida,
+  privacidadeEfetiva,
   carregarPrivacidade,
   normalizarPrivacidade,
   privacidadeLegada,
@@ -97,5 +100,21 @@ describe('carregarPrivacidade / salvarPrivacidade', () => {
 
     const falho = perfilFalso({}, { update: { message: 'x' } });
     expect(await salvarPrivacidade(falho.client, 'u1', PRIVACIDADE_PADRAO)).toMatch(/Não foi possível/);
+  });
+});
+
+describe('privacidade não lida', () => {
+  const naoLida = { privacidade: PRIVACIDADE_PADRAO, carregada: false };
+  const lida = { privacidade: { ...PRIVACIDADE_PADRAO, mostrar_horas: false }, carregada: true };
+
+  it('privacidadeEfetiva_quandoNaoLida_deveTratarComoPrivada', () => {
+    expect(privacidadeEfetiva(naoLida)).toEqual(PRIVACIDADE_RESTRITA);
+    expect(Object.values(PRIVACIDADE_RESTRITA).every((v) => v === false)).toBe(true);
+    expect(privacidadeEfetiva(lida)).toEqual(lida.privacidade);
+  });
+
+  it('alternarPrivacidadeLida_quandoNaoLida_naoDeixaGravar', () => {
+    expect(alternarPrivacidadeLida(naoLida, 'mostrar_horas')).toBeNull();
+    expect(alternarPrivacidadeLida(lida, 'mostrar_horas')).toEqual(PRIVACIDADE_PADRAO);
   });
 });
