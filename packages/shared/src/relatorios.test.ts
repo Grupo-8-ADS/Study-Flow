@@ -571,7 +571,8 @@ describe('relatorioParaCSV - CSV injection', () => {
     expect(primeira(`'+SOMA(1)`)).toBeDefined();
     expect(primeira(`'-2+3`)).toBeDefined();
     expect(primeira(`'@cmd`)).toBeDefined();
-    expect(primeira(`'\tTab`)).toBeDefined();
+    // Espaços e tab nas pontas do nome já são aparados por gerarRelatorioPeriodo.
+    expect(primeira('Tab;')).toBeDefined();
     expect(primeira('Cálculo')).toBeDefined();
     expect(linhas.some((l) => /^[=+\-@\t]/.test(l))).toBe(false);
   });
