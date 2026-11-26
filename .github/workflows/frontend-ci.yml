@@ -127,7 +127,7 @@ jobs:
   e2e:
     runs-on: ubuntu-24.04
     needs: [build, integration]
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v7
@@ -144,27 +144,11 @@ jobs:
     - name: Install Playwright (Chromium)
       run: npx playwright install --with-deps chromium
 
-    - name: Build (produção)
-      run: npm run build:web
-      env:
-        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-
-    - name: Aviso se o fluxo 3 (Gmail) vai ser pulado
-      env:
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      run: |
-        if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-          echo "::warning::Secret SUPABASE_SERVICE_ROLE_KEY ausente; o caminho feliz do fluxo 3 (Gmail) será pulado."
-        fi
-
-    - name: Run E2E Tests (Playwright)
+    # Sobe o Supabase local no Docker com as migrations, gera o build da web apontando para ele e
+    # roda o Playwright (scripts/e2e.mjs). Não usa secrets nem toca na produção, então roda igual
+    # em PRs do Dependabot.
+    - name: Run E2E Tests (Supabase local + Playwright)
       run: npm run test:e2e
-      env:
-        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-        # Fluxo 3 (Gmail): sem este secret o caminho feliz é pulado.
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     - name: Upload Playwright report
       if: ${{ !cancelled() }}

@@ -24,8 +24,8 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:mutation": "stryker run",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:ui": "node scripts/e2e.mjs --ui",
     "release:mobile": "node scripts/release-mobile.mjs"
   },
   "devDependencies": {
@@ -34,6 +34,7 @@
     "@faker-js/faker": "^10.6.0",
     "@playwright/test": "^1.65.1",
     "@stryker-mutator/core": "^10.1.1",
+    "@supabase/supabase-js": "^2.110.2",
     "@testcontainers/postgresql": "^12.2.2",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",

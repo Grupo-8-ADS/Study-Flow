@@ -33,6 +33,18 @@ npx supabase migration list --linked
 npx supabase db push --dry-run
 ```
 
+### Supabase local (testes E2E)
+
+`supabase/config.toml` descreve uma pilha local no Docker, usada pelo `npm run test:e2e`:
+Postgres 17 (a mesma versão da produção), Auth e PostgREST, com as migrations deste diretório.
+Realtime, Storage, Edge Functions e o Studio ficam desligados, porque o app não usa.
+
+- `npx supabase start` sobe a pilha e `npx supabase stop` desliga. O E2E sobe sozinho quando
+  precisa e aplica as migrations novas com `npx supabase migration up --local`.
+- `npx supabase status` mostra as URLs e as chaves locais. São chaves de desenvolvimento,
+  iguais em toda máquina, e não dão acesso à produção.
+- Esse arquivo não muda nada em produção: as configurações de lá ficam no painel (abaixo).
+
 ### Montar um projeto novo
 
 ```powershell
@@ -80,10 +92,11 @@ de migrations:
 
 Em **Authentication**:
 
-- **Sign In / Providers > Email > Confirm email**: ligado. Antes de ligar, ajuste os testes E2E:
-  hoje o cadastro pela tela e o `criarUsuarioViaApi` contam com a confirmação automática (o
-  usuário entra direto no dashboard). Com a confirmação ligada, os usuários de teste precisam
-  ser criados já confirmados pela API admin (`/auth/v1/admin/users`, com a chave secreta).
+- **Sign In / Providers > Email > Confirm email**: ligado, mas só depois de configurar um SMTP
+  próprio (Authentication > Emails > SMTP Settings). O envio embutido do Supabase manda
+  pouquíssimos e-mails por hora, e com a confirmação ligada os cadastros reais passariam a
+  falhar. Os testes E2E não dependem dessa opção: rodam no Supabase local e criam os usuários
+  já confirmados pela API admin.
 - **Rate Limits > IP Address Forwarding**: ligado. Assim o limite de tentativas de login conta o
   IP de quem está entrando (enviado pela rota no header `Sb-Forwarded-For`), e não o IP do
   servidor da Vercel.

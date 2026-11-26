@@ -178,10 +178,18 @@ No app mobile, **Conta › Integrações** usa as mesmas rotas do site: o consen
 | `npm test` | Testes unitários (Vitest) |
 | `npm run test:coverage` | Unitários com cobertura mínima (a CI falha abaixo do piso) |
 | `npm run test:integration` | Integração com PostgreSQL efêmero (schema, RLS, triggers, RPCs) e APIs externas mockadas com MSW |
-| `npm run test:e2e` | E2E com Playwright contra o Supabase real; o Google é substituído por um servidor falso (`e2e/support/google-mock.mjs`) |
+| `npm run test:e2e` | E2E com Playwright contra um Supabase local no Docker; o Google é substituído por um servidor falso (`e2e/support/google-mock.mjs`) |
 | `npm run test:mutation` | Testes de mutação (Stryker) |
+| `npm run verify` | Tudo o que o CI roda, na mesma ordem (é o que o hook de pre-push executa) |
 
-O E2E do fluxo do Gmail só roda com `SUPABASE_SERVICE_ROLE_KEY` definida (no `.env.local` ou nos secrets da CI); sem ela, esse caso é pulado.
+O E2E nunca usa o Supabase de produção. O `npm run test:e2e` (`scripts/e2e.mjs`):
+1. sobe a pilha local do Supabase com `supabase start` (configuração em `supabase/config.toml`) e aplica as migrations;
+2. gera o build da web apontando para ela;
+3. roda o Playwright na porta 3100.
+
+Cada teste cria o próprio usuário pela API admin, já confirmado, e o apaga no fim.
+
+Ele precisa do **Docker Desktop** aberto. Sem Docker, o E2E é pulado com aviso na sua máquina e roda só no CI. A pilha fica de pé entre uma execução e outra, para rodar mais rápido; para desligá-la, use `npx supabase stop`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

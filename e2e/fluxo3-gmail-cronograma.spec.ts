@@ -5,7 +5,7 @@ import { IntegracoesPage } from "./pages/integracoes.page";
 /**
  * Fluxo 3 (RF012): cadastrar palavras-chave → conectar o Gmail → sincronizar →
  * o e-mail da prova vira item no calendário.
- * O Google é substituído por um servidor falso (e2e/support/google-mock.mjs); o Supabase é o real.
+ * O Google é substituído por um servidor falso (e2e/support/google-mock.mjs); o Supabase é o local, no Docker.
  */
 
 /** Mesma data do e-mail falso (AAAA-MM-DD), definida uma vez no playwright.config. */
@@ -21,10 +21,6 @@ test.describe("Fluxo 3: e-mails do Gmail viram itens do cronograma", () => {
   });
 
   test("caminho feliz: prova encontrada no Gmail aparece no calendário", async ({ page }, testInfo) => {
-    test.skip(
-      !process.env.SUPABASE_SERVICE_ROLE_KEY,
-      "Precisa de SUPABASE_SERVICE_ROLE_KEY: as rotas do Gmail guardam o token com o service role.",
-    );
     const integracoes = new IntegracoesPage(page);
 
     await test.step("1. Cadastrar a palavra-chave", async () => {
