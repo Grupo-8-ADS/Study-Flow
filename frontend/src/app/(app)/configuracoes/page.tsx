@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CircleHelp, FileText, LogOut, Settings, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
+import { limparConsultas } from "@/lib/consultas";
+import { atualizarPerfilEmCache, usePerfil } from "@/lib/perfil";
 import {
   FAQ,
   OPCOES_PRIVACIDADE,
@@ -25,17 +27,9 @@ import { Alert, PageLoading } from "@/components/ui/feedback";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 
-type UserSession = {
-  email: string;
-  nome: string;
-  username: string;
-  avatar_url?: string | null;
-};
-
-
 export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const router = useRouter();
-  const [user, setUser] = useState<UserSession | null>(null);
+  const { dados: perfil, erro: erroPerfil } = usePerfil();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -43,73 +37,41 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [userId, setUserId] = useState<string | null>(null);
   const [privacy, setPrivacy] = useState<Privacidade>({ ...PRIVACIDADE_PADRAO });
   const [privacyLoaded, setPrivacyLoaded] = useState(false);
   const [privacyError, setPrivacyError] = useState<string | null>(null);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [salvandoNotificacoes, setSalvandoNotificacoes] = useState(false);
+  const [erroNotificacoes, setErroNotificacoes] = useState<string | null>(null);
+
+  const userId = perfil?.id ?? null;
+  const email = perfil?.email ?? null;
+  const notificationsEnabled = perfil?.recebe_notificacao_pref ?? true;
 
   useEffect(() => {
-    async function loadConfig() {
-      const storedSession = localStorage.getItem("studyflow_session");
-
-      if (!storedSession) {
-        router.push("/");
-        return;
-      }
-
-      try {
-        const parsedSession = JSON.parse(storedSession) as UserSession;
-        setUser(parsedSession);
-
-        const storedNotif = localStorage.getItem(`studyflow_notifications_${parsedSession.email}`);
-        if (storedNotif !== null) {
-          setNotificationsEnabled(JSON.parse(storedNotif));
-        }
-
-        // Se houver conexão com o Supabase, sincroniza preferência
-        const { data: userData } = await supabase.auth.getUser();
-        setUserId(userData.user?.id ?? null);
-        await loadPrivacy(userData.user?.id ?? null, parsedSession.email);
-        if (userData.user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("recebe_notificacao_pref,avatar_url")
-            .eq("id", userData.user.id)
-            .maybeSingle();
-
-          if (profile) {
-            if (profile.recebe_notificacao_pref !== undefined) {
-              setNotificationsEnabled(profile.recebe_notificacao_pref);
-            }
-            if (profile.avatar_url && !parsedSession.avatar_url) {
-              setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
-            }
-          }
-        }
-      } catch {
-        localStorage.removeItem("studyflow_session");
-        limparAgenda();
-        router.push("/");
-      }
-    }
-
-    void loadConfig();
-  }, [router]);
+    if (!userId || !email) return;
+    let ativo = true;
+    void carregarPrivacidadeUsuario(userId, email).then((lida) => {
+      if (!ativo) return;
+      setPrivacy(lida.privacidade);
+      setPrivacyLoaded(lida.carregada);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [userId, email]);
 
   const toggleNotifications = async () => {
-    if (!user) return;
+    if (!perfil || salvandoNotificacoes) return;
     const nextVal = !notificationsEnabled;
-    setNotificationsEnabled(nextVal);
-    localStorage.setItem(`studyflow_notifications_${user.email}`, JSON.stringify(nextVal));
-
-    try {
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        await supabase.from("profiles").update({ recebe_notificacao_pref: nextVal }).eq("id", data.user.id);
-      }
-    } catch {
-      // offline fallback
+    setErroNotificacoes(null);
+    setSalvandoNotificacoes(true);
+    // Muda na hora e desfaz se o banco recusar.
+    atualizarPerfilEmCache({ recebe_notificacao_pref: nextVal });
+    const { error } = await supabase.from("profiles").update({ recebe_notificacao_pref: nextVal }).eq("id", perfil.id);
+    setSalvandoNotificacoes(false);
+    if (error) {
+      atualizarPerfilEmCache({ recebe_notificacao_pref: !nextVal });
+      setErroNotificacoes("Não foi possível salvar a preferência de notificações.");
     }
   };
 
@@ -121,11 +83,12 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     }
     localStorage.removeItem("studyflow_session");
     limparAgenda();
+    limparConsultas();
     router.push("/");
   };
 
   const deleteAccount = async () => {
-    if (!user || isDeleting) return;
+    if (!perfil || isDeleting) return;
 
     setDeleteError("");
     setIsDeleting(true);
@@ -152,6 +115,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
       .filter((key) => key.startsWith("studyflow_"))
       .forEach((key) => localStorage.removeItem(key));
     limparAgenda();
+    limparConsultas();
     router.push("/");
   };
 
@@ -176,9 +140,10 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     }
   };
 
-  if (!user) {
-    return <PageLoading label="Carregando preferências..." />;
+  if (!perfil) {
+    return erroPerfil ? <Alert tone="danger">{erroPerfil}</Alert> : <PageLoading label="Carregando preferências..." />;
   }
+  const user = perfil;
 
   const isPresentationAccount = contaDemonstracao(user);
 
@@ -230,6 +195,11 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
               </div>
               <Switch checked={notificationsEnabled} labelledBy="notif-label" onChange={toggleNotifications} />
             </li>
+            {erroNotificacoes ? (
+              <li className="px-5 py-3 sm:px-6">
+                <Alert tone="danger">{erroNotificacoes}</Alert>
+              </li>
+            ) : null}
             <SettingsRow
               disabled={basic}
               icon={<ShieldCheck size={18} />}

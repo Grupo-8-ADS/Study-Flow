@@ -15,9 +15,10 @@ import {
   LogOut,
   Palette,
   Image as ImageIcon,
+  Shuffle,
   Trash2,
 } from 'lucide-react-native';
-import { COLORS } from '@studyflow/shared';
+import { COLORS, mensagemErroPerfil, validarNovaSenha, validarPerfil } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
@@ -27,6 +28,9 @@ import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { FundoBanner } from '../components/MolduraAvatar';
+import { GaleriaAvatares } from '../components/GaleriaAvatares';
+
+type CampoImagem = 'avatar_url' | 'banner_url';
 
 export default function PerfilScreen() {
   const router = useRouter();
@@ -39,6 +43,7 @@ export default function PerfilScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(session?.avatar_url || null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(session?.banner_url || null);
   const [saving, setSaving] = useState(false);
+  const [galeriaAberta, setGaleriaAberta] = useState(false);
 
   // Password Modal
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -68,95 +73,77 @@ export default function PerfilScreen() {
     '#7c2d12', // Warm Amber/Brown
   ];
 
-  const handlePickAvatar = async () => {
+  /**
+   * Foto e banner são gravados na hora (como no resto do app). Se o banco recusar, a tela
+   * volta para a imagem anterior.
+   */
+  const salvarImagem = async (campo: CampoImagem, valor: string | null) => {
+    const anterior = campo === 'avatar_url' ? avatarUrl : bannerUrl;
+    const aplicar = campo === 'avatar_url' ? setAvatarUrl : setBannerUrl;
+    aplicar(valor);
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permissão Necessária',
-          'Precisamos de permissão para acessar sua galeria de fotos.'
-        );
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!userRes?.user) {
+        aplicar(anterior);
+        Alert.alert('Sessão expirada', 'Faça login novamente.');
         return;
       }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const newUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setAvatarUrl(newUri);
-
-        const { data: userRes } = await supabase.auth.getUser();
-        if (userRes?.user) {
-          await supabase.from('profiles').update({ avatar_url: newUri }).eq('id', userRes.user.id);
-          await updateSession({ avatar_url: newUri });
-          await refreshProfile();
-        }
-      }
-    } catch (err) {
-      console.error('Error picking avatar:', err);
-      Alert.alert('Erro', 'Não foi possível selecionar a foto de perfil.');
-    }
-  };
-
-  const handlePickBanner = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permissão Necessária',
-          'Precisamos de permissão para acessar sua galeria de fotos.'
-        );
+      const alteracao = campo === 'avatar_url' ? { avatar_url: valor } : { banner_url: valor };
+      const { error } = await supabase.from('profiles').update(alteracao).eq('id', userRes.user.id);
+      if (error) {
+        aplicar(anterior);
+        Alert.alert('Erro', 'Não foi possível salvar a imagem. Tente de novo.');
         return;
       }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [16, 9],
-        quality: 0.7,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const newUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setBannerUrl(newUri);
-
-        const { data: userRes } = await supabase.auth.getUser();
-        if (userRes?.user) {
-          await supabase.from('profiles').update({ banner_url: newUri }).eq('id', userRes.user.id);
-          await updateSession({ banner_url: newUri });
-          await refreshProfile();
-        }
-      }
-    } catch (err) {
-      console.error('Error picking banner:', err);
-      Alert.alert('Erro', 'Não foi possível selecionar a imagem do banner.');
-    }
-  };
-
-  const handleRemoveBanner = async () => {
-    setBannerUrl(null);
-    const { data: userRes } = await supabase.auth.getUser();
-    if (userRes?.user) {
-      await supabase.from('profiles').update({ banner_url: null }).eq('id', userRes.user.id);
-      await updateSession({ banner_url: null });
+      await updateSession(alteracao);
       await refreshProfile();
+    } catch (err) {
+      console.error('Error saving image:', err);
+      aplicar(anterior);
+      Alert.alert('Erro', 'Sem conexão. Tente de novo.');
     }
+  };
+
+  const escolherDaGaleria = async (campo: CampoImagem) => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão Necessária', 'Precisamos de permissão para acessar sua galeria de fotos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: campo === 'avatar_url' ? [1, 1] : [16, 9],
+        quality: 0.7,
+        base64: true,
+      });
+
+      const asset = result.canceled ? null : result.assets?.[0];
+      if (!asset) return;
+      await salvarImagem(campo, asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
+    } catch (err) {
+      console.error('Error picking image:', err);
+      Alert.alert('Erro', campo === 'avatar_url' ? 'Não foi possível selecionar a foto de perfil.' : 'Não foi possível selecionar a imagem do banner.');
+    }
+  };
+
+  const confirmarRemocao = (campo: CampoImagem) => {
+    const oQue = campo === 'avatar_url' ? 'a foto de perfil' : 'o banner';
+    Alert.alert(campo === 'avatar_url' ? 'Remover foto' : 'Remover banner', `Deseja remover ${oQue}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Remover', style: 'destructive', onPress: () => void salvarImagem(campo, null) },
+    ]);
   };
 
   const handleSaveProfile = async () => {
-    if (!nome.trim()) {
-      Alert.alert('Atenção', 'O nome não pode ficar em branco.');
+    const validacao = validarPerfil({ nome, username });
+    if ('erro' in validacao) {
+      Alert.alert('Atenção', validacao.erro);
       return;
     }
+    const { nome: nomeLimpo, username: usernameLimpo } = validacao.dados;
 
     setSaving(true);
     try {
@@ -169,8 +156,8 @@ export default function PerfilScreen() {
       const { error } = await supabase
         .from('profiles')
         .update({
-          nome: nome.trim(),
-          username: username.trim(),
+          nome: nomeLimpo,
+          username: usernameLimpo,
           bg_color: bgColor,
           avatar_url: avatarUrl,
           banner_url: bannerUrl,
@@ -178,13 +165,13 @@ export default function PerfilScreen() {
         .eq('id', userRes.user.id);
 
       if (error) {
-        Alert.alert('Erro', 'Não foi possível atualizar o perfil: ' + error.message);
+        Alert.alert('Erro', mensagemErroPerfil(error));
         return;
       }
 
       await updateSession({
-        nome: nome.trim(),
-        username: username.trim(),
+        nome: nomeLimpo,
+        username: usernameLimpo,
         bg_color: bgColor,
         avatar_url: avatarUrl,
         banner_url: bannerUrl,
@@ -201,12 +188,9 @@ export default function PerfilScreen() {
   };
 
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      Alert.alert('Erro', 'A nova senha deve ter no mínimo 6 caracteres.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Erro', 'As senhas não coincidem.');
+    const problema = validarNovaSenha(newPassword, confirmPassword);
+    if (problema) {
+      Alert.alert('Erro', problema);
       return;
     }
 
@@ -217,7 +201,10 @@ export default function PerfilScreen() {
       });
 
       if (error) {
-        Alert.alert('Erro', 'Não foi possível alterar a senha: ' + error.message);
+        Alert.alert(
+          'Erro',
+          error.code === 'same_password' ? 'A nova senha precisa ser diferente da atual.' : 'Não foi possível alterar a senha.',
+        );
         return;
       }
 
@@ -260,12 +247,13 @@ export default function PerfilScreen() {
           <View style={[styles.bannerBg, { backgroundColor: bgColor }]}>
             <FundoBanner corPadrao={bgColor} valor={bannerUrl} />
             <TouchableOpacity
+              accessibilityLabel={bannerUrl ? 'Trocar banner' : 'Adicionar banner'}
               activeOpacity={0.8}
               style={styles.bannerEditBtn}
-              onPress={handlePickBanner}
+              onPress={() => void escolherDaGaleria('banner_url')}
             >
               <Camera size={13} color="#ffffff" />
-              <Text style={styles.bannerEditText}>Alterar banner</Text>
+              <Text style={styles.bannerEditText}>{bannerUrl ? 'Trocar banner' : 'Adicionar banner'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -278,18 +266,43 @@ export default function PerfilScreen() {
               moldura={session?.moldura}
               showLevel
             />
+            {/* À esquerda: o selo do nível fica no canto direito do avatar. */}
             <TouchableOpacity
+              accessibilityLabel="Alterar foto de perfil"
               activeOpacity={0.8}
+              hitSlop={8}
               style={styles.cameraBadge}
-              onPress={handlePickAvatar}
+              onPress={() => void escolherDaGaleria('avatar_url')}
             >
               <Camera size={14} color="#ffffff" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.profileHeaderInfo}>
-            <Text style={styles.profileName}>{nome || 'Estudante'}</Text>
-            <Text style={styles.profileUsername}>@{username || 'usuario'}</Text>
+            <Text style={styles.profileName}>{nome.trim() || session?.nome}</Text>
+            <Text style={styles.profileUsername}>@{username.trim() || session?.username}</Text>
+
+            <View style={styles.acoesFoto}>
+              <TouchableOpacity activeOpacity={0.7} style={styles.acaoFoto} onPress={() => void escolherDaGaleria('avatar_url')}>
+                <Camera size={15} color={COLORS.primary} />
+                <Text style={styles.acaoFotoTexto}>{avatarUrl ? 'Trocar foto' : 'Enviar foto'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.7} style={styles.acaoFoto} onPress={() => setGaleriaAberta(true)}>
+                <Shuffle size={15} color={COLORS.primary} />
+                <Text style={styles.acaoFotoTexto}>Gerar avatar</Text>
+              </TouchableOpacity>
+              {avatarUrl ? (
+                <TouchableOpacity
+                  accessibilityLabel="Remover foto"
+                  activeOpacity={0.7}
+                  style={[styles.acaoFoto, styles.acaoFotoPerigo]}
+                  onPress={() => confirmarRemocao('avatar_url')}
+                >
+                  <Trash2 size={15} color={COLORS.danger} />
+                  <Text style={[styles.acaoFotoTexto, { color: COLORS.danger }]}>Remover</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
 
             <View style={styles.statsPillRow}>
               <View style={styles.statPill}>
@@ -307,7 +320,7 @@ export default function PerfilScreen() {
               <View style={styles.statPill}>
                 <Text style={styles.statPillLabel}>Meta Horas</Text>
                 <Text style={styles.statPillValue}>
-                  {session?.horas_diarias || 2}h
+                  {session?.horas_diarias ? `${session.horas_diarias}h` : '—'}
                 </Text>
               </View>
             </View>
@@ -345,45 +358,21 @@ export default function PerfilScreen() {
           </Text>
 
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                paddingVertical: 8,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                backgroundColor: '#eaf6f4',
-              }}
-              onPress={handlePickBanner}
-            >
+            <TouchableOpacity activeOpacity={0.7} style={styles.acaoFoto} onPress={() => void escolherDaGaleria('banner_url')}>
               <Camera size={15} color={COLORS.primary} />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary }}>
-                {bannerUrl ? 'Trocar Foto' : 'Escolher da Galeria'}
-              </Text>
+              <Text style={styles.acaoFotoTexto}>{bannerUrl ? 'Trocar banner' : 'Escolher da galeria'}</Text>
             </TouchableOpacity>
 
-            {bannerUrl && (
+            {bannerUrl ? (
               <TouchableOpacity
                 activeOpacity={0.7}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
-                  borderRadius: 10,
-                  backgroundColor: '#fee2e2',
-                }}
-                onPress={handleRemoveBanner}
+                style={[styles.acaoFoto, styles.acaoFotoPerigo]}
+                onPress={() => confirmarRemocao('banner_url')}
               >
                 <Trash2 size={15} color={COLORS.danger} />
-                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.danger }}>
-                  Remover Foto
-                </Text>
+                <Text style={[styles.acaoFotoTexto, { color: COLORS.danger }]}>Remover banner</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
 
           {/* Color Theme Selector */}
@@ -433,6 +422,15 @@ export default function PerfilScreen() {
           <Text style={styles.logoutText}>Encerrar Sessão</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <GaleriaAvatares
+        visible={galeriaAberta}
+        onClose={() => setGaleriaAberta(false)}
+        onEscolher={(url) => {
+          setGaleriaAberta(false);
+          void salvarImagem('avatar_url', url);
+        }}
+      />
 
       {/* Change Password Modal */}
       <Modal
@@ -520,7 +518,7 @@ const styles = StyleSheet.create({
   cameraBadge: {
     position: 'absolute',
     bottom: 0,
-    right: 0,
+    left: 0,
     backgroundColor: COLORS.primary,
     width: 26,
     height: 26,
@@ -543,7 +541,31 @@ const styles = StyleSheet.create({
   profileUsername: {
     fontSize: 13,
     color: COLORS.textSecondary,
+    marginBottom: 12,
+  },
+  acoesFoto: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
     marginBottom: 14,
+  },
+  acaoFoto: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: COLORS.primaryMuted,
+  },
+  acaoFotoPerigo: {
+    backgroundColor: COLORS.dangerLight,
+  },
+  acaoFotoTexto: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   statsPillRow: {
     flexDirection: 'row',

@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { useAgenda } from "@/lib/agenda";
+import { MENSAGEM_SEM_SESSAO, invalidarAposSessao } from "@/lib/consultas";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageLoading } from "@/components/ui/feedback";
@@ -125,38 +126,28 @@ const TimerDashboard: NextPage = () => {
   }, [disciplines, selectedDiscipline]);
 
   const recordStudySession = useCallback(
-    async (duracaoSeg: number) => {
-      if (!user) return;
+    async (duracaoSeg: number): Promise<string | null> => {
+      if (!user || !supabaseUserId) return MENSAGEM_SEM_SESSAO;
       const durationMinutes = Math.round(duracaoSeg / 60);
       const finishedAt = new Date();
       const startedAt = new Date(finishedAt.getTime() - duracaoSeg * 1000);
 
-      if (supabaseUserId) {
-        await supabase.from("sessoes_estudo").insert({
-          data_fim: finishedAt.toISOString(),
-          data_inicio: startedAt.toISOString(),
-          disciplina_id: selectedDiscipline || null,
-          duracao_efetiva_min: durationMinutes,
-          exp: durationMinutes,
-          notas: notes,
-          status: "concluida",
-          user_id: supabaseUserId,
-        });
-        return;
-      }
-
-      const key = `studyflow_activity_${user.email}`;
-      const current = localStorage.getItem(key);
-      const activity = current ? JSON.parse(current) : [];
-      activity.push({
-        createdAt: finishedAt.toISOString(),
-        discipline: getSelectedDisciplineName(),
-        minutes: durationMinutes,
-        type: "foco",
+      const { error } = await supabase.from("sessoes_estudo").insert({
+        data_fim: finishedAt.toISOString(),
+        data_inicio: startedAt.toISOString(),
+        disciplina_id: selectedDiscipline || null,
+        duracao_efetiva_min: durationMinutes,
+        exp: durationMinutes,
+        notas: notes,
+        status: "concluida",
+        user_id: supabaseUserId,
       });
-      localStorage.setItem(key, JSON.stringify(activity));
+      if (error) return "Não foi possível registrar a sessão de foco. Verifique a conexão.";
+      // O banco creditou XP e pode ter liberado conquistas: as outras telas buscam de novo.
+      invalidarAposSessao();
+      return null;
     },
-    [getSelectedDisciplineName, notes, selectedDiscipline, supabaseUserId, user],
+    [notes, selectedDiscipline, supabaseUserId, user],
   );
 
   /** Prepara um modo (parado ou já rodando). */
@@ -174,17 +165,19 @@ const TimerDashboard: NextPage = () => {
   // Término do ciclo: registra a sessão (só foco), avisa e avança para o próximo modo.
   const finishCycle = useCallback(() => {
     const focos = timerType === "foco" ? focosConcluidos + 1 : focosConcluidos;
+    const proximo = proximoModo(timerType, focos, config);
     if (timerType === "foco") {
-      void recordStudySession(totalDuration);
+      const disciplina = getSelectedDisciplineName();
+      setAviso("Registrando a sessão de foco...");
+      // Só diz "registrada" depois que o banco confirmou.
+      void recordStudySession(totalDuration).then((falha) =>
+        setAviso(falha ?? `Sessão de foco em "${disciplina}" registrada. Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`),
+      );
       setFocosConcluidos(focos);
+    } else {
+      setAviso("A pausa acabou. Pronto para voltar ao foco?");
     }
     if (config.som) tocarAviso();
-    const proximo = proximoModo(timerType, focos, config);
-    setAviso(
-      timerType === "foco"
-        ? `Sessão de foco em "${getSelectedDisciplineName()}" registrada. Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`
-        : "A pausa acabou. Pronto para voltar ao foco?",
-    );
     if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
       new Notification("Study Flow", { body: timerType === "foco" ? "Foco concluído! Hora da pausa." : "Pausa concluída! De volta ao foco." });
     }

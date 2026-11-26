@@ -146,3 +146,26 @@ export function validarCadastro(form: CadastroForm): { erro: string } | { dados:
   if (form.senha.length < SENHA_MINIMA) return { erro: `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.` };
   return { dados: { nome, username, email, senha: form.senha } };
 }
+
+/** Valida a troca de senha na tela de perfil (site e app); devolve a mensagem de erro ou null. */
+export function validarNovaSenha(nova: string, confirmacao: string): string | null {
+  if (!nova || !confirmacao) return 'Preencha a nova senha e a confirmação.';
+  if (nova.length < SENHA_MINIMA) return `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.`;
+  if (nova !== confirmacao) return 'As senhas não coincidem.';
+  return null;
+}
+
+/** Valida os dados editáveis do perfil (site e app) e devolve os valores sem espaços nas pontas. */
+export function validarPerfil(form: { nome: string; username: string }): { erro: string } | { dados: { nome: string; username: string } } {
+  const nome = form.nome.trim();
+  const username = form.username.trim();
+  if (!nome) return { erro: 'O nome não pode ficar em branco.' };
+  if (!username) return { erro: 'O nome de usuário não pode ficar em branco.' };
+  return { dados: { nome, username } };
+}
+
+/** Mensagem para o erro do Supabase ao salvar o perfil (o username é único, sem diferenciar maiúsculas). */
+export function mensagemErroPerfil(error: { code?: string } | null | undefined): string {
+  if (error?.code === '23505') return 'Esse nome de usuário já está em uso.';
+  return 'Não foi possível salvar o perfil. Tente de novo.';
+}

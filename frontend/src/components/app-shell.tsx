@@ -5,7 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { LogOut, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getStoredSession, type StudyFlowSession } from "@/lib/studyflow-data";
+import { enxugarSessaoLocal, getStoredSession } from "@/lib/studyflow-data";
+import { MENSAGEM_SEM_SESSAO, limparConsultas } from "@/lib/consultas";
+import { usePerfil } from "@/lib/perfil";
 import { limparAgenda } from "@/lib/agenda";
 import { NotificationBell } from "@/components/notification-bell";
 import { MolduraAvatar } from "@/components/moldura-avatar";
@@ -16,15 +18,17 @@ function Wordmark({ className = "" }: { className?: string }) {
   return <span className={`font-brand tracking-wide ${className}`}>Study Flow</span>;
 }
 
-function Avatar({ user, size = 36 }: { user: StudyFlowSession | null; size?: number }) {
+type UsuarioMenu = { nome: string | null; avatar_url: string | null; moldura: string | null };
+
+function Avatar({ user, size = 36 }: { user: UsuarioMenu; size?: number }) {
   const initial = user?.nome?.trim()?.[0]?.toUpperCase();
   return (
-    <MolduraAvatar espessura={2} moldura={user?.moldura}>
+    <MolduraAvatar espessura={2} moldura={user.moldura}>
     <span
       className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-sm font-semibold text-primary-800"
       style={{ height: size, width: size }}
     >
-      {user?.avatar_url ? (
+      {user.avatar_url ? (
         <img alt="" className="h-full w-full object-cover" src={user.avatar_url} />
       ) : initial ? (
         initial
@@ -44,7 +48,9 @@ function Avatar({ user, size = 36 }: { user: StudyFlowSession | null; size?: num
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
-  const [user, setUser] = useState<StudyFlowSession | null>(null);
+  // Nome da sessão local enquanto o perfil não chega (sem flash de "Minha conta" a cada tela).
+  const [nomeLocal, setNomeLocal] = useState<string | null>(null);
+  const { dados: perfil, erro: erroPerfil } = usePerfil();
 
   useEffect(() => {
     const session = getStoredSession();
@@ -52,33 +58,26 @@ export function AppShell({ children }: { children: ReactNode }) {
       router.replace("/");
       return;
     }
+    enxugarSessaoLocal();
     // Sessão lida do localStorage só existe no cliente; sincroniza após montar.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUser(session);
-
-    let cancelled = false;
-    void (async () => {
-      const { data } = await supabase.auth.getSession();
-      const id = data.session?.user?.id;
-      if (!id) return;
-      const { data: profile } = await supabase.from("profiles").select("nome,avatar_url,moldura").eq("id", id).maybeSingle();
-      if (!cancelled && profile) {
-        setUser((current) => (current ? { ...current, nome: profile.nome || current.nome, avatar_url: profile.avatar_url, moldura: profile.moldura } : current));
-      }
-    })();
-
-    const reler = () => {
-      const atual = getStoredSession();
-      if (atual) setUser(atual);
-    };
-    window.addEventListener("studyflow:sessao", reler);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("studyflow:sessao", reler);
-    };
-    // Perfil (nome e foto) é buscado uma vez por sessão do shell, não a cada troca de aba.
+    setNomeLocal(session.nome);
   }, [router]);
+
+  // Sem sessão no Supabase (expirou ou saiu em outra aba): volta para o login.
+  useEffect(() => {
+    if (erroPerfil !== MENSAGEM_SEM_SESSAO) return;
+    localStorage.removeItem("studyflow_session");
+    limparAgenda();
+    limparConsultas();
+    router.replace("/");
+  }, [erroPerfil, router]);
+
+  const user: UsuarioMenu = {
+    nome: perfil?.nome ?? nomeLocal,
+    avatar_url: perfil?.avatar_url ?? null,
+    moldura: perfil?.moldura ?? null,
+  };
 
   const logout = async () => {
     try {
@@ -88,6 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
     localStorage.removeItem("studyflow_session");
     limparAgenda();
+    limparConsultas();
     router.push("/");
   };
 
@@ -138,7 +138,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <Avatar size={34} user={user} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-white">{user?.nome ?? "Minha conta"}</span>
+              <span className="block truncate text-sm font-semibold text-white">{user.nome ?? "Minha conta"}</span>
               <span className="block truncate text-xs text-primary-100/75">Conta e preferências</span>
             </span>
           </Link>

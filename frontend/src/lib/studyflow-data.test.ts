@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   getStoredSession,
   getCurrentSupabaseUserId,
-  getLocalStudyMinutes,
+  salvarSessaoLocal,
+  enxugarSessaoLocal,
   StudyFlowSession,
 } from './studyflow-data';
 import { supabase } from '@/lib/supabase';
@@ -101,28 +102,27 @@ describe('studyflow-data.ts - Suíte de Testes Unitários e de Integração Lóg
     });
   });
 
-  describe('getLocalStudyMinutes', () => {
-    it('getLocalStudyMinutes_quandoExistiremSessoesDeFoco_deveCalcularMinutosCorretos', () => {
-      // Arrange (3 sessões de foco x 25min = 75min)
-      const email = 'aluno@unifei.edu.br';
-      const atividades = [
-        { type: 'foco' },
-        { type: 'pausa' },
-        { type: 'foco' },
-        { type: 'foco' },
-      ];
-      localStorage.setItem(`studyflow_activity_${email}`, JSON.stringify(atividades));
+  describe('salvarSessaoLocal', () => {
+    it('salvarSessaoLocal_quandoSessaoTemImagens_deveGravarSemElas', () => {
+      // Arrange
+      const sessao = { email: 'a@b.com', nome: 'Ana', username: 'ana', loginTime: 1, avatar_url: 'data:image/png;base64,AAA', banner_url: 'data:x', moldura: 'ouro' };
 
       // Act
-      const minutos = getLocalStudyMinutes(email);
+      salvarSessaoLocal(sessao);
 
       // Assert
-      expect(minutos).toBe(75);
+      expect(JSON.parse(localStorage.getItem('studyflow_session') ?? 'null')).toEqual({ email: 'a@b.com', nome: 'Ana', username: 'ana', loginTime: 1 });
     });
 
-    it('getLocalStudyMinutes_quandoNaoHouverAtividades_deveRetornarZero', () => {
-      // Act & Assert
-      expect(getLocalStudyMinutes('inexistente@unifei.edu.br')).toBe(0);
+    it('enxugarSessaoLocal_quandoVersaoAntigaGuardouImagens_deveRemovelas', () => {
+      // Arrange
+      localStorage.setItem('studyflow_session', JSON.stringify({ email: 'a@b.com', nome: 'Ana', username: 'ana', banner_url: 'data:x' }));
+
+      // Act
+      enxugarSessaoLocal();
+
+      // Assert
+      expect(getStoredSession()).toEqual({ email: 'a@b.com', nome: 'Ana', username: 'ana' });
     });
   });
 });

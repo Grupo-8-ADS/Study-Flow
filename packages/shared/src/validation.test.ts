@@ -10,6 +10,9 @@ import {
   applyDateMask,
   applyTimeMask,
   isValidEmail,
+  mensagemErroPerfil,
+  validarNovaSenha,
+  validarPerfil,
 } from './validation';
 
 describe('validation.ts - Suíte de Testes Unitários Comportamentais', () => {
@@ -310,5 +313,36 @@ describe('validarCadastro', () => {
     expect(validarCadastro({ ...ok, email: 'ana@gmail' })).toEqual({ erro: 'Informe um e-mail válido.' });
     expect(validarCadastro({ ...ok, confirmarSenha: '654321' })).toEqual({ erro: 'As senhas não coincidem.' });
     expect(validarCadastro({ ...ok, senha: '123', confirmarSenha: '123' })).toEqual({ erro: `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.` });
+  });
+});
+
+describe('validarNovaSenha', () => {
+  it('quandoSenhaValidaEConfirmada_naoDeveDarErro', () => {
+    expect(validarNovaSenha('123456', '123456')).toBeNull();
+  });
+
+  it('quandoVaziaCurtaOuDiferente_deveDarErroNaOrdem', () => {
+    expect(validarNovaSenha('', '')).toBe('Preencha a nova senha e a confirmação.');
+    expect(validarNovaSenha('123', '123')).toBe(`A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.`);
+    expect(validarNovaSenha('123456', '654321')).toBe('As senhas não coincidem.');
+  });
+});
+
+describe('validarPerfil', () => {
+  it('quandoPreenchido_deveDevolverSemEspacosNasPontas', () => {
+    expect(validarPerfil({ nome: ' Ana ', username: ' ana.s ' })).toEqual({ dados: { nome: 'Ana', username: 'ana.s' } });
+  });
+
+  it('quandoNomeOuUsuarioVazio_deveDarErro', () => {
+    expect(validarPerfil({ nome: '  ', username: 'ana' })).toEqual({ erro: 'O nome não pode ficar em branco.' });
+    expect(validarPerfil({ nome: 'Ana', username: ' ' })).toEqual({ erro: 'O nome de usuário não pode ficar em branco.' });
+  });
+});
+
+describe('mensagemErroPerfil', () => {
+  it('quandoUsernameRepetido_deveExplicar', () => {
+    expect(mensagemErroPerfil({ code: '23505' })).toBe('Esse nome de usuário já está em uso.');
+    expect(mensagemErroPerfil({ code: '42501' })).toBe('Não foi possível salvar o perfil. Tente de novo.');
+    expect(mensagemErroPerfil(null)).toBe('Não foi possível salvar o perfil. Tente de novo.');
   });
 });
