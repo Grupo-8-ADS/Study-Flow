@@ -635,3 +635,43 @@ describe('scheduler.ts - Suíte de Testes Unitários', () => {
     });
   });
 });
+
+describe('gerarCronograma - limite diário e entregas', () => {
+  // 2026-03-02 é segunda-feira
+  const SEG = new Date(2026, 2, 2, 0, 0);
+  const rotinaLonga: RotinaSlot[] = [{ dia_semana: 1, hora_inicio: '08:00', hora_fim: '18:00' }, { dia_semana: 2, hora_inicio: '08:00', hora_fim: '18:00' }];
+  const base = { disciplinas: [disc('A', 1), disc('B', 1)], rotina: rotinaLonga, dataInicio: SEG, semanas: 1, duracaoBlocoMin: 50 };
+
+  it('gerarCronograma_quandoLimiteDiario_deveParaCadaDiaNoLimite', () => {
+    const blocos = gerarCronograma({ ...base, limiteDiarioMin: 120 });
+    const porDia = blocos.reduce((m, b) => m.set(new Date(b.data_inicio).getDate(), (m.get(new Date(b.data_inicio).getDate()) ?? 0) + 1), new Map<number, number>());
+    expect(Object.fromEntries(porDia)).toEqual({ 2: 2, 3: 2 });
+  });
+
+  it('gerarCronograma_quandoSemLimite_devePreencherTodosOsHorarios', () => {
+    expect(gerarCronograma(base)).toHaveLength(20);
+  });
+
+  it('gerarCronograma_quandoLimiteMenorQueUmBloco_deveLancarSemBlocos', () => {
+    expect(() => gerarCronograma({ ...base, limiteDiarioMin: 30 })).toThrow(/menor que a duração/);
+  });
+
+  it('gerarCronograma_quandoLimiteInvalido_deveLancarParametrosInvalidos', () => {
+    for (const limiteDiarioMin of [0, -10, Number.NaN]) {
+      expect(() => gerarCronograma({ ...base, limiteDiarioMin })).toThrow(CronogramaError);
+    }
+  });
+
+  it('gerarCronograma_quandoEntregaNoPeriodo_deveReforcarAteAData', () => {
+    // Três disciplinas: com duas, a regra de não repetir em sequência força a alternância.
+    const blocos = gerarCronograma({ ...base, disciplinas: [disc('A', 1), { ...disc('B', 1), proximaEntrega: '2026-03-03' }, disc('C', 1)] });
+    const b = blocos.filter((x) => x.disciplina_id === 'B').length;
+    const a = blocos.filter((x) => x.disciplina_id === 'A').length;
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it('gerarCronograma_quandoEntregaForaDoPeriodo_naoDeveReforcar', () => {
+    const blocos = gerarCronograma({ ...base, disciplinas: [disc('A', 1), { ...disc('B', 1), proximaEntrega: '2026-05-01' }] });
+    expect(blocos.filter((x) => x.disciplina_id === 'B')).toHaveLength(10);
+  });
+});

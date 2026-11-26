@@ -21,6 +21,8 @@ interface ButtonProps {
   icon?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  /** Rótulo do leitor de tela quando o título sozinho é ambíguo (ex.: vários "Equipar"). */
+  accessibilityLabel?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -33,6 +35,7 @@ export const Button: React.FC<ButtonProps> = ({
   icon,
   style,
   textStyle,
+  accessibilityLabel,
 }) => {
   const getContainerStyle = (): ViewStyle => {
     const base: ViewStyle = {
@@ -105,6 +108,9 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <TouchableOpacity
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
       activeOpacity={0.8}
       onPress={onPress}
       disabled={disabled || loading}

@@ -6,17 +6,21 @@ import { Check, Gift, Image as ImageIcon, Lock, Palette, Sparkles, Trophy } from
 import {
   BANNERS,
   MOLDURAS,
-  PREFIXO_BANNER,
   desbloqueado,
+  equiparRecompensa,
   gradienteCss,
   nomeConquista,
   progressoNivel,
+  resumoColecao,
+  textoProximaRecompensa,
+  valorBanner,
+  type CampoRecompensa,
 } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { ConquistaIcone } from "@/components/conquista-icone";
-import { MolduraAvatar } from "@/components/moldura-avatar";
+import { MolduraAvatar, PreviaBanner } from "@/components/moldura-avatar";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -128,25 +132,18 @@ export default function RewardsPage() {
     return <PageLoading label="Carregando recompensas..." />;
   }
 
-  const contagem: Record<Aba, { feitos: number; total: number }> = {
-    conquistas: { feitos: conquistas.filter((c) => ganhas.has(c.id)).length, total: conquistas.length },
-    molduras: { feitos: MOLDURAS.filter((m) => desbloqueado(m, perfil.nivel)).length, total: MOLDURAS.length },
-    banners: { feitos: BANNERS.filter((b) => desbloqueado(b, perfil.nivel)).length, total: BANNERS.length },
-  };
-  const total = Object.values(contagem).reduce((s, c) => s + c.total, 0);
-  const feitos = Object.values(contagem).reduce((s, c) => s + c.feitos, 0);
-  const progressoGeral = total > 0 ? Math.round((feitos / total) * 100) : 0;
-  const proximo = [...MOLDURAS, ...BANNERS].filter((i) => i.nivel > perfil.nivel).sort((a, b) => a.nivel - b.nivel)[0];
-  const xpParaProximo = proximo ? Math.max(0, (proximo.nivel - 1) * 100 - perfil.xp) : 0;
+  const resumo = resumoColecao(perfil.nivel, { feitos: conquistas.filter((c) => ganhas.has(c.id)).length, total: conquistas.length });
+  const contagem: Record<Aba, { feitos: number; total: number }> = resumo;
+  const { feitos, total, percentual: progressoGeral } = resumo;
 
-  async function equipar(campo: "moldura" | "banner_url", valor: string | null) {
+  async function equipar(campo: CampoRecompensa, valor: string | null) {
     if (!userId) return;
     setErro(null);
     setSalvando(`${campo}:${valor}`);
-    const { error } = await supabase.from("profiles").update({ [campo]: valor }).eq("id", userId);
+    const falha = await equiparRecompensa(supabase, userId, campo, valor);
     setSalvando(null);
-    if (error) {
-      setErro(error.code === "42501" ? "Esse item ainda está bloqueado para o seu nível." : "Não foi possível equipar agora. Tente de novo.");
+    if (falha) {
+      setErro(falha);
       return;
     }
     setPerfil((p) => ({ ...p, [campo]: valor }));
@@ -183,11 +180,7 @@ export default function RewardsPage() {
             </span>
             <div>
               <h2 className="text-lg font-semibold !text-white">Nível {perfil.nivel}</h2>
-              <p className="mt-1 max-w-xl text-sm text-primary-100">
-                {proximo
-                  ? `Faltam ${xpParaProximo} XP para liberar ${MOLDURAS.some((m) => m === proximo) ? "a moldura" : "o banner"} ${proximo.nome} (nível ${proximo.nivel}).`
-                  : "Você liberou todas as molduras e banners."}
-              </p>
+              <p className="mt-1 max-w-xl text-sm text-primary-100">{textoProximaRecompensa(perfil.nivel, perfil.xp)}</p>
             </div>
           </div>
           <div className="min-w-[220px] rounded-card bg-white/10 p-4">
@@ -338,11 +331,12 @@ export default function RewardsPage() {
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {BANNERS.map((b) => {
                 const livre = desbloqueado(b, perfil.nivel);
-                const valor = `${PREFIXO_BANNER}${b.id}`;
+                const valor = valorBanner(b);
                 const equipado = perfil.banner_url === valor;
                 return (
                   <li className={`overflow-hidden rounded-control border ${equipado ? "border-primary-500 ring-2 ring-primary-100" : "border-line"}`} key={b.id}>
-                    <div className={`relative h-20 ${livre ? "" : "opacity-40 grayscale"}`} style={{ background: gradienteCss(b.cores) }}>
+                    <div className={`relative h-20 ${livre ? "" : "opacity-40 grayscale"}`}>
+                      <PreviaBanner banner={b} miniatura />
                       {livre ? null : (
                         <span className="absolute inset-0 flex items-center justify-center text-white">
                           <Lock size={18} />

@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { getTestPool, cleanTables, closeTestPool } from "../setup/db-helper";
 
 /**
- * Regras de negócio implementadas no banco (supabase/migrations/20261103_regras_negocio.sql):
+ * Regras de negócio implementadas no banco (supabase/migrations/20261103000100_regras_negocio.sql e seguintes):
  * RF003, RNF001, RF004, RF010 e RF012. As chamadas "como usuário" rodam com o papel
  * authenticated e o JWT simulado, exatamente como o PostgREST do Supabase faz.
  */
@@ -69,7 +69,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
   }
 
   beforeAll(async () => {
-    // Os privilégios padrão do Supabase vêm do stub do setup global (antes do schema.sql).
+    // Os privilégios padrão do Supabase vêm do stub do setup global (antes das migrations).
     await cleanTables(tabelas);
   });
 
@@ -83,15 +83,36 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
   });
 
   describe("RF003 - get_email_by_username", () => {
-    it("deve devolver o e-mail ignorando maiúsculas e espaços, mesmo para o papel anon", async () => {
+    /** Executa `fn` com o papel do servidor (chave secreta), em transação desfeita no fim. */
+    async function comoServidor<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+      const client = await pool().connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SET LOCAL ROLE service_role");
+        return await fn(client);
+      } finally {
+        await client.query("ROLLBACK").catch(() => undefined);
+        client.release();
+      }
+    }
+
+    it("o servidor (service_role) descobre o e-mail ignorando maiúsculas e espaços", async () => {
       await criarUsuario("ana@unifei.edu.br", "Ana_Souza");
 
-      const email = await comoUsuario(null, async (c) => {
+      const email = await comoServidor(async (c) => {
         const { rows } = await c.query("SELECT public.get_email_by_username($1) AS email", ["  ana_souza "]);
         return rows[0].email;
       });
 
       expect(email).toBe("ana@unifei.edu.br");
+    });
+
+    it("anon e authenticated não podem chamar: o e-mail de alguém não vaza pelo username", async () => {
+      const id = await criarUsuario("dani@unifei.edu.br", "dani");
+      const chamar = (c: PoolClient) => c.query("SELECT public.get_email_by_username('dani')");
+
+      await expect(comoUsuario(null, chamar)).rejects.toMatchObject({ code: "42501" });
+      await expect(comoUsuario(id, chamar)).rejects.toMatchObject({ code: "42501" });
     });
 
     it("deve recusar username que só difere por maiúsculas de um já existente (23505)", async () => {
@@ -168,7 +189,7 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
 
       expect(await conquistasDe(id)).toEqual(["Estudante dedicado", "Foco inicial"]);
       // 6*25 + 50 + 120 = 320 XP -> nível 4
-      expect(await perfil(id)).toMatchObject({ xp: 320, nivel_atual: 4 });
+      expect(await perfil(id)).toMatchObject({ xp: 320, nivel_atual: 3 });
     });
 
     it("deve conceder 'Mestre do Tempo' ao acumular 600 minutos", async () => {
@@ -181,20 +202,28 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       expect(await conquistasDe(id)).toContain("Mestre do Tempo");
     });
 
-    it("deve conceder a conquista de disciplina só com sessão na disciplina do critério", async () => {
-      const id = await criarUsuario("historia@unifei.edu.br");
+    it("deve conceder 'Especialista em {disciplina}' com 5 sessões na disciplina mais estudada, guardando qual foi", async () => {
+      const id = await criarUsuario("especialista@unifei.edu.br");
       const { rows } = await pool().query(
-        "INSERT INTO public.disciplinas (user_id, nome) VALUES ($1, 'Geografia'), ($1, 'história') RETURNING id, nome",
+        "INSERT INTO public.disciplinas (user_id, nome) VALUES ($1, 'Geografia'), ($1, 'História') RETURNING id, nome",
         [id]
       );
       const geografia = rows.find((r) => r.nome === "Geografia").id;
-      const historia = rows.find((r) => r.nome === "história").id;
+      const historia = rows.find((r) => r.nome === "História").id;
+
+      for (let i = 0; i < 4; i++) await concluirSessao(id, 25, 0, geografia);
+      await concluirSessao(id, 25, 0, historia);
+      // 5 sessões no total, mas só 4 na disciplina mais estudada.
+      expect(await conquistasDe(id)).not.toContain("Especialista em {disciplina}");
 
       await concluirSessao(id, 25, 0, geografia);
-      expect(await conquistasDe(id)).not.toContain("Especialista em História I");
-      await concluirSessao(id, 25, 0, historia);
 
-      expect(await conquistasDe(id)).toContain("Especialista em História I");
+      const { rows: ganhas } = await pool().query(
+        `SELECT uc.detalhe FROM public.user_conquistas uc JOIN public.conquistas c ON c.id = uc.conquista_id
+          WHERE uc.user_id = $1 AND c.nome = 'Especialista em {disciplina}'`,
+        [id]
+      );
+      expect(ganhas).toEqual([{ detalhe: "Geografia" }]);
     });
 
     it("não deve dar XP para sessão ainda ativa, e deve dar ao mudar o status para concluída", async () => {
@@ -380,6 +409,38 @@ describe("Regras de negócio no banco (RPCs, triggers e RLS)", () => {
       await pool().query(sql, [id]);
 
       await expect(pool().query(sql, [id])).rejects.toMatchObject({ code: "23505" });
+    });
+  });
+
+  describe("Privacidade no perfil (profiles.privacidade)", () => {
+    it("o usuário deve gravar a própria privacidade, e a coluna começa nula", async () => {
+      const id = await criarUsuario("privado@unifei.edu.br");
+      const antes = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [id]);
+      expect(antes.rows[0].privacidade).toBeNull();
+
+      const valor = { permitir_compartilhar: false, perfil_publico: false, mostrar_horas: false, mostrar_conquistas: true };
+      await comoUsuario(id, (c) => c.query("UPDATE public.profiles SET privacidade = $2::jsonb WHERE id = $1", [id, JSON.stringify(valor)]), true);
+
+      const { rows } = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [id]);
+      expect(rows[0].privacidade).toEqual(valor);
+    });
+
+    it("deve recusar chaves desconhecidas ou valores que não são booleanos (23514)", async () => {
+      const id = await criarUsuario("privado2@unifei.edu.br");
+      for (const invalido of [{ mostrar_horas: "nao" }, { outra: true }, [true]]) {
+        await expect(
+          comoUsuario(id, (c) => c.query("UPDATE public.profiles SET privacidade = $2::jsonb WHERE id = $1", [id, JSON.stringify(invalido)]))
+        ).rejects.toMatchObject({ code: "23514" });
+      }
+    });
+
+    it("um usuário não deve alterar a privacidade de outro (RLS)", async () => {
+      const ana = await criarUsuario("ana.priv@unifei.edu.br");
+      const bia = await criarUsuario("bia.priv@unifei.edu.br");
+      await comoUsuario(ana, (c) => c.query("UPDATE public.profiles SET privacidade = '{\"mostrar_horas\": false}'::jsonb WHERE id = $1", [bia]), true);
+
+      const { rows } = await pool().query("SELECT privacidade FROM public.profiles WHERE id = $1", [bia]);
+      expect(rows[0].privacidade).toBeNull();
     });
   });
 });

@@ -13,6 +13,10 @@ export {
   ROTULO_TIPO,
   TIPOS_COMPROMISSO,
   aulasNoPeriodo,
+  itensComHorarios,
+  ocupadosNoPeriodo,
+  proximasEntregas,
+  rotinasNoPeriodo,
   compromissoVazio,
   dataLocal,
   dataStr,
@@ -32,6 +36,8 @@ export type {
   CompromissoForm,
   DisciplinaAgenda as Disciplina,
   DisciplinaForm,
+  RotinaFixa,
+  RotinaFixaForm,
   TipoCompromisso,
 } from "@studyflow/shared";
 
@@ -62,6 +68,8 @@ export const {
   alternarConcluido,
   salvarDisciplina,
   excluirDisciplina,
+  salvarRotina,
+  excluirRotina,
   salvarBlocosCronograma,
 } = agenda;
 

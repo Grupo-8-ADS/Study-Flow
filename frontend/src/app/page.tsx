@@ -10,13 +10,17 @@
 import type { NextPage } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useState, useEffect, useSyncExternalStore } from "react";
+import { ehEmail } from "@studyflow/shared";
+import { entrarNoStudyFlow, reenviarConfirmacao, supabase } from "@/lib/supabase";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { Field, Input } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
+
+/** A URL não muda enquanto a tela está aberta: não há o que assinar. */
+const semAssinatura = () => () => {};
 
 /**
  * Interface que representa a estrutura de um usuário autenticado.
@@ -55,41 +59,9 @@ const Login: NextPage = () => {
   /** Estado de envio do formulário para evitar logins duplicados */
   const [isLoading, setIsLoading] = useState(false);
 
-  const resolveLoginEmail = useCallback(async () => {
-    const login = email.trim();
-
-    if (login.includes("@")) {
-      return login;
-    }
-
-    try {
-      const { data } = await supabase.rpc("get_email_by_username", {
-        login_username: login,
-      });
-
-      if (typeof data === "string" && data.includes("@")) {
-        return data;
-      }
-    } catch {
-      // Fallback
-    }
-
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email")
-        .ilike("username", login)
-        .maybeSingle();
-
-      if (profile?.email) {
-        return profile.email;
-      }
-    } catch {
-      // Fallback
-    }
-
-    return login;
-  }, [email]);
+  /** E-mail de uma conta que ainda não confirmou o cadastro (oferece reenviar o link). */
+  const [naoConfirmado, setNaoConfirmado] = useState<string | null>(null);
+  const [aviso, setAviso] = useState("");
 
   /**
    * Efeito de inicialização para verificar se o usuário já possui uma sessão ativa.
@@ -102,6 +74,13 @@ const Login: NextPage = () => {
     }
   }, [router]);
 
+  /** Volta do link de confirmação do cadastro (?confirmado=1). No servidor é sempre false. */
+  const veioDaConfirmacao = useSyncExternalStore(
+    semAssinatura,
+    () => new URLSearchParams(window.location.search).has("confirmado"),
+    () => false,
+  );
+
   /**
    * Trata o envio do formulário de login via Supabase Auth.
    *
@@ -110,6 +89,8 @@ const Login: NextPage = () => {
   const handleLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setAviso("");
+    setNaoConfirmado(null);
 
     if (!email.trim() || !senha) {
       setError("Preencha e-mail/usuário e senha.");
@@ -119,36 +100,34 @@ const Login: NextPage = () => {
     setIsLoading(true);
 
     try {
-      const loginEmail = await resolveLoginEmail();
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: senha,
-      });
-
-      if (signInError || !data.user) {
-        setError("Email/usuário ou senha informados são inválidos.");
+      const resultado = await entrarNoStudyFlow(email, senha);
+      if (!resultado.ok) {
+        setError(resultado.mensagem);
+        // Reenviar o link só quando a pessoa digitou o e-mail: pelo username ele não é revelado.
+        if (resultado.codigo === "email_nao_confirmado" && ehEmail(email)) setNaoConfirmado(email.trim());
         return;
       }
 
+      const { user } = resultado;
       const { data: profile } = await supabase
         .from("profiles")
         .select("nome, username, email")
-        .eq("id", data.user.id)
+        .eq("id", user.id)
         .maybeSingle();
 
       const sessionUser: SessionUser = {
         nome:
           profile?.nome ||
-          data.user.user_metadata?.full_name ||
-          data.user.user_metadata?.nome ||
-          data.user.email?.split("@")[0] ||
+          user.user_metadata?.full_name ||
+          user.user_metadata?.nome ||
+          user.email?.split("@")[0] ||
           "Usuário Study Flow",
         username:
           profile?.username ||
-          data.user.user_metadata?.username ||
-          data.user.email?.split("@")[0] ||
+          user.user_metadata?.username ||
+          user.email?.split("@")[0] ||
           "usuario",
-        email: profile?.email || data.user.email || loginEmail,
+        email: profile?.email || user.email || email.trim(),
       };
 
       localStorage.setItem(
@@ -168,12 +147,27 @@ const Login: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [email, senha, rememberMe, resolveLoginEmail, router]);
+  }, [email, senha, rememberMe, router]);
 
   return (
     <AuthLayout title="Entrar">
       <form className="flex flex-col gap-4" noValidate onSubmit={handleLogin}>
+        {aviso ? <Alert tone="success">{aviso}</Alert> : null}
+        {veioDaConfirmacao && !aviso && !error ? <Alert tone="success">E-mail confirmado! Entre com seu e-mail e senha.</Alert> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
+        {naoConfirmado ? (
+          <Button
+            onClick={async () => {
+              const erro = await reenviarConfirmacao(naoConfirmado);
+              setError(erro ?? "");
+              setAviso(erro ? "" : `Enviamos um novo link para ${naoConfirmado}.`);
+              if (!erro) setNaoConfirmado(null);
+            }}
+            variant="secondary"
+          >
+            Reenviar e-mail de confirmação
+          </Button>
+        ) : null}
 
         <Field htmlFor="login-usuario" label="E-mail ou usuário">
           <Input

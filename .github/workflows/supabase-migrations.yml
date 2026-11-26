@@ -1,0 +1,58 @@
+name: Supabase Migrations
+
+# Aplica supabase/migrations em produção a cada merge na main. É o único caminho de
+# mudança do schema: nada de SQL Editor ou aplicação manual, para o histórico de
+# migrations do banco continuar igual ao repositório.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "supabase/migrations/**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      # Ref do projeto (também aparece na URL pública do Supabase; não é segredo).
+      SUPABASE_PROJECT_ID: fsevgdeegpaxdhcwkkcz
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Conferir secrets
+      run: |
+        missing=0
+        for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD; do
+          if [ -z "${!name}" ]; then echo "::error::Secret ausente: $name (Settings > Secrets and variables > Actions)"; missing=1; fi
+        done
+        exit $missing
+
+    - name: Setup Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22
+
+    - name: Supabase CLI na versão do package-lock
+      run: |
+        VERSION=$(node -p "require('./package-lock.json').packages['node_modules/supabase'].version")
+        echo "SUPABASE=npx --yes supabase@$VERSION" >> "$GITHUB_ENV"
+
+    - name: Vincular projeto
+      run: $SUPABASE link --project-ref "$SUPABASE_PROJECT_ID"
+
+    - name: Migrations pendentes
+      run: $SUPABASE db push --dry-run
+
+    - name: Aplicar migrations
+      run: $SUPABASE db push

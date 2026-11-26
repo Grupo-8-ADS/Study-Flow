@@ -20,6 +20,7 @@ import {
   PRESETS_POMODORO,
   ROTULO_MODO,
   duracaoModo,
+  avisoFimDeCiclo,
   normalizarPomodoro,
   proximoModo,
   segundosRestantes,
@@ -136,7 +137,7 @@ export default function TimerScreen() {
     if (terminado === 'foco') {
       setFocosConcluidos(focos);
       const minutos = Math.round(duracao / 60);
-      setAviso(`${minutos} min de foco em ${disciplina.nome} registrados (+${Math.min(minutos, 240)} XP). Hora da ${ROTULO_MODO[proximo].toLowerCase()}.`);
+      setAviso(avisoFimDeCiclo('foco', proximo, { minutos, disciplina: disciplina.nome }));
       try {
         const { data } = await supabase.auth.getSession();
         const uid = data.session?.user?.id;
@@ -160,7 +161,7 @@ export default function TimerScreen() {
         setAviso('Não foi possível registrar a sessão. Verifique a conexão.');
       }
     } else {
-      setAviso('A pausa acabou. Pronto para voltar ao foco?');
+      setAviso(avisoFimDeCiclo(terminado, proximo));
     }
   };
 

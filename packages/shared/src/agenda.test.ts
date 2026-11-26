@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 
-import { aulasNoPeriodo, deLinha, formatarHorario, paraLinha, validarCompromisso, type CompromissoForm } from './agenda';
+import { aulasNoPeriodo, deLinha, formatarHorario, ocupadosNoPeriodo, paraLinha, proximasEntregas, rotinasNoPeriodo, validarCompromisso, type CompromissoForm } from './agenda';
 
 const base: CompromissoForm = {
   titulo: 'P1',
@@ -69,5 +69,39 @@ describe('agenda.ts', () => {
       '2026-11-22',
     );
     expect(aulas.map((a) => a.data)).toEqual(['2026-11-16', '2026-11-18']);
+  });
+});
+
+describe('rotinas e ocupação da agenda', () => {
+  it('rotinasNoPeriodo_deveRepetirOsHorariosNosDiasDaSemana', () => {
+    // 2026-03-02 é segunda-feira
+    const lista = rotinasNoPeriodo([{ id: 'r1', nome: 'Trabalho', horarios: [{ dia_semana: 1, inicio: '08:00', fim: '12:00' }], notas: '' }], '2026-03-01', '2026-03-14');
+    expect(lista.map((c) => c.data)).toEqual(['2026-03-02', '2026-03-09']);
+    expect(lista[0]).toMatchObject({ rotina: true, titulo: 'Trabalho', horaInicio: '08:00', horaFim: '12:00', disciplinaId: null });
+  });
+
+  it('ocupadosNoPeriodo_deveSomarAulasRotinasECompromissosComHorario', () => {
+    const dados = {
+      disciplinas: [{ id: 'd1', nome: 'Cálculo', professor: '', prioridade: 2 as const, aulas: [{ dia_semana: 1, inicio: '19:00', fim: '20:40' }], notas: '' }],
+      rotinas: [{ id: 'r1', nome: 'Trabalho', horarios: [{ dia_semana: 1, inicio: '08:00', fim: '12:00' }], notas: '' }],
+      compromissos: [
+        { id: 'c1', titulo: 'Reunião', tipo: 'atividade' as const, disciplinaId: null, data: '2026-03-02', horaInicio: '14:00', horaFim: '', notas: '', concluido: false, origem: null },
+        { id: 'c2', titulo: 'Dia todo', tipo: 'atividade' as const, disciplinaId: null, data: '2026-03-02', horaInicio: '', horaFim: '', notas: '', concluido: false, origem: null },
+        { id: 'c3', titulo: 'Estudo', tipo: 'estudo' as const, disciplinaId: 'd1', data: '2026-03-02', horaInicio: '15:00', horaFim: '16:00', notas: '', concluido: false, origem: 'cronograma' as const },
+      ],
+    };
+    const horas = (o: { inicio: Date; fim: Date }) => `${o.inicio.getHours()}-${o.fim.getHours()}`;
+    expect(ocupadosNoPeriodo(dados, '2026-03-02', '2026-03-02').map(horas).sort()).toEqual(['14-15', '15-16', '19-20', '8-12']);
+    expect(ocupadosNoPeriodo(dados, '2026-03-02', '2026-03-02', true).map(horas).sort()).toEqual(['14-15', '19-20', '8-12']);
+  });
+
+  it('proximasEntregas_deveIgnorarTrabalhosConcluidosEPassados', () => {
+    const c = (id: string, data: string, concluido = false) => ({
+      id, titulo: id, tipo: 'trabalho' as const, disciplinaId: 'd1', data, horaInicio: '', horaFim: '', notas: '', concluido, origem: null,
+    });
+    const amanha = new Date(Date.now() + 86_400_000);
+    const depois = new Date(Date.now() + 3 * 86_400_000);
+    const s = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    expect(proximasEntregas([c('feito', s(amanha), true), c('velho', '2020-01-01'), c('ok', s(depois))]).get('d1')).toBe(s(depois));
   });
 });

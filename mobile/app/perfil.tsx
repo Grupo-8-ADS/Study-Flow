@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,8 +17,7 @@ import {
   Image as ImageIcon,
   Trash2,
 } from 'lucide-react-native';
-import { COLORS, bannerPreset } from '@studyflow/shared';
-import { LinearGradient } from 'expo-linear-gradient';
+import { COLORS } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
@@ -28,6 +26,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { FundoBanner } from '../components/MolduraAvatar';
 
 export default function PerfilScreen() {
   const router = useRouter();
@@ -259,20 +258,7 @@ export default function PerfilScreen() {
         {/* Profile Banner & Header Card */}
         <View style={styles.bannerContainer}>
           <View style={[styles.bannerBg, { backgroundColor: bgColor }]}>
-            {bannerPreset(bannerUrl) ? (
-              <LinearGradient
-                colors={bannerPreset(bannerUrl)!.cores}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : bannerUrl ? (
-              <Image
-                source={{ uri: bannerUrl }}
-                style={StyleSheet.absoluteFill}
-                resizeMode="cover"
-              />
-            ) : null}
+            <FundoBanner corPadrao={bgColor} valor={bannerUrl} />
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.bannerEditBtn}
@@ -289,6 +275,7 @@ export default function PerfilScreen() {
               name={nome}
               size={84}
               level={session?.nivel_atual || 1}
+              moldura={session?.moldura}
               showLevel
             />
             <TouchableOpacity

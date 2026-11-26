@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { StudyFlowSession } from '@studyflow/shared';
+import { entrar, MENSAGENS_LOGIN, StudyFlowSession } from '@studyflow/shared';
 import { supabase } from '../lib/supabase';
+import { entrarPorUsuario } from '../lib/api';
 import { Storage } from '../lib/storage';
 import { limparAgenda } from '../lib/agenda';
 
@@ -8,7 +9,8 @@ interface AuthContextType {
   session: StudyFlowSession | null;
   isLoading: boolean;
   signIn: (identifier: string, pass: string) => Promise<{ error?: string }>;
-  signUp: (nome: string, username: string, email: string, pass: string) => Promise<{ error?: string }>;
+  /** `confirmarEmail`: a conta foi criada mas só vale depois do link enviado por e-mail. */
+  signUp: (nome: string, username: string, email: string, pass: string) => Promise<{ error?: string; confirmarEmail?: boolean }>;
   signOut: () => Promise<void>;
   updateSession: (partial: Partial<StudyFlowSession>) => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -41,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       username: prof?.username || email.split('@')[0],
       avatar_url: prof?.avatar_url,
       banner_url: prof?.banner_url,
+      moldura: prof?.moldura ?? null,
       bg_color: prof?.bg_color || '#29645e',
       horas_diarias: prof?.horas_diarias || 0,
       nivel_atual: prof?.nivel_atual || 1,
@@ -104,70 +107,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /** Login por e-mail ou nome de usuário (mesma regra da web: ver entrar em @studyflow/shared). */
   const signIn = async (identifier: string, pass: string): Promise<{ error?: string }> => {
-    const cleanId = identifier.trim();
-    const isEmail = cleanId.includes('@');
+    const resultado = await entrar(supabase.auth, entrarPorUsuario, identifier, pass);
+    if (!resultado.ok) return { error: resultado.mensagem };
 
     try {
-      let email = cleanId;
-      if (!isEmail) {
-        let resolvedEmail: string | null = null;
-        try {
-          const { data: rpcEmail, error: rpcError } = await supabase.rpc('get_email_by_username', {
-            login_username: cleanId,
-          });
-          if (!rpcError && typeof rpcEmail === 'string' && rpcEmail.includes('@')) {
-            resolvedEmail = rpcEmail;
-          }
-        } catch {
-          // RPC fallback
-        }
-
-        if (!resolvedEmail) {
-          try {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('email')
-              .ilike('username', cleanId)
-              .maybeSingle();
-
-            if (profile?.email) {
-              resolvedEmail = profile.email;
-            }
-          } catch {
-            // Profile query fallback
-          }
-        }
-
-        if (!resolvedEmail) {
-          return { error: 'Email/usuário ou senha informados são inválidos.' };
-        }
-        email = resolvedEmail;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
-
-      if (error) {
-        return { error: 'Email e/ou senha informados são inválidos.' };
-      }
-
-      if (data.user) {
-        const userSession = await fetchProfileForUser(data.user.id, data.user.email || email);
-        setSession(userSession);
-        await Storage.setSession(userSession);
-        return {};
-      }
-    } catch (err: any) {
-      return { error: err.message || 'Erro ao efetuar login.' };
+      const userSession = await fetchProfileForUser(resultado.user.id, resultado.user.email || identifier.trim());
+      setSession(userSession);
+      await Storage.setSession(userSession);
+      return {};
+    } catch {
+      return { error: MENSAGENS_LOGIN.indisponivel };
     }
-
-    return { error: 'Email e/ou senha informados são inválidos.' };
   };
 
-  const signUp = async (nome: string, username: string, email: string, pass: string): Promise<{ error?: string }> => {
+  const signUp = async (nome: string, username: string, email: string, pass: string): Promise<{ error?: string; confirmarEmail?: boolean }> => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
@@ -185,12 +140,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: error.message || 'Erro ao realizar cadastro.' };
       }
 
+      // Com a confirmação de e-mail ligada no Supabase, e-mail já cadastrado volta sem identidades.
+      if (data.user && data.user.identities?.length === 0) {
+        return { error: 'Este e-mail já está cadastrado.' };
+      }
+
+      // Confirmação de e-mail ligada: sem sessão até o usuário abrir o link do e-mail.
+      if (data.user && !data.session) {
+        return { confirmarEmail: true };
+      }
+
       if (data.user) {
         const userSession: StudyFlowSession = {
           email: email.trim(),
           nome: nome.trim(),
           username: username.trim(),
-          pendingEmailConfirmation: !data.session,
           bg_color: '#29645e',
           nivel_atual: 1,
           xp: 0,

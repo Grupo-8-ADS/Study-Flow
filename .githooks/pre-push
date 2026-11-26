@@ -1,0 +1,4 @@
+#!/bin/sh
+# Antes de subir, roda as mesmas checagens do CI (scripts/verify.mjs).
+# Só numa emergência: git push --no-verify (o CI continua barrando o merge).
+exec node scripts/verify.mjs

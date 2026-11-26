@@ -5,55 +5,46 @@ import { useIrPara } from '../lib/navigation';
 import { Clock, Plus, Sparkles, Trash2 } from 'lucide-react-native';
 import {
   COLORS,
-  CronogramaError,
+  COMO_O_CRONOGRAMA_E_MONTADO,
+  DURACAO_BLOCO_MIN,
   NOMES_DIAS_SEMANA,
   RADII,
-  aulasNoPeriodo,
-  dataStr,
-  gerarCronograma,
-  hojeStr,
+  applyTimeMask,
   horaStr,
   intervaloDe,
-  proximasProvas,
-  validarRotina,
+  limiteDiarioInicial,
+  planejarCronograma,
+  resumoCronograma,
+  rotuloResumoCronograma,
+  textoDescartados,
+  adicionarHorarioLivre,
+  carregarHorariosLivres,
+  removerHorarioLivre,
   type BlocoEstudo,
-  type RotinaSlot,
+  type HorarioLivre,
 } from '@studyflow/shared';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
+import { RotinaFixaCard } from '../components/RotinaFixaCard';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { salvarBlocosCronograma, useAgenda } from '../lib/agenda';
 
-type Slot = RotinaSlot & { id: string };
-
 const dois = (n: number) => String(n).padStart(2, '0');
-const hhmm = (valor: string) => String(valor).slice(0, 5);
-const ordenar = (lista: Slot[]) =>
-  [...lista].sort((a, b) => a.dia_semana - b.dia_semana || a.hora_inicio.localeCompare(b.hora_inicio));
 const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-/** Normaliza "1900" ou "19:00" para "19:00"; devolve null se não for um horário válido. */
-function normalizarHora(valor: string): string | null {
-  const limpo = valor.trim().replace(/[^0-9:]/g, '');
-  const m = limpo.match(/^(\d{1,2}):?(\d{2})$/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return `${dois(h)}:${dois(min)}`;
-}
 
 /** Rotina semanal e geração de cronograma (mesmas regras do site, via @studyflow/shared). */
 export default function RotinaScreen() {
   const irPara = useIrPara();
+  const { session } = useAuth();
   const { dados: agenda } = useAgenda();
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState<string | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slots, setSlots] = useState<HorarioLivre[]>([]);
 
   const [dia, setDia] = useState(1);
   const [inicio, setInicio] = useState('');
@@ -62,7 +53,9 @@ export default function RotinaScreen() {
   const [salvandoSlot, setSalvandoSlot] = useState(false);
 
   const [semanas, setSemanas] = useState(2);
-  const [duracao, setDuracao] = useState('50');
+  const [duracao, setDuracao] = useState(String(DURACAO_BLOCO_MIN.padrao));
+  /** Máximo de horas de estudo por dia ("" = sem limite). Começa pela meta diária do perfil. */
+  const [limiteHoras, setLimiteHoras] = useState(() => String(limiteDiarioInicial(session?.horas_diarias)));
   const [erroGeracao, setErroGeracao] = useState<string | null>(null);
   const [semDisciplinas, setSemDisciplinas] = useState(false);
   const [previa, setPrevia] = useState<{ blocos: BlocoEstudo[]; duracaoMin: number; descartados: number } | null>(null);
@@ -77,18 +70,9 @@ export default function RotinaScreen() {
       const id = data.session?.user?.id ?? null;
       setUserId(id);
       if (!id) return;
-      const rotinaRes = await supabase.from('rotinas_semanais').select('id,dia_semana,hora_inicio,hora_fim').eq('user_id', id);
-      setSlots(
-        ordenar(
-          (rotinaRes.data ?? []).map((r) => ({
-            id: r.id,
-            dia_semana: r.dia_semana,
-            hora_inicio: hhmm(r.hora_inicio),
-            hora_fim: hhmm(r.hora_fim),
-          })),
-        ),
-      );
-      setErroCarga(rotinaRes.error ? 'Não foi possível carregar sua rotina. Verifique a conexão e tente novamente.' : null);
+      const r = await carregarHorariosLivres(supabase, id);
+      if (r.ok) setSlots(r.horarios);
+      setErroCarga(r.ok ? null : r.erros[0]);
     } catch {
       setErroCarga('Não foi possível carregar sua rotina. Verifique a conexão e tente novamente.');
     } finally {
@@ -105,47 +89,28 @@ export default function RotinaScreen() {
   const adicionar = async () => {
     setSucesso(null);
     setPrevia(null);
-    const ini = normalizarHora(inicio);
-    const fi = normalizarHora(fim);
-    if (!ini || !fi) {
-      setErrosRotina(['Informe o horário de início e o de fim no formato HH:MM.']);
-      return;
-    }
-    const novo: RotinaSlot = { dia_semana: dia, hora_inicio: ini, hora_fim: fi };
-    const erros = validarRotina([...slots, novo]);
-    if (erros.length > 0) {
-      setErrosRotina(erros);
-      return;
-    }
-    if (!userId) return;
-    setErrosRotina([]);
+    // Sem a lista carregada, a checagem de sobreposição seria feita contra nada.
+    if (!userId || erroCarga) return;
     setSalvandoSlot(true);
-    const { data, error } = await supabase
-      .from('rotinas_semanais')
-      .insert({ user_id: userId, ...novo })
-      .select('id')
-      .single();
+    const r = await adicionarHorarioLivre(supabase, userId, slots, { dia_semana: dia, hora_inicio: inicio, hora_fim: fim });
     setSalvandoSlot(false);
-    if (error || !data) {
-      setErrosRotina(['Não foi possível salvar o horário. Tente novamente.']);
+    if (!r.ok) {
+      setErrosRotina(r.erros);
       return;
     }
-    setSlots((atual) => ordenar([...atual, { ...novo, id: data.id }]));
+    setSlots(r.horarios);
+    setErrosRotina([]);
     setInicio('');
     setFim('');
   };
 
-  const remover = async (slot: Slot) => {
+  const remover = async (slot: HorarioLivre) => {
     if (!userId) return;
     setSucesso(null);
     setPrevia(null);
-    const { error } = await supabase.from('rotinas_semanais').delete().eq('id', slot.id).eq('user_id', userId);
-    if (error) {
-      setErrosRotina(['Não foi possível remover o horário. Tente novamente.']);
-      return;
-    }
-    setSlots((atual) => atual.filter((s) => s.id !== slot.id));
-    setErrosRotina([]);
+    const r = await removerHorarioLivre(supabase, userId, slots, slot.id);
+    if (r.ok) setSlots(r.horarios);
+    setErrosRotina(r.ok ? [] : r.erros);
   };
 
   const gerar = () => {
@@ -153,57 +118,13 @@ export default function RotinaScreen() {
     setPrevia(null);
     setErroGeracao(null);
     setSemDisciplinas(false);
-    if (!agenda) return;
-    if (agenda.disciplinas.length === 0) {
-      setErroGeracao('Cadastre ao menos uma disciplina antes de gerar o cronograma.');
-      setSemDisciplinas(true);
-      return;
-    }
-    if (slots.length === 0) {
-      setErroGeracao('Cadastre sua rotina semanal antes de gerar o cronograma.');
-      return;
-    }
-    const duracaoMin = Number(duracao);
-    if (!Number.isInteger(duracaoMin) || duracaoMin < 10 || duracaoMin > 240) {
-      setErroGeracao('Informe uma duração de bloco entre 10 e 240 minutos.');
-      return;
-    }
-
-    const agora = new Date();
-    const hoje = hojeStr();
-    const fimPeriodo = dataStr(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + semanas * 7 - 1));
-    const provas = proximasProvas(agenda.compromissos);
-    // O que já ocupa o tempo: aulas, compromissos com horário e (se não for substituir) blocos já salvos.
-    const ocupados = [
-      ...aulasNoPeriodo(agenda.disciplinas, hoje, fimPeriodo),
-      ...agenda.compromissos.filter(
-        (c) => c.horaInicio && c.data >= hoje && c.data <= fimPeriodo && !(substituir && c.origem === 'cronograma' && !c.concluido),
-      ),
-    ].map((c) => {
-      const { inicio: ini, fim: f } = intervaloDe(c);
-      // Compromisso só com horário de início ocupa 1 h.
-      return { inicio: ini, fim: f > ini ? f : new Date(ini.getTime() + 60 * 60 * 1000) };
-    });
-
-    try {
-      const params = {
-        disciplinas: agenda.disciplinas.map((d) => ({ id: d.id, nome: d.nome, peso: d.prioridade, proximaProva: provas.get(d.id) ?? null })),
-        rotina: slots,
-        dataInicio: agora,
-        semanas,
-        duracaoBlocoMin: duracaoMin,
-      };
-      const todos = (() => {
-        try {
-          return gerarCronograma(params).length;
-        } catch {
-          return 0;
-        }
-      })();
-      const blocos = gerarCronograma({ ...params, ocupados, naoAntesDe: agora });
-      setPrevia({ blocos, duracaoMin, descartados: Math.max(0, todos - blocos.length) });
-    } catch (e) {
-      setErroGeracao(e instanceof CronogramaError ? e.message : 'Não foi possível gerar o cronograma.');
+    if (!agenda || erroCarga) return;
+    const resultado = planejarCronograma({ agenda, rotina: slots, semanas, duracaoBloco: duracao, limiteHoras, substituir });
+    if (resultado.ok) {
+      setPrevia(resultado);
+    } else {
+      setErroGeracao(resultado.mensagem);
+      setSemDisciplinas(Boolean(resultado.semDisciplinas));
     }
   };
 
@@ -221,9 +142,7 @@ export default function RotinaScreen() {
     setPrevia(null);
   };
 
-  const resumo = previa
-    ? Array.from(previa.blocos.reduce((mapa, b) => mapa.set(b.disciplina_nome, (mapa.get(b.disciplina_nome) ?? 0) + 1), new Map<string, number>()))
-    : [];
+  const resumo = previa ? resumoCronograma(previa.blocos) : [];
   const agoraRender = new Date();
   const blocosFuturos = (agenda?.compromissos ?? []).filter(
     (c) => c.origem === 'cronograma' && !c.concluido && intervaloDe(c).inicio >= agoraRender,
@@ -239,11 +158,16 @@ export default function RotinaScreen() {
           {erroCarga ? (
             <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertDanger]}>
               <Text style={styles.alertDangerText}>{erroCarga}</Text>
+              <Text accessibilityRole="button" onPress={() => void carregar()} style={styles.alertLink}>
+                Tentar de novo
+              </Text>
             </View>
           ) : null}
 
+          {agenda ? <RotinaFixaCard dados={agenda} titulo="1. Sua rotina fixa" /> : null}
+
           <Card style={styles.card}>
-            <Text style={styles.cardTitle}>1. Horários livres para estudar</Text>
+            <Text style={styles.cardTitle}>2. Horários livres para estudar</Text>
 
             <Text style={styles.label}>Dia da semana</Text>
             <View style={styles.chips}>
@@ -264,25 +188,25 @@ export default function RotinaScreen() {
             <View style={styles.row}>
               <Input
                 containerStyle={styles.half}
-                keyboardType="numbers-and-punctuation"
+                keyboardType="number-pad"
                 label="Início"
                 maxLength={5}
-                onChangeText={setInicio}
+                onChangeText={(t) => setInicio(applyTimeMask(t))}
                 placeholder="19:00"
                 value={inicio}
               />
               <Input
                 containerStyle={styles.half}
-                keyboardType="numbers-and-punctuation"
+                keyboardType="number-pad"
                 label="Fim"
                 maxLength={5}
-                onChangeText={setFim}
+                onChangeText={(t) => setFim(applyTimeMask(t))}
                 placeholder="21:00"
                 value={fim}
               />
             </View>
             <Button
-              disabled={salvandoSlot}
+              disabled={salvandoSlot || loading || Boolean(erroCarga)}
               icon={<Plus size={18} color={COLORS.primary} />}
               loading={salvandoSlot}
               onPress={() => void adicionar()}
@@ -325,7 +249,7 @@ export default function RotinaScreen() {
           </Card>
 
           <Card style={styles.card}>
-            <Text style={styles.cardTitle}>2. Gerar cronograma</Text>
+            <Text style={styles.cardTitle}>3. Gerar cronograma</Text>
 
             <Text style={styles.label}>Semanas</Text>
             <View style={styles.chips}>
@@ -342,7 +266,28 @@ export default function RotinaScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            <Input keyboardType="number-pad" label="Duração do bloco (min)" maxLength={3} onChangeText={setDuracao} value={duracao} />
+            <View style={styles.row}>
+              <Input
+                containerStyle={styles.half}
+                keyboardType="number-pad"
+                label="Duração do bloco (min)"
+                maxLength={3}
+                onChangeText={setDuracao}
+                value={duracao}
+              />
+              <Input
+                containerStyle={styles.half}
+                keyboardType="decimal-pad"
+                label="Máximo por dia (h)"
+                maxLength={4}
+                onChangeText={(t) => {
+                  setLimiteHoras(t);
+                  setPrevia(null);
+                }}
+                placeholder="Sem limite"
+                value={limiteHoras}
+              />
+            </View>
 
             {blocosFuturos > 0 ? (
               <View style={styles.switchRow}>
@@ -359,11 +304,15 @@ export default function RotinaScreen() {
               </View>
             ) : null}
 
-            <Button icon={<Sparkles size={18} color="#ffffff" />} onPress={gerar} title="Gerar cronograma" />
-            <Text style={styles.hint}>
-              Os blocos entram nos seus horários livres, pulando aulas, compromissos com horário e o que já passou. As disciplinas se revezam
-              conforme a prioridade, e quem tem prova no período ganha peso dobrado até a prova.
-            </Text>
+            <Button disabled={loading || Boolean(erroCarga)} icon={<Sparkles size={18} color="#ffffff" />} onPress={gerar} title="Gerar cronograma" />
+            <View style={styles.regras}>
+              <Text style={styles.regrasTitulo}>Como o cronograma é montado</Text>
+              {COMO_O_CRONOGRAMA_E_MONTADO.map((regra) => (
+                <Text key={regra} style={styles.hint}>
+                  • {regra}
+                </Text>
+              ))}
+            </View>
 
             {erroGeracao ? (
               <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertDanger]}>
@@ -389,18 +338,12 @@ export default function RotinaScreen() {
               <View style={styles.preview}>
                 <Text style={styles.previewTitle}>Prévia do cronograma</Text>
                 {previa.descartados > 0 ? (
-                  <Text style={styles.hint}>
-                    {previa.descartados} {previa.descartados === 1 ? 'horário foi pulado' : 'horários foram pulados'} por já ter passado ou bater com
-                    outro compromisso.
-                  </Text>
+                  <Text style={styles.hint}>{textoDescartados(previa.descartados)}</Text>
                 ) : null}
                 <View style={styles.chips}>
                   {resumo.map(([nome, qtd]) => (
                     <View key={nome} style={styles.summaryPill}>
-                      <Text style={styles.summaryText}>
-                        {nome}: {qtd} {qtd === 1 ? 'bloco' : 'blocos'} ·{' '}
-                        {((qtd * previa.duracaoMin) / 60).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h
-                      </Text>
+                      <Text style={styles.summaryText}>{rotuloResumoCronograma(nome, qtd, previa.duracaoMin)}</Text>
                     </View>
                   ))}
                 </View>
@@ -439,6 +382,8 @@ const styles = StyleSheet.create({
   card: { gap: 12 },
   cardTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text },
   hint: { fontSize: 13, lineHeight: 18, color: COLORS.textMuted },
+  regras: { backgroundColor: COLORS.primarySoft, borderRadius: RADII.control, padding: 12, gap: 4 },
+  regrasTitulo: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 2 },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {

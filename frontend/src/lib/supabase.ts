@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { entrar, ROTA_ENTRAR_POR_USUARIO, type EntrarPorUsuario, type ResultadoLogin } from "@studyflow/shared";
 
 export const SUPABASE_FALLBACK_URL = "https://fsevgdeegpaxdhcwkkcz.supabase.co";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_FALLBACK_URL;
@@ -11,3 +12,25 @@ const supabasePublishableKey =
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey);
 
+/** Para onde o link de confirmação de cadastro leva (a tela de login avisa que deu certo). */
+export const urlConfirmacaoEmail = () => `${window.location.origin}/?confirmado=1`;
+
+/** Reenvia o e-mail de confirmação de cadastro. Devolve a mensagem de erro ou null. */
+export async function reenviarConfirmacao(email: string): Promise<string | null> {
+  const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: urlConfirmacaoEmail() } });
+  if (!error) return null;
+  return error.status === 429 ? "Aguarde um pouco antes de pedir outro e-mail." : "Não foi possível reenviar o e-mail. Tente novamente.";
+}
+
+const entrarPorUsuario: EntrarPorUsuario = async (usuario, senha) => {
+  const resposta = await fetch(ROTA_ENTRAR_POR_USUARIO, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ usuario, senha }),
+  });
+  return { status: resposta.status, corpo: await resposta.json().catch(() => null) };
+};
+
+/** Login por e-mail ou nome de usuário (mesma regra do app: ver entrar em @studyflow/shared). */
+export const entrarNoStudyFlow = (identificador: string, senha: string): Promise<ResultadoLogin> =>
+  entrar(supabase.auth, entrarPorUsuario, identificador, senha);

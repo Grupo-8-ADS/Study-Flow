@@ -240,9 +240,12 @@ describe('criarAgenda (store)', () => {
     expect(ctx.banco.tabelas.disciplinas[0].anotacoes).toMatchObject({ extra: 'manter', prioridade: 3 });
 
     await ctx.agenda.salvarCompromisso(form({ disciplinaId: d.id }));
+    await ctx.agenda.salvarCompromisso(form({ titulo: 'Avulso' }));
     expect(await ctx.agenda.excluirDisciplina(d.id)).toBe(true);
     expect(ctx.agenda.obterEstado().dados!.disciplinas).toHaveLength(0);
-    expect(ctx.agenda.obterEstado().dados!.compromissos[0].disciplinaId).toBeNull();
+    // Provas e trabalhos da disciplina saem da agenda junto; o resto fica.
+    expect(ctx.agenda.obterEstado().dados!.compromissos.map((c) => c.titulo)).toEqual(['Avulso']);
+    expect(ctx.banco.tabelas.itens_cronograma.map((l) => l.nome)).toEqual(['Avulso']);
 
     ctx.banco.falhas.set('disciplinas:insert', { message: 'x' });
     expect(await ctx.agenda.salvarDisciplina(base)).toMatch(/Não foi possível/);
@@ -250,6 +253,49 @@ describe('criarAgenda (store)', () => {
     expect(await ctx.agenda.salvarDisciplina(base, 'qualquer')).toMatch(/Não foi possível/);
     ctx.banco.falhas.set('disciplinas:delete', { message: 'x' });
     expect(await ctx.agenda.excluirDisciplina('qualquer')).toBe(false);
+  });
+
+  it('excluirDisciplina: se apagar os compromissos falhar, não apaga a disciplina', async () => {
+    await ctx.agenda.recarregarAgenda();
+    await ctx.agenda.salvarDisciplina({ nome: 'Física', professor: '', prioridade: 2, aulas: [], notas: '' });
+    const d = ctx.agenda.obterEstado().dados!.disciplinas[0];
+    await ctx.agenda.salvarCompromisso(form({ disciplinaId: d.id }));
+    ctx.banco.falhas.set('itens_cronograma:delete', { message: 'x' });
+    expect(await ctx.agenda.excluirDisciplina(d.id)).toBe(false);
+    expect(ctx.banco.tabelas.disciplinas).toHaveLength(1);
+    expect(ctx.banco.tabelas.itens_cronograma).toHaveLength(1);
+    expect(ctx.agenda.obterEstado().dados!.compromissos).toHaveLength(1);
+  });
+
+  it('salva, edita e exclui atividades fixas da rotina', async () => {
+    await ctx.agenda.recarregarAgenda();
+    const base = { nome: ' Trabalho ', horarios: [{ dia_semana: 1, inicio: '08:00', fim: '17:00' }], notas: '' };
+    expect(await ctx.agenda.salvarRotina({ ...base, nome: ' ' })).toMatch(/nome/);
+    expect(await ctx.agenda.salvarRotina({ ...base, horarios: [] })).toMatch(/pelo menos um horário/);
+    expect(await ctx.agenda.salvarRotina({ ...base, horarios: [{ dia_semana: 1, inicio: '18:00', fim: '17:00' }] })).toMatch(/depois/);
+    expect(await ctx.agenda.salvarRotina(base)).toBeNull();
+    const r = ctx.agenda.obterEstado().dados!.rotinas[0];
+    expect(r).toMatchObject({ nome: 'Trabalho', horarios: base.horarios });
+    expect(ctx.banco.tabelas.atividades_rotina[0]).toMatchObject({ nome: 'Trabalho', user_id: USER, notas: null });
+
+    expect(await ctx.agenda.salvarRotina({ ...base, nome: 'Estágio', notas: 'Remoto' }, r.id)).toBeNull();
+    expect(ctx.agenda.obterEstado().dados!.rotinas[0]).toMatchObject({ id: r.id, nome: 'Estágio', notas: 'Remoto' });
+
+    await ctx.agenda.recarregarAgenda();
+    expect(ctx.agenda.obterEstado().dados!.rotinas).toEqual([{ id: r.id, nome: 'Estágio', horarios: base.horarios, notas: 'Remoto' }]);
+
+    ctx.banco.falhas.set('atividades_rotina:delete', { message: 'x' });
+    expect(await ctx.agenda.excluirRotina(r.id)).toBe(false);
+    ctx.banco.falhas.delete('atividades_rotina:delete');
+    expect(await ctx.agenda.excluirRotina(r.id)).toBe(true);
+    expect(ctx.agenda.obterEstado().dados!.rotinas).toHaveLength(0);
+    expect(ctx.banco.tabelas.atividades_rotina).toHaveLength(0);
+  });
+
+  it('falha ao ler as rotinas é erro da agenda, não uma rotina vazia', async () => {
+    ctx.banco.falhas.set('atividades_rotina:select', { message: 'falhou' });
+    await ctx.agenda.recarregarAgenda();
+    expect(ctx.agenda.obterEstado().erro).toMatch(/Não foi possível carregar a agenda/);
   });
 
   it('migra provas antigas do JSON da disciplina uma única vez', async () => {
@@ -338,7 +384,7 @@ describe('criarAgenda (store)', () => {
     expect(salvo.compromissos.filter((x: { origem: string }) => x.origem === 'cronograma')).toHaveLength(0);
     await agenda.excluirCompromisso(c.id);
     await agenda.excluirDisciplina(d.id);
-    expect(agenda.obterEstado().dados).toEqual({ disciplinas: [], compromissos: [] });
+    expect(agenda.obterEstado().dados).toEqual({ disciplinas: [], compromissos: [], rotinas: [] });
 
     // Recarrega do armazenamento local.
     const outra = montar({ userId: null });

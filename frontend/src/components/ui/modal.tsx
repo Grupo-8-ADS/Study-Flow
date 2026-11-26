@@ -16,6 +16,9 @@ type ModalProps = {
 
 const widths = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl" };
 
+/** Modais abertos, do mais antigo ao mais recente (o último é o que está por cima). */
+const pilhaDeModais: symbol[] = [];
+
 /**
  * Janela modal acessível: fecha com Esc ou clique fora, prende o foco no conteúdo
  * e devolve o foco ao elemento anterior ao fechar.
@@ -41,7 +44,13 @@ export function Modal({ open = true, title, description, onClose, children, foot
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    // Modais empilhados (ex.: aviso de conflito por cima do formulário): só o de cima
+    // responde ao teclado, para o Esc não fechar os dois e perder o que foi digitado.
+    const token = Symbol("modal");
+    pilhaDeModais.push(token);
+
     function onKeyDown(event: KeyboardEvent) {
+      if (pilhaDeModais[pilhaDeModais.length - 1] !== token) return;
       if (event.key === "Escape") onCloseRef.current();
       if (event.key !== "Tab" || !panel) return;
       const items = Array.from(
@@ -61,6 +70,7 @@ export function Modal({ open = true, title, description, onClose, children, foot
 
     document.addEventListener("keydown", onKeyDown);
     return () => {
+      pilhaDeModais.splice(pilhaDeModais.indexOf(token), 1);
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = overflow;
       previous?.focus?.();
