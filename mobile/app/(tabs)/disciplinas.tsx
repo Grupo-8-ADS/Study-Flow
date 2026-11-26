@@ -3,16 +3,17 @@ import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text,
 import { BookOpen, Clock, Edit2, Plus, Trash2 } from 'lucide-react-native';
 import {
   COLORS,
-  NOMES_DIAS_SEMANA,
   ROTULO_TIPO,
-  applyTimeMask,
+  conflitosAoSalvar,
   formatarData,
   hojeStr,
-  type Aula,
+  itensComHorarios,
+  resumoHorarios,
   type Compromisso,
   type CompromissoForm,
   type DisciplinaAgenda,
   type DisciplinaForm,
+  type ItemComHorarios,
 } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
@@ -22,6 +23,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Chip, CompromissoEditor } from '../../components/CompromissoEditor';
+import { HorariosSemanaisEditor, confirmarConflitos } from '../../components/HorariosSemanais';
 import { COR_TIPO, excluirDisciplina, salvarDisciplina, useAgenda } from '../../lib/agenda';
 
 const vazia: DisciplinaForm = { nome: '', professor: '', prioridade: 2, aulas: [], notas: '' };
@@ -30,15 +32,7 @@ const PRIORIDADES: Array<[1 | 2 | 3, string]> = [
   [2, 'Média'],
   [3, 'Alta'],
 ];
-const diaCurto = (d: number) => NOMES_DIAS_SEMANA[d].slice(0, 3);
-
-function resumoAulas(aulas: Aula[]) {
-  if (aulas.length === 0) return 'Sem horário de aula';
-  return [...aulas]
-    .sort((a, b) => a.dia_semana - b.dia_semana || a.inicio.localeCompare(b.inicio))
-    .map((a) => `${diaCurto(a.dia_semana)} ${a.inicio}–${a.fim}`)
-    .join(' · ');
-}
+const resumoAulas = (aulas: DisciplinaForm['aulas']) => resumoHorarios(aulas, 'Sem horário de aula');
 
 export default function DisciplinasScreen() {
   const { dados, carregando, atualizando, recarregar } = useAgenda();
@@ -126,7 +120,9 @@ export default function DisciplinasScreen() {
         )}
       </ScrollView>
 
-      {editando ? <DisciplinaEditor inicial={editando} onClose={() => setEditando(null)} /> : null}
+      {editando ? (
+        <DisciplinaEditor inicial={editando} onClose={() => setEditando(null)} outros={dados ? itensComHorarios(dados) : []} />
+      ) : null}
 
       <Modal visible={Boolean(vista) && !compromisso} onClose={() => setVendo(null)} title={vista?.nome} variant="bottom">
         {vista ? (
@@ -169,7 +165,7 @@ export default function DisciplinasScreen() {
   );
 }
 
-function DisciplinaEditor({ inicial, onClose }: { inicial: { id?: string; form: DisciplinaForm }; onClose: () => void }) {
+function DisciplinaEditor({ inicial, onClose, outros }: { inicial: { id?: string; form: DisciplinaForm }; onClose: () => void; outros: ItemComHorarios[] }) {
   const [form, setForm] = useState<DisciplinaForm>(() => ({ ...inicial.form, aulas: inicial.form.aulas.map((a) => ({ ...a })) }));
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -178,13 +174,11 @@ function DisciplinaEditor({ inicial, onClose }: { inicial: { id?: string; form: 
     setErro('');
     setForm((f) => ({ ...f, ...parcial }));
   };
-  const mudarAula = (i: number, parcial: Partial<Aula>) => mudar({ aulas: form.aulas.map((a, j) => (j === i ? { ...a, ...parcial } : a)) });
 
   const salvar = async () => {
-    if (form.aulas.some((a) => !/^\d{2}:\d{2}$/.test(a.inicio) || !/^\d{2}:\d{2}$/.test(a.fim))) {
-      setErro('Preencha início e fim de cada aula no formato HH:MM.');
-      return;
-    }
+    // Campo inválido é erro do formulário (devolvido pelo salvar); só depois procura conflito.
+    const conflitos = conflitosAoSalvar({ id: inicial.id, nome: form.nome, tipo: 'disciplina', horarios: form.aulas }, outros, 'aula');
+    if (conflitos.length > 0 && !(await confirmarConflitos(conflitos))) return;
     setSalvando(true);
     const msg = await salvarDisciplina(form, inicial.id);
     setSalvando(false);
@@ -205,27 +199,14 @@ function DisciplinaEditor({ inicial, onClose }: { inicial: { id?: string; form: 
         ))}
       </View>
 
-      <View style={styles.secaoTopo}>
-        <Text style={styles.label}>Horários de aula</Text>
-        <Button title="+ Aula" size="sm" variant="outline" onPress={() => mudar({ aulas: [...form.aulas, { dia_semana: 1, inicio: '19:00', fim: '20:40' }] })} />
-      </View>
-      {form.aulas.length === 0 ? <Text style={styles.dica}>As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas.</Text> : null}
-      {form.aulas.map((a, i) => (
-        <View key={i} style={styles.aulaEditor}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            {NOMES_DIAS_SEMANA.map((nome, d) => (
-              <Chip ativo={a.dia_semana === d} key={nome} label={nome.slice(0, 3)} onPress={() => mudarAula(i, { dia_semana: d })} />
-            ))}
-          </ScrollView>
-          <View style={styles.horarios}>
-            <Input containerStyle={{ flex: 1 }} label="Início" keyboardType="number-pad" maxLength={5} value={a.inicio} onChangeText={(t) => mudarAula(i, { inicio: applyTimeMask(t) })} />
-            <Input containerStyle={{ flex: 1 }} label="Fim" keyboardType="number-pad" maxLength={5} value={a.fim} onChangeText={(t) => mudarAula(i, { fim: applyTimeMask(t) })} />
-            <TouchableOpacity accessibilityLabel={`Remover aula ${i + 1}`} onPress={() => mudar({ aulas: form.aulas.filter((_, j) => j !== i) })} style={styles.remover}>
-              <Trash2 size={18} color={COLORS.danger} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
+      <HorariosSemanaisEditor
+        horarios={form.aulas}
+        novo={{ dia_semana: 1, inicio: '19:00', fim: '20:40' }}
+        onChange={(aulas) => mudar({ aulas })}
+        rotulo="aula"
+        titulo="Horários de aula"
+        vazio="As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas."
+      />
 
       <Input label="Anotações" multiline value={form.notas} onChangeText={(t) => mudar({ notas: t })} style={{ minHeight: 70, textAlignVertical: 'top' }} />
 
@@ -258,9 +239,5 @@ const styles = StyleSheet.create({
   erro: { backgroundColor: COLORS.dangerLight, color: COLORS.danger, padding: 10, borderRadius: 10, marginBottom: 12, fontSize: 13 },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  dica: { fontSize: 12, color: COLORS.textMuted, marginBottom: 12 },
-  aulaEditor: { backgroundColor: COLORS.primarySoft, borderRadius: 12, padding: 10, marginBottom: 10 },
-  horarios: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  remover: { padding: 10, marginBottom: 16 },
   acoes: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
 });

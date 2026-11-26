@@ -8,12 +8,11 @@ import { ConquistaIcone } from "@/components/conquista-icone";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
 import {
-  buildDistribution,
   getCurrentSupabaseUserId,
   getLocalStudyMinutes,
   getStoredSession,
-  lerPrivacidade,
 } from "@/lib/studyflow-data";
+import { carregarPrivacidadeUsuario } from "@/lib/privacidade";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
@@ -21,10 +20,22 @@ import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import {
+  BOM_UTF8,
+  ERRO_CARREGAR_PRIVACIDADE,
+  PRIVACIDADE_PADRAO,
+  SEM_DISCIPLINA,
+  privacidadeEfetiva,
+  formatarDataISO,
+  formatarHoras,
+  formatarMinutos,
+  montarRelatorio,
+  nomeArquivoRelatorio,
+  resumoRelatorio,
+  distribuicaoEstudo,
+  type Privacidade,
   dataLocalISO,
-  gerarRelatorioPeriodo,
+  metasDeEstudo,
   intervaloDoPeriodo,
-  intervaloPersonalizado,
   progressoConquista,
   maiorSequencia,
   nomeConquista,
@@ -40,14 +51,6 @@ type Period = "semana" | "mes" | "acumulado";
 type ReportMode = "semana" | "mes" | "personalizado";
 
 // Metas sugeridas (horas) usadas quando o usuário ainda não definiu horas diárias no perfil.
-const DEFAULT_WEEKLY_GOAL = 28;
-const DEFAULT_MONTHLY_GOAL = 80;
-
-const formatMinutes = (minutes: number) => {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return hours > 0 ? `${hours}h${String(rest).padStart(2, "0")}` : `${rest}min`;
-};
 
 type UserSession = {
   avatar_url?: string | null;
@@ -87,11 +90,11 @@ const emptyAchievements = { available: [], completed: [], inProgress: [] } as {
 };
 
 function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: number | null; disciplinas: { nome?: string | null } | Array<{ nome?: string | null }> | null }>): PeriodStats {
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Mesma semana (segunda a domingo) e mês do relatório e do app.
+  const agora = new Date();
+  const semana = intervaloDoPeriodo("semana", agora);
+  const mes = intervaloDoPeriodo("mes", agora);
+  const dentro = (d: Date, i: { inicio: Date; fim: Date }) => d >= i.inicio && d < i.fim;
 
   const makePeriod = (label: string, predicate: (date: Date) => boolean) => {
     const rows = sessoes
@@ -100,11 +103,11 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
         const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
 
         return {
-          disciplina: disciplina?.nome ?? "Sem disciplina",
-          minutes: sessao.duracao_efetiva_min ?? 0,
+          disciplina: disciplina?.nome ?? SEM_DISCIPLINA,
+          minutos: sessao.duracao_efetiva_min ?? 0,
         };
       });
-    const distribution = buildDistribution(rows);
+    const distribution = distribuicaoEstudo(rows);
     const top = distribution[0];
 
     return {
@@ -117,8 +120,8 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
 
   return {
     acumulado: makePeriod("Acumulado", () => true),
-    mes: makePeriod("Mês", (date) => date >= startOfMonth),
-    semana: makePeriod("Semana", (date) => date >= startOfWeek),
+    mes: makePeriod("Mês", (date) => dentro(date, mes)),
+    semana: makePeriod("Semana", (date) => dentro(date, semana)),
   };
 }
 
@@ -127,6 +130,17 @@ export default function EstatisticasPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [period, setPeriod] = useState<Period>("semana");
   const [compartilhando, setCompartilhando] = useState(false);
+  const [privacidadeLida, setPrivacidadeLida] = useState<{ privacidade: Privacidade; carregada: boolean }>({
+    privacidade: { ...PRIVACIDADE_PADRAO },
+    carregada: false,
+  });
+  // Enquanto as preferências não foram lidas, tudo é tratado como privado (sem horas, sem compartilhar).
+  const privacidade = privacidadeEfetiva(privacidadeLida);
+  const recarregarPrivacidade = async () => {
+    const sessao = getStoredSession();
+    if (!sessao) return;
+    setPrivacidadeLida(await carregarPrivacidadeUsuario(await getCurrentSupabaseUserId(sessao), sessao.email));
+  };
   const [showAchievements, setShowAchievements] = useState(false);
   const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
   const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
@@ -150,6 +164,7 @@ export default function EstatisticasPage() {
       try {
         setUser(parsedSession);
         const currentUserId = await getCurrentSupabaseUserId(parsedSession);
+        setPrivacidadeLida(await carregarPrivacidadeUsuario(currentUserId, parsedSession.email));
 
         if (!currentUserId) {
           const localMinutes = getLocalStudyMinutes(parsedSession.email);
@@ -263,20 +278,14 @@ export default function EstatisticasPage() {
       nivel: level.nivel,
       periodo: current.label,
       topico: current.chart.length > 0 ? current.topic : null,
-      ocultarHoras: user ? !lerPrivacidade(user.email).showStudyHours : false,
+      ocultarHoras: !privacidade.mostrar_horas,
       link: typeof window !== "undefined" ? window.location.origin : undefined,
     });
   };
 
   const buildReport = () => {
-    try {
-      const range = reportMode === "personalizado"
-        ? intervaloPersonalizado(customStart, customEnd)
-        : intervaloDoPeriodo(reportMode, new Date());
-      return { report: gerarRelatorioPeriodo(reportSessions, range), error: "" };
-    } catch (error) {
-      return { report: null, error: error instanceof Error ? error.message : "Período inválido" };
-    }
+    const r = montarRelatorio(reportSessions, reportMode, { inicio: customStart, fim: customEnd });
+    return { report: r.relatorio, error: r.erro ?? "" };
   };
 
   const exportCsv = () => {
@@ -284,11 +293,11 @@ export default function EstatisticasPage() {
     if (!report) return;
 
     // BOM UTF-8 para o Excel exibir os acentos corretamente.
-    const blob = new Blob(["\uFEFF", relatorioParaCSV(report)], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([BOM_UTF8, relatorioParaCSV(report)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `relatorio-studyflow-${report.inicio}-a-${report.fim}.csv`;
+    link.download = nomeArquivoRelatorio(report);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -304,11 +313,10 @@ export default function EstatisticasPage() {
   const weeklyHours = statsData.semana.chart.reduce((sum, item) => sum + item.value, 0);
   const monthlyHours = statsData.mes.chart.reduce((sum, item) => sum + item.value, 0);
   // Metas derivadas das horas diárias do perfil (semana = 7 dias, mês = 30 dias).
-  const hasGoal = dailyHours > 0;
-  const weeklyGoal = hasGoal ? dailyHours * 7 : DEFAULT_WEEKLY_GOAL;
-  const monthlyGoal = hasGoal ? dailyHours * 30 : DEFAULT_MONTHLY_GOAL;
-  const weeklyProgress = Math.min(100, Math.round((weeklyHours / weeklyGoal) * 100));
-  const monthlyProgress = Math.min(100, Math.round((monthlyHours / monthlyGoal) * 100));
+  const metas = metasDeEstudo(dailyHours, weeklyHours, monthlyHours);
+  const hasGoal = !metas.sugerida;
+  const { meta: weeklyGoal, percentual: weeklyProgress } = metas.semana;
+  const { meta: monthlyGoal, percentual: monthlyProgress } = metas.mes;
   const { report, error: reportError } = buildReport();
 
   return (
@@ -326,14 +334,16 @@ export default function EstatisticasPage() {
       {compartilhando ? (
         <CompartilharProgressoModal
           onClose={() => setCompartilhando(false)}
-          permitido={lerPrivacidade(user.email).allowSharing}
+          erroPrivacidade={privacidadeLida.carregada ? null : ERRO_CARREGAR_PRIVACIDADE}
+          onTentarDeNovo={() => void recarregarPrivacidade()}
+          permitido={privacidade.permitir_compartilhar}
           texto={textoParaCompartilhar()}
         />
       ) : null}
 
       <section aria-label="Total de horas estudadas" className="grid gap-4 sm:grid-cols-3">
-        <SummaryRing label="Semana" note={`${hasGoal ? "Meta" : "Meta sugerida"}: ${formatHours(weeklyGoal)}`} progress={weeklyProgress} value={formatHours(weeklyHours)} />
-        <SummaryRing label="Mês" note={`${hasGoal ? "Meta" : "Meta sugerida"}: ${formatHours(monthlyGoal)}`} progress={monthlyProgress} value={formatHours(monthlyHours)} />
+        <SummaryRing label="Semana" note={`${hasGoal ? "Meta" : "Meta sugerida"}: ${formatarHoras(weeklyGoal)}`} progress={weeklyProgress} value={formatarHoras(weeklyHours)} />
+        <SummaryRing label="Mês" note={`${hasGoal ? "Meta" : "Meta sugerida"}: ${formatarHoras(monthlyGoal)}`} progress={monthlyProgress} value={formatarHoras(monthlyHours)} />
         <Card as="article" aria-label="Nível" className="flex items-center gap-4 !p-5">
           <LevelRing level={level.nivel} progress={Math.round(level.progresso * 100)} />
           <div className="min-w-0">
@@ -441,7 +451,7 @@ export default function EstatisticasPage() {
               </Button>
             </>
           }
-          description={report ? `De ${formatIsoDate(report.inicio)} a ${formatIsoDate(report.fim)}` : "Escolha o período."}
+          description={report ? `De ${formatarDataISO(report.inicio)} a ${formatarDataISO(report.fim)}` : "Escolha o período."}
           icon={<FileText size={18} />}
           id="report-title"
           title="Relatório de estudos"
@@ -467,12 +477,7 @@ export default function EstatisticasPage() {
         {report ? (
           <>
             <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {[
-                ["Total de horas", formatHours(report.totalMinutos / 60)],
-                ["Sessões", String(report.totalSessoes)],
-                ["Dias estudados", String(report.diasEstudados)],
-                ["Média por dia", formatMinutes(report.mediaMinutosPorDia)],
-              ].map(([label, value]) => (
+              {resumoRelatorio(report).map(([label, value]) => (
                 <div className="rounded-control bg-ink-50 p-4" key={label}>
                   <dt className="text-xs font-medium text-ink-500">{label}</dt>
                   <dd className="tabular mt-1 text-lg font-semibold text-ink-900">{value}</dd>
@@ -501,7 +506,7 @@ export default function EstatisticasPage() {
                     report.porDisciplina.map((linha) => (
                       <tr className="border-b border-line text-ink-700 last:border-0" key={linha.disciplina}>
                         <td className="py-2.5 pr-4 font-medium text-ink-900">{linha.disciplina}</td>
-                        <td className="tabular py-2.5 pr-4">{formatMinutes(linha.minutos)}</td>
+                        <td className="tabular py-2.5 pr-4">{formatarMinutos(linha.minutos)}</td>
                         <td className="tabular py-2.5 pr-4">{linha.sessoes}</td>
                         <td className="tabular py-2.5">{linha.percentual}%</td>
                       </tr>
@@ -533,15 +538,6 @@ export default function EstatisticasPage() {
 }
 
 /** Horas no formato brasileiro: "1,5 h". */
-function formatHours(hours: number) {
-  return `${Number(hours.toFixed(1)).toLocaleString("pt-BR")} h`;
-}
-
-function formatIsoDate(value: string) {
-  const [y, m, d] = value.split("-");
-  return y && m && d ? `${d}/${m}/${y}` : value;
-}
-
 function Segmented({
   label,
   options,

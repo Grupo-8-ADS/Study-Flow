@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
+import { DISTRIBUTION_COLORS } from './constants';
 import {
+  BOM_UTF8,
+  META_SUGERIDA_H,
+  formatarDataISO,
+  formatarHoras,
+  formatarMinutos,
+  montarRelatorio,
+  nomeArquivoRelatorio,
+  resumoRelatorio,
+  distribuicaoEstudo,
+  metasDeEstudo,
   intervaloDoPeriodo,
   intervaloPersonalizado,
   gerarRelatorioPeriodo,
@@ -464,5 +475,105 @@ describe('relatorioParaCSV', () => {
   it('relatorioParaCSV_quandoNomeSemCaracteresEspeciais_deveNaoUsarAspas', () => {
     const csv = relatorioParaCSV(base);
     expect(csv).not.toContain('"');
+  });
+});
+
+describe('metasDeEstudo', () => {
+  it('quandoPerfilTemMetaDiaria_deveMultiplicarPor7E30', () => {
+    expect(metasDeEstudo(2, 7, 30)).toEqual({ sugerida: false, semana: { meta: 14, percentual: 50 }, mes: { meta: 60, percentual: 50 } });
+  });
+
+  it('quandoSemMeta_deveUsarAsSugeridasELimitarA100', () => {
+    const r = metasDeEstudo(0, 56, 0);
+    expect(r.sugerida).toBe(true);
+    expect(r.semana).toEqual({ meta: META_SUGERIDA_H.semana, percentual: 100 });
+    expect(r.mes).toEqual({ meta: META_SUGERIDA_H.mes, percentual: 0 });
+    expect(metasDeEstudo(null, 1, 1).sugerida).toBe(true);
+  });
+});
+
+describe('distribuicaoEstudo', () => {
+  it('agrupaOrdenaCalculaHorasEDescartaSemDisciplina', () => {
+    const d = distribuicaoEstudo([
+      { disciplina: 'Cálculo 1', minutos: 120 },
+      { disciplina: 'Física 1', minutos: 60 },
+      { disciplina: 'Cálculo 1', minutos: 60 },
+      { disciplina: null, minutos: 30 },
+      { disciplina: '  ', minutos: 30 },
+    ]);
+    expect(d.map((x) => [x.name, x.hours])).toEqual([
+      ['Cálculo 1', 3],
+      ['Física 1', 1],
+    ]);
+    expect(d[0].color).toBe(DISTRIBUTION_COLORS[0]);
+  });
+
+  it('limitaAoTop5ComCoresNaOrdemDaPaleta', () => {
+    const d = distribuicaoEstudo(['A', 'B', 'C', 'D', 'E', 'F'].map((disciplina, i) => ({ disciplina, minutos: (i + 1) * 10 })));
+    expect(d).toHaveLength(5);
+    expect(d[0].name).toBe('F');
+    expect(d.map((x) => x.color)).toEqual(DISTRIBUTION_COLORS);
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 1 }, { disciplina: 'B', minutos: 2 }], 1)).toHaveLength(1);
+  });
+
+  it('maximoDaBarraEhOProximoParDeHorasComMinimoUm', () => {
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 30 }])[0]).toMatchObject({ hours: 0.5, max: 2 });
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 180 }])[0].max).toBe(4);
+    expect(distribuicaoEstudo([{ disciplina: 'A', minutos: 0 }])[0]).toMatchObject({ hours: 0, max: 1 });
+  });
+});
+
+describe('montarRelatorio e formatação', () => {
+  const sessoes = [{ data_inicio: new Date(2026, 10, 24, 10).toISOString(), duracao_efetiva_min: 95, disciplina_nome: 'Cálculo', status: 'concluida' }];
+
+  it('monta semana, mês ou personalizado e acusa período inválido', () => {
+    const agora = new Date(2026, 10, 25, 12);
+    expect(montarRelatorio(sessoes, 'semana', { inicio: '', fim: '' }, agora).relatorio?.totalMinutos).toBe(95);
+    expect(montarRelatorio(sessoes, 'mes', { inicio: '', fim: '' }, agora).relatorio?.inicio).toBe('2026-11-01');
+    expect(montarRelatorio(sessoes, 'personalizado', { inicio: '2026-11-25', fim: '2026-11-25' }, agora).relatorio?.totalMinutos).toBe(0);
+    expect(montarRelatorio(sessoes, 'personalizado', { inicio: '2026-11-25', fim: '2026-11-01' }, agora).erro).toMatch(/data final/);
+  });
+
+  it('formata minutos, horas, datas e o nome do arquivo', () => {
+    expect(formatarMinutos(95)).toBe('1h35');
+    expect(formatarMinutos(40)).toBe('40min');
+    expect(formatarHoras(2.25)).toBe('2,3 h');
+    expect(formatarDataISO('2026-11-25')).toBe('25/11/2026');
+    expect(nomeArquivoRelatorio({ inicio: '2026-11-01', fim: '2026-11-30' })).toBe('relatorio-studyflow-2026-11-01-a-2026-11-30.csv');
+    expect(BOM_UTF8.charCodeAt(0)).toBe(0xfeff);
+  });
+
+  it('resumoRelatorio lista os quatro números', () => {
+    const r = montarRelatorio(sessoes, 'semana', { inicio: '', fim: '' }, new Date(2026, 10, 25, 12)).relatorio!;
+    expect(resumoRelatorio(r)).toEqual([
+      ['Total de horas', '1,6 h'],
+      ['Sessões', '1'],
+      ['Dias estudados', '1'],
+      ['Média por dia', '14min'],
+    ]);
+  });
+});
+
+describe('relatorioParaCSV - CSV injection', () => {
+  it('prefixaComApostrofoTextoQueOExcelLeriaComoFormula', () => {
+    const intervalo = intervaloPersonalizado('2026-11-24', '2026-11-24');
+    const nomes = ['=HYPERLINK("http://x","clique")', '+SOMA(1)', '-2+3', '@cmd', '\tTab', 'Cálculo'];
+    const sessoes = nomes.map((disciplina_nome, i) => ({
+      data_inicio: new Date(2026, 10, 24, 8 + i).toISOString(),
+      duracao_efetiva_min: 10 + i,
+      disciplina_nome,
+      status: 'concluida',
+    }));
+    const linhas = relatorioParaCSV(gerarRelatorioPeriodo(sessoes, intervalo)).split('\r\n');
+    const primeira = (prefixo: string) => linhas.find((l) => l.replace(/^"/, '').startsWith(prefixo));
+
+    expect(primeira(`'=HYPERLINK`)).toBe(`"'=HYPERLINK(""http://x"",""clique"")";10;1;13%`);
+    expect(primeira(`'+SOMA(1)`)).toBeDefined();
+    expect(primeira(`'-2+3`)).toBeDefined();
+    expect(primeira(`'@cmd`)).toBeDefined();
+    // Espaços e tab nas pontas do nome já são aparados por gerarRelatorioPeriodo.
+    expect(primeira('Tab;')).toBeDefined();
+    expect(primeira('Cálculo')).toBeDefined();
+    expect(linhas.some((l) => /^[=+\-@\t]/.test(l))).toBe(false);
   });
 });

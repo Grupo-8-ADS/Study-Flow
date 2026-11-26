@@ -43,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       username: prof?.username || email.split('@')[0],
       avatar_url: prof?.avatar_url,
       banner_url: prof?.banner_url,
+      moldura: prof?.moldura ?? null,
       bg_color: prof?.bg_color || '#29645e',
       horas_diarias: prof?.horas_diarias || 0,
       nivel_atual: prof?.nivel_atual || 1,

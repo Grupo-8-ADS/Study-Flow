@@ -8,9 +8,9 @@
 
 import { useState, type FormEvent } from "react";
 import { Clock, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
-import { conflitosDeHorario, validarHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
+import { conflitosAoSalvar, resumoHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
 import { excluirRotina, itensComHorarios, salvarRotina, type AgendaDados, type RotinaFixa, type RotinaFixaForm } from "@/lib/agenda";
-import { ConflitosHorarioModal, HorariosSemanaisField, resumoHorarios } from "@/components/horarios-semanais";
+import { ConflitosHorarioModal, HorariosSemanaisField } from "@/components/horarios-semanais";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState } from "@/components/ui/feedback";
@@ -126,12 +126,10 @@ function RotinaFixaEditor({ inicial, onClose, outros }: { inicial: { id?: string
 
   const enviar = async (event: FormEvent) => {
     event.preventDefault();
-    if (form.nome.trim() && form.horarios.length > 0 && !validarHorarios(form.horarios)) {
-      const achados = conflitosDeHorario({ id: inicial.id, nome: form.nome.trim(), tipo: "rotina", horarios: form.horarios }, outros);
-      if (achados.length > 0) {
-        setConflitos(achados);
-        return;
-      }
+    const achados = conflitosAoSalvar({ id: inicial.id, nome: form.nome, tipo: "rotina", horarios: form.horarios }, outros);
+    if (achados.length > 0) {
+      setConflitos(achados);
+      return;
     }
     await salvar();
   };

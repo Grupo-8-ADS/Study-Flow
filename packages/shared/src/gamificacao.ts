@@ -12,6 +12,12 @@
  */
 export const XP_BASE_NIVEL = 100;
 
+/** Limite de XP por sessão: o banco credita no máximo 240 min (trigger preparar_sessao_estudo). */
+export const XP_MAXIMO_POR_SESSAO = 240;
+
+/** XP que uma sessão de foco de `minutos` rende (1 por minuto, com o teto do banco). */
+export const xpDaSessao = (minutos: number) => Math.min(Math.max(Math.round(Number(minutos) || 0), 0), XP_MAXIMO_POR_SESSAO);
+
 /** XP total necessário para chegar ao nível (nível 1 = 0 XP). */
 export function xpParaNivel(nivel: number): number {
   const n = Math.max(Math.floor(nivel), 1);
@@ -153,6 +159,28 @@ export function diasSeguidos(datas: string[]): number {
     const [a, b] = [new Date(`${dias[i - 1]}T12:00:00`), new Date(`${dias[i]}T12:00:00`)];
     if (Math.round((b.getTime() - a.getTime()) / 86_400_000) !== 1) break;
     contagem++;
+  }
+  return contagem;
+}
+
+/**
+ * Sequência atual: dias seguidos com estudo terminando hoje (no fuso local do aparelho).
+ * Recebe os instantes ISO de início das sessões. Sem estudo hoje, a sequência é 0.
+ */
+export function sequenciaAtual(instantes: string[], hoje: Date = new Date()): number {
+  const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dias = new Set(
+    instantes
+      .filter(Boolean)
+      .map((i) => new Date(i))
+      .filter((d) => !Number.isNaN(d.getTime()))
+      .map(dia),
+  );
+  let contagem = 0;
+  const cursor = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12);
+  while (dias.has(dia(cursor))) {
+    contagem++;
+    cursor.setDate(cursor.getDate() - 1);
   }
   return contagem;
 }

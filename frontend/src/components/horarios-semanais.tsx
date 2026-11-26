@@ -7,21 +7,10 @@
 "use client";
 
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
-import { NOMES_DIAS_SEMANA, descreverConflito, type ConflitoHorario, type HorarioSemanal } from "@studyflow/shared";
+import { AVISO_CONFLITO, NOMES_DIAS_SEMANA, descreverConflito, type ConflitoHorario, type HorarioSemanal } from "@studyflow/shared";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-
-const diaCurto = (d: number) => NOMES_DIAS_SEMANA[d].slice(0, 3);
-
-/** Resumo em uma linha, ex.: "Seg 19:00–20:40 · Qua 19:00–20:40". */
-export function resumoHorarios(horarios: HorarioSemanal[], vazio = "Sem horário") {
-  if (horarios.length === 0) return vazio;
-  return [...horarios]
-    .sort((a, b) => a.dia_semana - b.dia_semana || a.inicio.localeCompare(b.inicio))
-    .map((h) => `${diaCurto(h.dia_semana)} ${h.inicio}–${h.fim}`)
-    .join(" · ");
-}
 
 /** Lista editável de horários semanais (dia, início e fim). */
 export function HorariosSemanaisField({
@@ -101,28 +90,28 @@ export function ConflitosHorarioModal({
       footer={
         <>
           <Button onClick={onAjustar} variant="secondary">
-            Voltar e ajustar
+            {AVISO_CONFLITO.ajustar}
           </Button>
           <Button disabled={salvando} onClick={onSalvarMesmoAssim}>
-            {salvando ? "Salvando..." : "Salvar mesmo assim"}
+            {salvando ? "Salvando..." : AVISO_CONFLITO.salvarMesmoAssim}
           </Button>
         </>
       }
       onClose={onAjustar}
       size="sm"
-      title="Conflito de horário"
+      title={AVISO_CONFLITO.titulo}
     >
       <div className="grid gap-3 text-sm text-ink-600">
         <p className="flex items-start gap-2">
           <AlertTriangle aria-hidden className="mt-0.5 shrink-0 text-gold" size={18} />
-          {conflitos.length === 1 ? "Este horário bate com outro compromisso fixo:" : `${conflitos.length} horários batem com outros compromissos fixos:`}
+          {AVISO_CONFLITO.introducao(conflitos.length)}
         </p>
         <ul className="grid gap-1.5 rounded-control border border-line bg-ink-50/60 p-3" data-testid="lista-conflitos">
           {conflitos.map((c, i) => (
             <li key={i}>{descreverConflito(c)}</li>
           ))}
         </ul>
-        <p>Você pode voltar e mudar o horário, ou salvar assim mesmo — os dois vão aparecer no calendário no mesmo horário.</p>
+        <p>{AVISO_CONFLITO.explicacao}</p>
       </div>
     </Modal>
   );

@@ -5,6 +5,8 @@ export type StudyFlowSession = {
   username: string;
   avatar_url?: string | null;
   banner_url?: string | null;
+  /** Moldura do avatar equipada (id do catálogo em recompensas.ts). */
+  moldura?: string | null;
   bg_color?: string;
   horas_diarias?: number;
   nivel_atual?: number;

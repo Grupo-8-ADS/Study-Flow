@@ -15,7 +15,7 @@
     "lint:mobile": "npm --workspace=mobile run lint",
     "typecheck:web": "tsc --noEmit -p frontend",
     "typecheck:mobile": "tsc --noEmit -p mobile",
-    "doctor:mobile": "cd mobile && npx --yes expo-doctor",
+    "doctor:mobile": "node mobile/scripts/doctor.mjs",
     "export:mobile": "cd mobile && npx expo export --platform android --output-dir dist",
     "verify": "node scripts/verify.mjs",
     "prepare": "node scripts/instalar-hooks.mjs",

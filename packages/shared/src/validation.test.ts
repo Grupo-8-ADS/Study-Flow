@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  SENHA_MINIMA,
+  validarCadastro,
   isValidDateString,
   toDatabaseDate,
   formatDisplayDate,
@@ -293,5 +295,20 @@ describe('isValidEmail', () => {
   it('isValidEmail_quandoFormatoInvalido_deveRecusar', () => {
     for (const e of ['', 'ana', 'ana@', 'ana@gmail', 'ana@gmail.c', 'ana gmail@x.com', 'ana@@x.com', '@x.com', 'ana@.com', 'ana@x..com']) expect(isValidEmail(e)).toBe(false);
     expect(isValidEmail(`${'a'.repeat(250)}@x.com`)).toBe(false);
+  });
+});
+
+describe('validarCadastro', () => {
+  const ok = { nome: ' Ana ', username: ' Ana.S ', email: ' Ana@Gmail.com ', senha: '123456', confirmarSenha: '123456' };
+
+  it('quandoTudoCerto_deveDevolverDadosLimpos', () => {
+    expect(validarCadastro(ok)).toEqual({ dados: { nome: 'Ana', username: 'ana.s', email: 'ana@gmail.com', senha: '123456' } });
+  });
+
+  it('quandoFaltaCampoEmailInvalidoSenhasDiferentesOuCurta_deveDarErroNaOrdem', () => {
+    expect(validarCadastro({ ...ok, nome: '  ' })).toEqual({ erro: 'Todos os campos são obrigatórios.' });
+    expect(validarCadastro({ ...ok, email: 'ana@gmail' })).toEqual({ erro: 'Informe um e-mail válido.' });
+    expect(validarCadastro({ ...ok, confirmarSenha: '654321' })).toEqual({ erro: 'As senhas não coincidem.' });
+    expect(validarCadastro({ ...ok, senha: '123', confirmarSenha: '123' })).toEqual({ erro: `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.` });
   });
 });

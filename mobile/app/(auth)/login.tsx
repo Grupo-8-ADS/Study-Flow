@@ -18,8 +18,9 @@ import { useAuth } from '../../context/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase';
+import { SITE_URL } from '../../lib/api';
 
-const LINK_REDEFINIR = 'https://study-flow-ten-olive.vercel.app/redefinir-senha';
+const LINK_REDEFINIR = `${SITE_URL}/redefinir-senha`;
 
 export default function LoginScreen() {
   const router = useRouter();

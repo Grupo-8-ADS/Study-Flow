@@ -5,7 +5,20 @@ import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CircleHelp, FileText, LogOut, Settings, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { limparAgenda } from "@/lib/agenda";
-import { defaultPrivacy, lerPrivacidade, chavePrivacidade, type PrivacySettings } from "@/lib/studyflow-data";
+import {
+  FAQ,
+  OPCOES_PRIVACIDADE,
+  PRIVACIDADE_PADRAO,
+  TERMOS_SERVICO,
+  TEXTO_EXCLUIR_CONTA,
+  ERRO_CARREGAR_PRIVACIDADE,
+  alternarPrivacidadeLida,
+  contaDemonstracao,
+  privacidadeEfetiva,
+  type ChavePrivacidade,
+  type Privacidade,
+} from "@studyflow/shared";
+import { carregarPrivacidadeUsuario, gravarPrivacidadeUsuario } from "@/lib/privacidade";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, PageLoading } from "@/components/ui/feedback";
@@ -20,15 +33,6 @@ type UserSession = {
 };
 
 
-const faqItems = [
-  ["Como adicionar uma disciplina?", "Em Disciplinas, use Adicionar disciplina e informe o nome, o professor e as avaliações."],
-  ["Como funciona o Timer Pomodoro?", "Escolha o período de foco ou pausa, selecione uma disciplina e inicie o cronômetro."],
-  ["Como as horas estudadas são registradas?", "As sessões concluídas serão usadas para alimentar seu histórico e a página de Estatísticas."],
-  ["Como desbloquear conquistas?", "Conclua sessões, mantenha sequências de estudo e alcance metas relacionadas às disciplinas."],
-  ["Como compartilhar meu progresso?", "Na página de Estatísticas, use o botão Compartilhar progresso: dá para copiar o resumo ou enviar direto pelo WhatsApp ou X."],
-  ["Como excluir minha conta?", "Em Conta › Preferências, use Excluir minha conta e confirme no aviso de segurança. A conta e todos os seus dados são apagados de forma permanente."],
-];
-
 export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const router = useRouter();
   const [user, setUser] = useState<UserSession | null>(null);
@@ -39,7 +43,10 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [privacy, setPrivacy] = useState<PrivacySettings>(defaultPrivacy);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [privacy, setPrivacy] = useState<Privacidade>({ ...PRIVACIDADE_PADRAO });
+  const [privacyLoaded, setPrivacyLoaded] = useState(false);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   useEffect(() => {
@@ -55,8 +62,6 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
         const parsedSession = JSON.parse(storedSession) as UserSession;
         setUser(parsedSession);
 
-        setPrivacy(lerPrivacidade(parsedSession.email));
-
         const storedNotif = localStorage.getItem(`studyflow_notifications_${parsedSession.email}`);
         if (storedNotif !== null) {
           setNotificationsEnabled(JSON.parse(storedNotif));
@@ -64,6 +69,8 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
         // Se houver conexão com o Supabase, sincroniza preferência
         const { data: userData } = await supabase.auth.getUser();
+        setUserId(userData.user?.id ?? null);
+        await loadPrivacy(userData.user?.id ?? null, parsedSession.email);
         if (userData.user) {
           const { data: profile } = await supabase
             .from("profiles")
@@ -148,23 +155,32 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
     router.push("/");
   };
 
-  const updatePrivacy = (key: keyof PrivacySettings) => {
-    if (!user) return;
+  /** Lê a privacidade; se falhar, a tela fica em modo privado e não grava nada. */
+  async function loadPrivacy(id: string | null, email: string) {
+    const lida = await carregarPrivacidadeUsuario(id, email);
+    setPrivacy(lida.privacidade);
+    setPrivacyLoaded(lida.carregada);
+  }
 
-    setPrivacy((current) => {
-      const next = { ...current, [key]: !current[key] };
-      localStorage.setItem(chavePrivacidade(user.email), JSON.stringify(next));
-      return next;
-    });
+  const updatePrivacy = async (key: ChavePrivacidade) => {
+    const anterior = privacy;
+    // Sem as preferências reais lidas, não grava (seriam os padrões por cima da escolha do usuário).
+    const next = alternarPrivacidadeLida({ privacidade: anterior, carregada: privacyLoaded }, key);
+    if (!next) return;
+    setPrivacy(next);
+    setPrivacyError(null);
+    const erro = await gravarPrivacidadeUsuario(userId, next);
+    if (erro) {
+      setPrivacy(anterior);
+      setPrivacyError(erro);
+    }
   };
 
   if (!user) {
     return <PageLoading label="Carregando preferências..." />;
   }
 
-  const isPresentationAccount =
-    user.email.trim().toLowerCase() === "teste@teste.com" ||
-    user.username.trim().toLowerCase() === "teste";
+  const isPresentationAccount = contaDemonstracao(user);
 
   return (
     <>
@@ -247,9 +263,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
                 Excluir conta
               </h2>
               <p className="mt-1 max-w-xl text-sm text-ink-500">
-                {isPresentationAccount
-                  ? "Esta é a conta de demonstração da apresentação. A exclusão foi bloqueada para manter os dados de exemplo disponíveis."
-                  : "Apaga seu cadastro e todos os seus dados de forma permanente. Essa ação não pode ser desfeita."}
+                {isPresentationAccount ? TEXTO_EXCLUIR_CONTA.avisoDemonstracao : TEXTO_EXCLUIR_CONTA.aviso}
               </p>
             </div>
             <Button
@@ -289,8 +303,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
               <TriangleAlert size={20} />
             </span>
             <p className="text-sm leading-6 text-ink-600" id="delete-account-description">
-              Sua conta e todos os seus dados (disciplinas, sessões, conquistas e notificações) serão apagados de forma permanente e você
-              precisará criar uma nova conta para voltar.
+              {TEXTO_EXCLUIR_CONTA.confirmacao}
             </p>
           </div>
           {deleteError ? (
@@ -303,36 +316,35 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
 
       {showPrivacy ? (
         <Modal
-          description="Escolha quais informações poderão aparecer no seu perfil. As preferências são salvas automaticamente neste dispositivo."
+          description="Escolha quais informações poderão aparecer no seu perfil. As preferências são salvas na sua conta e valem no site e no app."
           onClose={() => setShowPrivacy(false)}
           title="Configurações de privacidade"
           titleId="privacy-title"
         >
+          {!privacyLoaded ? (
+            <Alert className="mb-3" tone="danger">
+              {ERRO_CARREGAR_PRIVACIDADE}{" "}
+              <button className="font-semibold underline underline-offset-2" onClick={() => void loadPrivacy(userId, user.email)} type="button">
+                Tentar de novo
+              </button>
+            </Alert>
+          ) : null}
+          {privacyError ? (
+            <Alert className="mb-3" tone="danger">
+              {privacyError}
+            </Alert>
+          ) : null}
           <ul className="divide-y divide-line rounded-control border border-line">
-            <PrivacyToggle
-              checked={privacy.publicProfile}
-              description="Permitir que outras pessoas visualizem seu perfil."
-              label="Perfil público"
-              onChange={() => updatePrivacy("publicProfile")}
-            />
-            <PrivacyToggle
-              checked={privacy.showStudyHours}
-              description="Mostrar o total de horas e seus resumos de estudo."
-              label="Mostrar horas estudadas"
-              onChange={() => updatePrivacy("showStudyHours")}
-            />
-            <PrivacyToggle
-              checked={privacy.showAchievements}
-              description="Exibir suas conquistas e evolução de nível."
-              label="Mostrar conquistas"
-              onChange={() => updatePrivacy("showAchievements")}
-            />
-            <PrivacyToggle
-              checked={privacy.allowSharing}
-              description="Habilitar os botões para compartilhar seu progresso."
-              label="Permitir compartilhamentos"
-              onChange={() => updatePrivacy("allowSharing")}
-            />
+            {OPCOES_PRIVACIDADE.map((opcao) => (
+              <PrivacyToggle
+                checked={privacidadeEfetiva({ privacidade: privacy, carregada: privacyLoaded })[opcao.chave]}
+                disabled={!privacyLoaded}
+                description={opcao.descricao}
+                key={opcao.chave}
+                label={opcao.titulo}
+                onChange={() => void updatePrivacy(opcao.chave)}
+              />
+            ))}
           </ul>
         </Modal>
       ) : null}
@@ -345,7 +357,7 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           titleId="faq-title"
         >
           <ul className="divide-y divide-line rounded-control border border-line">
-            {faqItems.map(([question, answer], index) => {
+            {FAQ.map(({ pergunta: question, resposta: answer }, index) => {
               const expanded = openFaq === index;
               return (
                 <li key={question}>
@@ -379,22 +391,13 @@ export function ConfiguracoesView({ basic = false }: { basic?: boolean }) {
           titleId="terms-title"
         >
           <div className="flex flex-col gap-4 text-sm leading-6 text-ink-600">
-            <p className="font-medium text-ink-800">O Study Flow é uma ferramenta desenvolvida com finalidade acadêmica e de produtividade pessoal.</p>
-            <section>
-              <h3 className="font-semibold text-ink-900">1. Uso individual</h3>
-              <p>Os dados e horários armazenados são de uso estritamente individual do estudante para fins de organização acadêmica.</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-ink-900">2. Privacidade e dados</h3>
-              <p>O aplicativo respeita sua privacidade e não compartilha dados confidenciais ou de rotina com terceiros.</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-ink-900">3. Responsabilidade</h3>
-              <p>
-                O usuário é responsável pela veracidade dos dados cadastrados e conformidade de sua rotina de estudos com seus compromissos
-                institucionais.
-              </p>
-            </section>
+            <p className="font-medium text-ink-800">{TERMOS_SERVICO.introducao}</p>
+            {TERMOS_SERVICO.secoes.map((secao) => (
+              <section key={secao.titulo}>
+                <h3 className="font-semibold text-ink-900">{secao.titulo}</h3>
+                <p>{secao.texto}</p>
+              </section>
+            ))}
           </div>
         </Modal>
       ) : null}
@@ -446,12 +449,13 @@ function SettingsRow({
   );
 }
 
-function Switch({ checked, labelledBy, onChange }: { checked: boolean; labelledBy?: string; onChange: () => void }) {
+function Switch({ checked, disabled = false, labelledBy, onChange }: { checked: boolean; disabled?: boolean; labelledBy?: string; onChange: () => void }) {
   return (
     <button
       aria-checked={checked}
       aria-labelledby={labelledBy}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? "bg-primary-700" : "bg-ink-300"}`}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-primary-700" : "bg-ink-300"}`}
+      disabled={disabled}
       onClick={onChange}
       role="switch"
       type="button"
@@ -464,11 +468,13 @@ function Switch({ checked, labelledBy, onChange }: { checked: boolean; labelledB
 function PrivacyToggle({
   checked,
   description,
+  disabled = false,
   label,
   onChange,
 }: {
   checked: boolean;
   description: string;
+  disabled?: boolean;
   label: string;
   onChange: () => void;
 }) {
@@ -481,7 +487,7 @@ function PrivacyToggle({
         </span>
         <span className="block text-sm text-ink-500">{description}</span>
       </span>
-      <Switch checked={checked} labelledBy={id} onChange={onChange} />
+      <Switch checked={checked} disabled={disabled} labelledBy={id} onChange={onChange} />
     </li>
   );
 }

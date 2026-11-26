@@ -3,6 +3,9 @@
  * Funções puras: recebem as sessões e o intervalo, devolvem os números e o CSV.
  */
 
+import { DISTRIBUTION_COLORS } from './constants';
+import type { StudyDistribution } from './types';
+
 export interface SessaoRelatorio {
   /** ISO da data/hora de início. */
   data_inicio: string;
@@ -77,7 +80,8 @@ export interface RelatorioPeriodo {
   porDia: Array<{ data: string; minutos: number }>;
 }
 
-const SEM_DISCIPLINA = 'Geral';
+/** Rótulo das sessões sem disciplina. */
+export const SEM_DISCIPLINA = 'Geral';
 
 /** Consolida as sessões concluídas dentro do intervalo. */
 export function gerarRelatorioPeriodo(sessoes: SessaoRelatorio[], intervalo: Intervalo): RelatorioPeriodo {
@@ -132,8 +136,14 @@ export function gerarRelatorioPeriodo(sessoes: SessaoRelatorio[], intervalo: Int
   };
 }
 
+/**
+ * Célula do CSV. Texto que começa com = + - @, tab ou CR é lido como fórmula pelo Excel
+ * (CSV injection, ex.: uma disciplina "=HYPERLINK(...)"): recebe um apóstrofo na frente.
+ * Números ficam como estão.
+ */
 const celula = (valor: string | number) => {
-  const texto = String(valor);
+  let texto = String(valor);
+  if (typeof valor === 'string' && /^[=+\-@\t\r]/.test(texto)) texto = `'${texto}`;
   return /[";\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
 };
 
@@ -154,4 +164,104 @@ export function relatorioParaCSV(relatorio: RelatorioPeriodo): string {
     ...relatorio.porDia.map((d) => [d.data, d.minutos]),
   ];
   return linhas.map((l) => l.map(celula).join(';')).join('\r\n') + '\r\n';
+}
+
+/** Metas sugeridas quando o perfil não tem horas diárias definidas. */
+export const META_SUGERIDA_H = { semana: 28, mes: 80 } as const;
+
+export interface MetaPeriodo {
+  /** Meta em horas. */
+  meta: number;
+  /** Inteiro de 0 a 100. */
+  percentual: number;
+}
+
+/**
+ * Metas de estudo da semana e do mês a partir da meta diária do perfil (semana = 7 dias,
+ * mês = 30 dias). Sem meta no perfil, usa META_SUGERIDA_H e marca `sugerida`.
+ */
+export function metasDeEstudo(horasDiarias: number | null | undefined, horasSemana: number, horasMes: number) {
+  const diaria = Number(horasDiarias);
+  const temMeta = Number.isFinite(diaria) && diaria > 0;
+  const semana = temMeta ? diaria * 7 : META_SUGERIDA_H.semana;
+  const mes = temMeta ? diaria * 30 : META_SUGERIDA_H.mes;
+  const percentual = (feito: number, meta: number) => Math.min(100, Math.max(0, Math.round((feito / meta) * 100)));
+  return {
+    sugerida: !temMeta,
+    semana: { meta: semana, percentual: percentual(horasSemana, semana) } as MetaPeriodo,
+    mes: { meta: mes, percentual: percentual(horasMes, mes) } as MetaPeriodo,
+  };
+}
+
+/**
+ * Distribuição do tempo por disciplina (dashboard e estatísticas): as `limite` disciplinas
+ * com mais tempo, em horas com uma casa, cada uma com a cor da paleta e o máximo da barra
+ * (próximo número par de horas). Linhas sem disciplina ficam de fora.
+ */
+export function distribuicaoEstudo(linhas: Array<{ disciplina?: string | null; minutos: number }>, limite = 5): StudyDistribution[] {
+  const totais = new Map<string, number>();
+  for (const l of linhas) {
+    const nome = l.disciplina?.trim();
+    if (!nome) continue;
+    totais.set(nome, (totais.get(nome) ?? 0) + Math.max(Number(l.minutos) || 0, 0));
+  }
+  return [...totais.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limite)
+    .map(([name, minutos], i) => {
+      const hours = Number((minutos / 60).toFixed(1));
+      return { name, hours, max: Math.max(1, Math.ceil(hours / 2) * 2), color: DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length] };
+    });
+}
+
+export type ModoRelatorio = PeriodoRelatorio | 'personalizado';
+
+/**
+ * Relatório da tela de estatísticas: semana, mês ou intervalo personalizado (datas AAAA-MM-DD).
+ * Devolve o relatório ou a mensagem de erro do período.
+ */
+export function montarRelatorio(
+  sessoes: SessaoRelatorio[],
+  modo: ModoRelatorio,
+  personalizado: { inicio: string; fim: string },
+  agora: Date = new Date(),
+): { relatorio: RelatorioPeriodo; erro: null } | { relatorio: null; erro: string } {
+  try {
+    const intervalo = modo === 'personalizado' ? intervaloPersonalizado(personalizado.inicio, personalizado.fim) : intervaloDoPeriodo(modo, agora);
+    return { relatorio: gerarRelatorioPeriodo(sessoes, intervalo), erro: null };
+  } catch (e) {
+    return { relatorio: null, erro: e instanceof Error ? e.message : 'Período inválido' };
+  }
+}
+
+/** Marca de ordem de bytes: faz o Excel abrir o CSV em UTF-8 (acentos corretos). */
+export const BOM_UTF8 = '\uFEFF';
+
+export const nomeArquivoRelatorio = (r: Pick<RelatorioPeriodo, 'inicio' | 'fim'>) => `relatorio-studyflow-${r.inicio}-a-${r.fim}.csv`;
+
+/** 95 → "1h35"; 40 → "40min". */
+export function formatarMinutos(minutos: number): string {
+  const m = Math.max(Math.round(minutos), 0);
+  const horas = Math.floor(m / 60);
+  const resto = m % 60;
+  return horas > 0 ? `${horas}h${String(resto).padStart(2, '0')}` : `${resto}min`;
+}
+
+/** 2.25 → "2,3 h". */
+export const formatarHoras = (horas: number) => `${Number(horas.toFixed(1)).toLocaleString('pt-BR')} h`;
+
+/** "2026-11-25" → "25/11/2026". */
+export function formatarDataISO(valor: string): string {
+  const [a, m, d] = valor.split('-');
+  return a && m && d ? `${d}/${m}/${a}` : valor;
+}
+
+/** Linhas de resumo do relatório, na ordem exibida. */
+export function resumoRelatorio(r: RelatorioPeriodo): Array<[string, string]> {
+  return [
+    ['Total de horas', formatarHoras(r.totalMinutos / 60)],
+    ['Sessões', String(r.totalSessoes)],
+    ['Dias estudados', String(r.diasEstudados)],
+    ['Média por dia', formatarMinutos(r.mediaMinutosPorDia)],
+  ];
 }

@@ -4,14 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, CalendarCheck, CheckCircle2, Circle, Clock, Flame, Plus, Sparkles, Timer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import {
-  buildDistribution,
-  calculateStreak,
-  getCurrentSupabaseUserId,
-  getLocalStudyMinutes,
-  getStoredSession,
-  type StudyDistribution,
-} from "@/lib/studyflow-data";
+import { getCurrentSupabaseUserId, getLocalStudyMinutes, getStoredSession } from "@/lib/studyflow-data";
+import { distribuicaoEstudo, sequenciaAtual, type StudyDistribution } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
   alternarConcluido,
@@ -66,11 +60,11 @@ export default function DashboardPage() {
       const minutos = lista.reduce((s, x) => s + (x.duracao_efetiva_min ?? 0), 0);
       setResumo({
         horas: Number((minutos / 60).toFixed(1)),
-        sequencia: calculateStreak(lista.map((x) => String(x.data_inicio))),
-        distribuicao: buildDistribution(
+        sequencia: sequenciaAtual(lista.map((x) => String(x.data_inicio))),
+        distribuicao: distribuicaoEstudo(
           lista.map((x) => {
             const d = Array.isArray(x.disciplinas) ? x.disciplinas[0] : x.disciplinas;
-            return { disciplina: d?.nome ?? null, minutes: x.duracao_efetiva_min ?? 0 };
+            return { disciplina: d?.nome ?? null, minutos: x.duracao_efetiva_min ?? 0 };
           }),
         ),
       });
@@ -206,7 +200,7 @@ export default function DashboardPage() {
                       className="h-2 w-full overflow-hidden rounded-full bg-ink-100"
                       role="progressbar"
                     >
-                      <div className={`h-full rounded-full ${item.color} transition-all duration-500`} style={{ width: `${percentage}%` }} />
+                      <div className="h-full rounded-full transition-all duration-500" style={{ backgroundColor: item.color, width: `${percentage}%` }} />
                     </div>
                   </li>
                 );

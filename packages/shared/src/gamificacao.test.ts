@@ -301,3 +301,24 @@ describe('conquistas dinâmicas', () => {
     expect(g.maiorSequencia(['2026-10-31', '2026-11-01', '2026-11-03'])).toBe(2);
   });
 });
+
+describe('sequenciaAtual', () => {
+  const hoje = new Date(2026, 10, 25, 9, 0);
+  const em = (diasAtras: number, hora = 10) => new Date(2026, 10, 25 - diasAtras, hora, 30).toISOString();
+
+  it('semDatasOuSemEstudoHoje_deveSerZero', () => {
+    expect(g.sequenciaAtual([], hoje)).toBe(0);
+    expect(g.sequenciaAtual([em(1), em(2)], hoje)).toBe(0);
+  });
+
+  it('contaDiasLocaisSeguidosTerminandoHoje', () => {
+    expect(g.sequenciaAtual([em(0), em(1), em(1, 23), em(2)], hoje)).toBe(3);
+    expect(g.sequenciaAtual([em(0), em(2)], hoje)).toBe(1);
+  });
+
+  it('usaODiaLocalMesmoQuandoOInstanteUtcJaEhOutroDia', () => {
+    // 23:30 local de ontem e 00:10 local de hoje: dois dias locais, qualquer que seja o fuso.
+    expect(g.sequenciaAtual([new Date(2026, 10, 24, 23, 30).toISOString(), new Date(2026, 10, 25, 0, 10).toISOString()], hoje)).toBe(2);
+    expect(g.sequenciaAtual(['', 'data-invalida', em(0)], hoje)).toBe(1);
+  });
+});

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, ViewStyle, StyleProp } from 'react-native';
 import { COLORS } from '@studyflow/shared';
+import { MolduraAvatar } from '../MolduraAvatar';
 
 interface AvatarProps {
   uri?: string | null;
@@ -8,6 +9,8 @@ interface AvatarProps {
   size?: number;
   level?: number;
   showLevel?: boolean;
+  /** Id da moldura equipada (profiles.moldura). */
+  moldura?: string | null;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -17,6 +20,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   size = 44,
   level,
   showLevel = false,
+  moldura,
   style,
 }) => {
   const getInitials = (n: string) => {
@@ -28,7 +32,8 @@ export const Avatar: React.FC<AvatarProps> = ({
   };
 
   return (
-    <View style={[{ width: size, height: size }, styles.container, style]}>
+    <View style={[styles.container, style]}>
+      <MolduraAvatar moldura={moldura} tamanho={size}>
       {uri ? (
         <Image
           source={{ uri }}
@@ -57,6 +62,7 @@ export const Avatar: React.FC<AvatarProps> = ({
           </Text>
         </View>
       )}
+      </MolduraAvatar>
 
       {showLevel && level !== undefined && (
         <View style={styles.levelBadge}>

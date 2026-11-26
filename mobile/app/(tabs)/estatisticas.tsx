@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Share2, Zap } from 'lucide-react-native';
 import { ConquistaIcone } from '../../components/ConquistaIcone';
+import { RelatorioEstudos } from '../../components/RelatorioEstudos';
 import {
   COLORS,
   Conquista,
@@ -22,6 +23,10 @@ import {
   textoCompartilhamento,
   intervaloDoPeriodo,
   gerarRelatorioPeriodo,
+  metasDeEstudo,
+  ERRO_CARREGAR_PRIVACIDADE,
+  SEM_DISCIPLINA,
+  type SessaoRelatorio,
 } from '@studyflow/shared';
 import { Header } from '../../components/layout/Header';
 import { Card } from '../../components/ui/Card';
@@ -30,15 +35,21 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { usePrivacidade } from '../../lib/privacidade';
+import { useIrPara } from '../../lib/navigation';
+import { SITE_URL } from '../../lib/api';
 
 const DIST_COLORS = ['#29645e', '#348e83', '#e5a93b', '#f87171', '#705c9d'];
 
 export default function EstatisticasScreen() {
   const { session } = useAuth();
+  const { privacidade, carregada: privacidadeCarregada, recarregar: recarregarPrivacidade } = usePrivacidade();
+  const irPara = useIrPara();
 
   const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessoesRelatorio, setSessoesRelatorio] = useState<SessaoRelatorio[]>([]);
 
   const [weekHours, setWeekHours] = useState(0);
   const [monthHours, setMonthHours] = useState(0);
@@ -69,6 +80,7 @@ export default function EstatisticasScreen() {
         status: 'concluida',
       }));
 
+      setSessoesRelatorio(concluidas);
       const agora = new Date();
       const semana = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('semana', agora));
       const mes = gerarRelatorioPeriodo(concluidas, intervaloDoPeriodo('mes', agora));
@@ -80,7 +92,7 @@ export default function EstatisticasScreen() {
       concluidas.forEach((s) => {
         const dur = s.duracao_efetiva_min || 0;
         totalMins += dur;
-        const subName = s.disciplina_nome || 'Geral';
+        const subName = s.disciplina_nome || SEM_DISCIPLINA;
         subMap.set(subName, (subMap.get(subName) || 0) + dur);
         // Sessões sem disciplina não contam para conquistas por disciplina.
         if (s.disciplina_nome) sessoesPorDisciplina[s.disciplina_nome] = (sessoesPorDisciplina[s.disciplina_nome] || 0) + 1;
@@ -153,6 +165,20 @@ export default function EstatisticasScreen() {
   }, [session]);
 
   const handleShareProgress = async () => {
+    if (!privacidadeCarregada) {
+      Alert.alert('Compartilhar progresso', ERRO_CARREGAR_PRIVACIDADE, [
+        { text: 'Fechar', style: 'cancel' },
+        { text: 'Tentar de novo', onPress: () => void recarregarPrivacidade() },
+      ]);
+      return;
+    }
+    if (!privacidade.permitir_compartilhar) {
+      Alert.alert('Compartilhamento desativado', 'O compartilhamento está desativado nas suas configurações de privacidade.', [
+        { text: 'Fechar', style: 'cancel' },
+        { text: 'Abrir configurações', onPress: () => irPara('/configuracoes') },
+      ]);
+      return;
+    }
     try {
       const periodoAtual = period === 'semana' ? weekHours : period === 'mes' ? monthHours : totalHours;
       const rotulo = period === 'semana' ? 'Semana' : period === 'mes' ? 'Mês' : 'Acumulado';
@@ -162,6 +188,8 @@ export default function EstatisticasScreen() {
           periodo: rotulo,
           horas: periodoAtual,
           topico: topSubject,
+          ocultarHoras: !privacidade.mostrar_horas,
+          link: SITE_URL,
         }),
       });
     } catch (error: any) {
@@ -169,6 +197,8 @@ export default function EstatisticasScreen() {
     }
   };
 
+  const metas = metasDeEstudo(session?.horas_diarias, weekHours, monthHours);
+  const rotuloMeta = (meta: number) => `${metas.sugerida ? 'Meta sugerida' : 'Meta'}: ${meta}H`;
   const { nivel: currentLevel, faltam, progresso } = progressoNivel(session?.xp || 0);
   const currentXp = session?.xp || 0;
   const levelProgress = Math.min(1, Math.max(0.05, progresso));
@@ -188,7 +218,7 @@ export default function EstatisticasScreen() {
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={Math.min(1, Math.max(0.1, weekHours / 20))}
+              progress={metas.semana.percentual / 100}
               color={COLORS.primary}
             >
               <View style={styles.ringInner}>
@@ -196,27 +226,29 @@ export default function EstatisticasScreen() {
                 <Text style={styles.ringSub}>Semana</Text>
               </View>
             </ProgressRing>
+            <Text style={styles.ringMeta}>{rotuloMeta(metas.semana.meta)}</Text>
           </Card>
 
           <Card style={styles.ringCard}>
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={Math.min(1, Math.max(0.1, monthHours / 80))}
+              progress={metas.mes.percentual / 100}
               color="#348e83"
             >
               <View style={styles.ringInner}>
                 <Text style={styles.ringValue}>{monthHours}H</Text>
-                <Text style={styles.ringSub}>Mensal</Text>
+                <Text style={styles.ringSub}>Mês</Text>
               </View>
             </ProgressRing>
+            <Text style={styles.ringMeta}>{rotuloMeta(metas.mes.meta)}</Text>
           </Card>
 
           <Card style={styles.ringCard}>
             <ProgressRing
               size={90}
               strokeWidth={8}
-              progress={Math.min(1, Math.max(0.1, totalHours / 150))}
+              progress={totalHours > 0 ? 1 : 0}
               color={COLORS.gold}
             >
               <View style={styles.ringInner}>
@@ -265,6 +297,8 @@ export default function EstatisticasScreen() {
         </Card>
 
         {/* Study Distribution */}
+        <RelatorioEstudos sessoes={sessoesRelatorio} />
+
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Distribuição por Matéria</Text>
         </View>
@@ -392,6 +426,12 @@ export default function EstatisticasScreen() {
 }
 
 const styles = StyleSheet.create({
+  ringMeta: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,

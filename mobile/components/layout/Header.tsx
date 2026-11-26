@@ -142,6 +142,7 @@ export const Header: React.FC<HeaderProps> = ({
                 level={session?.nivel_atual || 1}
                 showLevel
                 uri={session?.avatar_url}
+                moldura={session?.moldura}
               />
             </TouchableOpacity>
           </View>

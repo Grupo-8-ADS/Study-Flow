@@ -9,41 +9,6 @@ export type StudyFlowSession = {
   moldura?: string | null;
 };
 
-export type StudyDistribution = {
-  color: string;
-  hours: number;
-  max: number;
-  name: string;
-};
-
-const distributionColors = ["bg-[#29645e]", "bg-[#348e83]", "bg-[#e5a93b]", "bg-red-400", "bg-gray-300"];
-
-/** Preferências de privacidade (Configurações › Privacidade), guardadas neste navegador. */
-export type PrivacySettings = {
-  allowSharing: boolean;
-  publicProfile: boolean;
-  showAchievements: boolean;
-  showStudyHours: boolean;
-};
-
-export const defaultPrivacy: PrivacySettings = {
-  allowSharing: true,
-  publicProfile: false,
-  showAchievements: true,
-  showStudyHours: true,
-};
-
-export const chavePrivacidade = (email: string) => `studyflow_privacy_${email}`;
-
-export function lerPrivacidade(email: string): PrivacySettings {
-  try {
-    const salvo = localStorage.getItem(chavePrivacidade(email));
-    return salvo ? { ...defaultPrivacy, ...(JSON.parse(salvo) as Partial<PrivacySettings>) } : defaultPrivacy;
-  } catch {
-    return defaultPrivacy;
-  }
-}
-
 export function getStoredSession(): StudyFlowSession | null {
   const storedSession = localStorage.getItem("studyflow_session");
   if (!storedSession) return null;
@@ -70,43 +35,3 @@ export function getLocalStudyMinutes(email: string) {
   return parsedActivity.filter((activity) => activity.type === "foco").length * 25;
 }
 
-export function calculateStreak(dates: string[]) {
-  const uniqueDays = new Set(dates.filter(Boolean).map((date) => date.slice(0, 10)));
-  if (uniqueDays.size === 0) return 0;
-
-  let streak = 0;
-  const cursor = new Date();
-
-  while (true) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (!uniqueDays.has(key)) break;
-
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-}
-
-export function buildDistribution(rows: Array<{ disciplina?: string | null; minutes: number }>) {
-  const totals = new Map<string, number>();
-
-  rows.forEach((row) => {
-    if (!row.disciplina) return;
-    totals.set(row.disciplina, (totals.get(row.disciplina) ?? 0) + row.minutes);
-  });
-
-  return Array.from(totals.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([name, minutes], index): StudyDistribution => {
-      const hours = Number((minutes / 60).toFixed(1));
-
-      return {
-        color: distributionColors[index] ?? "bg-gray-300",
-        hours,
-        max: Math.max(1, Math.ceil(hours / 2) * 2),
-        name,
-      };
-    });
-}

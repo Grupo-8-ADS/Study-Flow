@@ -4,6 +4,8 @@
  * @packageDocumentation
  */
 
+import { NOMES_DIAS_SEMANA } from './scheduler';
+
 /** Um horário que se repete toda semana. */
 export type HorarioSemanal = {
   /** 0 = domingo ... 6 = sábado */
@@ -33,7 +35,7 @@ export type ConflitoHorario = {
   proprio: boolean;
 };
 
-const DIAS = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+const DIAS: readonly string[] = NOMES_DIAS_SEMANA;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -92,3 +94,32 @@ export function descreverConflito(c: ConflitoHorario): string {
         : `${c.com.nome} (rotina)`;
   return `${dia} ${c.horario.inicio}–${c.horario.fim} bate com ${quem} (${c.horarioCom.inicio}–${c.horarioCom.fim})`;
 }
+
+/** Resumo em uma linha, ex.: "Seg 19:00–20:40 · Qua 19:00–20:40". */
+export function resumoHorarios(horarios: HorarioSemanal[], vazio = 'Sem horário'): string {
+  if (horarios.length === 0) return vazio;
+  return [...horarios]
+    .sort((a, b) => a.dia_semana - b.dia_semana || a.inicio.localeCompare(b.inicio))
+    .map((h) => `${DIAS[h.dia_semana]?.slice(0, 3) ?? '?'} ${h.inicio}–${h.fim}`)
+    .join(' · ');
+}
+
+/**
+ * Conflitos a mostrar antes de salvar um cadastro (disciplina ou rotina). Se o formulário
+ * ainda tem erro de preenchimento (sem nome, horário inválido), devolve [] para o salvar
+ * exibir o erro em vez do aviso de conflito.
+ */
+export function conflitosAoSalvar(alvo: ItemComHorarios, outros: ItemComHorarios[], rotulo = 'horário'): ConflitoHorario[] {
+  if (!alvo.nome.trim() || alvo.horarios.length === 0 || validarHorarios(alvo.horarios, rotulo)) return [];
+  return conflitosDeHorario({ ...alvo, nome: alvo.nome.trim() }, outros);
+}
+
+/** Textos do aviso de conflito, iguais no site e no app. */
+export const AVISO_CONFLITO = {
+  titulo: 'Conflito de horário',
+  introducao: (quantidade: number) =>
+    quantidade === 1 ? 'Este horário bate com outro compromisso fixo:' : `${quantidade} horários batem com outros compromissos fixos:`,
+  explicacao: 'Você pode voltar e mudar o horário, ou salvar assim mesmo — os dois vão aparecer no calendário no mesmo horário.',
+  ajustar: 'Voltar e ajustar',
+  salvarMesmoAssim: 'Salvar mesmo assim',
+} as const;

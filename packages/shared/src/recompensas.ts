@@ -5,6 +5,9 @@
  * (migration 20261125000200_curva_nivel_e_recompensas).
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { xpParaNivel } from './gamificacao';
+
 /**
  * Arte desenhada para uma moldura: imagem PNG transparente com um aro circular, que pode
  * ter enfeites saindo para fora (ex.: o capelo). A geometria diz como encaixar o aro no avatar.
@@ -74,3 +77,54 @@ export const desbloqueado = (item: { nivel: number }, nivelAtual: number) => niv
 
 /** CSS de gradiente para o web. */
 export const gradienteCss = (cores: string[], angulo = 135) => `linear-gradient(${angulo}deg, ${cores.join(', ')})`;
+
+/** Próxima moldura ou banner a liberar e quanto XP falta para ela (null = tudo liberado). */
+export function proximaRecompensa(nivel: number, xp: number): { tipo: 'moldura' | 'banner'; item: Moldura | BannerPreset; faltamXp: number } | null {
+  const candidatos = [
+    ...MOLDURAS.map((item) => ({ tipo: 'moldura' as const, item })),
+    ...BANNERS.map((item) => ({ tipo: 'banner' as const, item })),
+  ]
+    .filter((c) => c.item.nivel > nivel)
+    .sort((a, b) => a.item.nivel - b.item.nivel);
+  const proximo = candidatos[0];
+  if (!proximo) return null;
+  return { ...proximo, faltamXp: Math.max(0, xpParaNivel(proximo.item.nivel) - Math.max(xp, 0)) };
+}
+
+/** Frase do topo da tela de recompensas. */
+export function textoProximaRecompensa(nivel: number, xp: number): string {
+  const proxima = proximaRecompensa(nivel, xp);
+  if (!proxima) return 'Você liberou todas as molduras e banners.';
+  const artigo = proxima.tipo === 'moldura' ? 'a moldura' : 'o banner';
+  return `Faltam ${proxima.faltamXp} XP para liberar ${artigo} ${proxima.item.nome} (nível ${proxima.item.nivel}).`;
+}
+
+export interface Contagem {
+  feitos: number;
+  total: number;
+}
+
+/** Quantos itens de cada coleção já foram liberados, e o total geral em %. */
+export function resumoColecao(nivel: number, conquistas: Contagem) {
+  const molduras = { feitos: MOLDURAS.filter((m) => desbloqueado(m, nivel)).length, total: MOLDURAS.length };
+  const banners = { feitos: BANNERS.filter((b) => desbloqueado(b, nivel)).length, total: BANNERS.length };
+  const feitos = conquistas.feitos + molduras.feitos + banners.feitos;
+  const total = conquistas.total + molduras.total + banners.total;
+  return { conquistas, molduras, banners, feitos, total, percentual: total > 0 ? Math.round((feitos / total) * 100) : 0 };
+}
+
+export type CampoRecompensa = 'moldura' | 'banner_url';
+
+/** Valor gravado em profiles.banner_url para um banner pronto. */
+export const valorBanner = (banner: Pick<BannerPreset, 'id'>) => `${PREFIXO_BANNER}${banner.id}`;
+
+/**
+ * Equipa (ou tira, com `valor` null) a moldura ou o banner do perfil. O trigger
+ * validar_recompensas_perfil recusa itens acima do nível (erro 42501).
+ * Devolve a mensagem de erro para exibir, ou null se deu certo.
+ */
+export async function equiparRecompensa(client: SupabaseClient, userId: string, campo: CampoRecompensa, valor: string | null): Promise<string | null> {
+  const { error } = await client.from('profiles').update({ [campo]: valor }).eq('id', userId);
+  if (!error) return null;
+  return error.code === '42501' ? 'Esse item ainda está bloqueado para o seu nível.' : 'Não foi possível equipar agora. Tente de novo.';
+}

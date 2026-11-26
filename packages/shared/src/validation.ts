@@ -120,3 +120,29 @@ export function isValidEmail(email: string): boolean {
   if (valor.length > 254) return false;
   return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)*\.[a-z]{2,}$/i.test(valor);
 }
+
+/** Tamanho mínimo de senha aceito no cadastro (o mesmo configurado no Supabase Auth). */
+export const SENHA_MINIMA = 6;
+
+export interface CadastroForm {
+  nome: string;
+  username: string;
+  email: string;
+  senha: string;
+  confirmarSenha: string;
+}
+
+/**
+ * Valida o formulário de cadastro (site e app) e devolve os dados limpos
+ * (nome sem espaços nas pontas, usuário e e-mail em minúsculas) ou a mensagem de erro.
+ */
+export function validarCadastro(form: CadastroForm): { erro: string } | { dados: { nome: string; username: string; email: string; senha: string } } {
+  const nome = form.nome.trim();
+  const username = form.username.trim().toLowerCase();
+  const email = form.email.trim().toLowerCase();
+  if (!nome || !username || !email || !form.senha || !form.confirmarSenha) return { erro: 'Todos os campos são obrigatórios.' };
+  if (!isValidEmail(email)) return { erro: 'Informe um e-mail válido.' };
+  if (form.senha !== form.confirmarSenha) return { erro: 'As senhas não coincidem.' };
+  if (form.senha.length < SENHA_MINIMA) return { erro: `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.` };
+  return { dados: { nome, username, email, senha: form.senha } };
+}
