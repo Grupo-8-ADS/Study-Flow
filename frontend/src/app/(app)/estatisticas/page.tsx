@@ -56,19 +56,19 @@ const emptyPeriodData: PeriodStats = {
   semana: {
     label: "Semana",
     topic: "Sem dados",
-    topicHours: "0H",
+    topicHours: "0 h",
     chart: [],
   },
   mes: {
     label: "Mês",
     topic: "Sem dados",
-    topicHours: "0H",
+    topicHours: "0 h",
     chart: [],
   },
   acumulado: {
     label: "Acumulado",
     topic: "Sem dados",
-    topicHours: "0H",
+    topicHours: "0 h",
     chart: [],
   },
 };
@@ -104,7 +104,7 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
       chart: distribution.map((item) => ({ label: item.name, value: item.hours })),
       label,
       topic: top?.name ?? "Sem dados",
-      topicHours: `${top?.hours ?? 0}H`,
+      topicHours: formatarHoras(top?.hours ?? 0),
     };
   };
 
@@ -337,7 +337,7 @@ export default function EstatisticasPage() {
               />
             }
             description={
-              current.chart.length > 0 ? `Mais estudado: ${current.topic} (${current.topicHours.replace("H", " h")})` : undefined
+              current.chart.length > 0 ? `Mais estudado: ${current.topic} (${current.topicHours})` : undefined
             }
             icon={<BarChart3 size={18} />}
             title="Disciplinas mais estudadas"

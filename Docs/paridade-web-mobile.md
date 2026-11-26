@@ -28,7 +28,10 @@ Legenda: ✔ igual nas duas plataformas · ✔\* igual, com diferença só de in
 | Banner do perfil (imagem própria ou pronto) | ✔ | ✔ | `bannerPreset`, `valorBanner` | ✔ |
 | Privacidade (perfil público, horas, conquistas, compartilhar) | ✔ | ✔ | `privacidade.ts` + coluna `profiles.privacidade` | ✔ (antes: localStorage no site e nada no app; o valor antigo do site é migrado uma vez) |
 | Compartilhar progresso | ✔ | ✔ | `textoCompartilhamento` com `ocultarHoras` e `link` | ✔\* site: copiar/WhatsApp/X; app: menu nativo de compartilhamento |
-| Estatísticas: metas da semana e do mês | ✔ | ✔ | `metasDeEstudo` | ✔ (o app usava 20 h/semana fixo) |
+| Estatísticas: metas da semana e do mês | ✔ | ✔ | `metasDeEstudo`, `META_SUGERIDA_H` (sugeridas de 4 h/dia) | ✔ (o app usava 20 h/semana fixo; a sugerida do mês, 80 h, não batia com a da semana) |
+| Horas com vírgula ("0,3 h") | ✔ | ✔ | `formatarHoras` no site, `decimalBR` no app (sem Intl) | ✔ (o app mostrava "0.3H") |
+| Dashboard: foco sugerido | ✔ | ✔ | `focoSugerido`, `diasAte` | ✔ (o app não tinha o quadro) |
+| Disciplinas: professor ("Prof. Ana") | ✔ | ✔ | `rotuloProfessor` | ✔ (os dois mostravam "Prof. Prof." quando o nome já tinha o título) |
 | Estatísticas: semana e mês | ✔ | ✔ | `intervaloDoPeriodo` (segunda a domingo) | ✔ (o site começava no domingo) |
 | Dashboard: sequência atual | ✔ | ✔ | `sequenciaAtual` (dias locais) | ✔ (o site contava em UTC) |
 | Dashboard/estatísticas: distribuição por disciplina | ✔ | ✔ | `distribuicaoEstudo`, `SEM_DISCIPLINA` | ✔ (o app mostrava 4 e contava sessões sem disciplina) |

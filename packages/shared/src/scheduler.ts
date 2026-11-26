@@ -180,7 +180,8 @@ function chaveData(d: Date): string {
  *   (somam-se ao reforço de prova).
  * - Com `limiteDiarioMin`, cada dia recebe no máximo esse total de estudo; os horários que
  *   sobram ficam livres, e o estudo é distribuído pelos dias do período.
- * - Evita a mesma disciplina em blocos consecutivos quando há outra disponível.
+ * - Evita a mesma disciplina em blocos consecutivos quando outra está atrasada na sua parte,
+ *   sem quebrar a proporção dos pesos (com pesos iguais, elas se alternam).
  *
  * @throws CronogramaError
  */
@@ -305,10 +306,20 @@ export function gerarCronograma(params: GerarCronogramaParams): BlocoEstudo[] {
       atual[i] += p;
     });
 
-    let escolhida = -1;
-    for (let i = 0; i < atual.length; i++) {
-      if (disciplinas.length > 1 && i === anterior) continue;
-      if (escolhida === -1 || atual[i] > atual[escolhida]) escolhida = i;
+    let escolhida = 0;
+    for (let i = 1; i < atual.length; i++) {
+      if (atual[i] > atual[escolhida]) escolhida = i;
+    }
+    // Evita repetir a disciplina do bloco anterior só quando outra está atrasada na sua
+    // parte (crédito positivo). Antes a troca era obrigatória, e com duas disciplinas elas
+    // se alternavam sempre, ignorando prioridade, prova e entrega.
+    if (escolhida === anterior) {
+      let alternativa = -1;
+      for (let i = 0; i < atual.length; i++) {
+        if (i === anterior || atual[i] <= 0) continue;
+        if (alternativa === -1 || atual[i] > atual[alternativa]) alternativa = i;
+      }
+      if (alternativa !== -1) escolhida = alternativa;
     }
     atual[escolhida] -= total;
     anterior = escolhida;

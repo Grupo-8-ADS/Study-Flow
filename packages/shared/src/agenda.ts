@@ -87,7 +87,18 @@ export type RotinaFixa = {
 
 export type RotinaFixaForm = Omit<RotinaFixa, "id">;
 
-export type AgendaDados = { disciplinas: DisciplinaAgenda[]; compromissos: Compromisso[]; rotinas: RotinaFixa[] };
+/**
+ * Professor como aparece no cartão da disciplina: "Prof. Ana". Se o nome já vier com o
+ * título ("Prof. Ana", "Profa. Ana", "Professora Ana"), não repete ("Prof. Prof. Ana").
+ */
+export function rotuloProfessor(professor: string | null | undefined): string {
+  const nome = (professor ?? "").trim();
+  if (!nome) return "";
+  // Com ponto ("Prof.Ana", "Profª. Ana") vale o que vier depois; sem ponto, só antes de espaço.
+  return /^prof(?:a|ª|essora?)?(?:\.|(?=\s|$))/i.test(nome) ? nome : `Prof. ${nome}`;
+}
+
+export type AgendaDados = {disciplinas: DisciplinaAgenda[]; compromissos: Compromisso[]; rotinas: RotinaFixa[] };
 
 /** Rascunho do formulário de compromisso. */
 export type CompromissoForm = Omit<Compromisso, "id" | "concluido" | "origem">;
@@ -116,6 +127,36 @@ export function dataLocal(data: string, hora = "00:00") {
   const [a, m, d] = data.split("-").map(Number);
   const [h, min] = hora.split(":").map(Number);
   return new Date(a, m - 1, d, h || 0, min || 0);
+}
+
+/** Dias de `hoje` até `data` (ambas "AAAA-MM-DD"); negativo se já passou. */
+export function diasAte(data: string, hoje = hojeStr()): number {
+  return Math.round((dataLocal(data).getTime() - dataLocal(hoje).getTime()) / 86_400_000);
+}
+
+/**
+ * Dica do quadro "Foco sugerido" do Início (site e app): a prova pendente dos próximos 7 dias;
+ * senão, uma disciplina ainda sem sessões; senão, a que tem menos horas. `distribuicao` vem em
+ * ordem decrescente de horas (`distribuicaoEstudo`).
+ */
+export function focoSugerido(
+  compromissos: Array<Pick<Compromisso, "titulo" | "tipo" | "disciplinaId" | "data" | "concluido">>,
+  disciplinas: Array<{ id: string; nome: string }>,
+  distribuicao: Array<{ name: string }> | undefined,
+  hoje = hojeStr(),
+): string | null {
+  const prova = compromissos.find((c) => c.tipo === "prova" && !c.concluido && diasAte(c.data, hoje) >= 0 && diasAte(c.data, hoje) <= 7);
+  if (prova) {
+    const dias = diasAte(prova.data, hoje);
+    const disc = disciplinas.find((d) => d.id === prova.disciplinaId)?.nome;
+    const quando = dias === 0 ? "hoje" : dias === 1 ? "amanhã" : `em ${dias} dias`;
+    return `${prova.titulo}${disc ? ` (${disc})` : ""} é ${quando}. Priorize essa matéria.`;
+  }
+  const estudado = new Set((distribuicao ?? []).map((d) => d.name));
+  const semEstudo = disciplinas.find((d) => !estudado.has(d.nome));
+  if (semEstudo) return `Você ainda não registrou sessões de ${semEstudo.nome}.`;
+  const menos = distribuicao?.at(-1);
+  return menos ? `${menos.name} é a disciplina com menos horas registradas.` : null;
 }
 
 /** Início e fim reais (instantes) de um compromisso. */

@@ -24,6 +24,7 @@ import {
   intervaloDoPeriodo,
   gerarRelatorioPeriodo,
   metasDeEstudo,
+  decimalBR,
   ERRO_CARREGAR_PRIVACIDADE,
   SEM_DISCIPLINA,
   type SessaoRelatorio,
@@ -49,6 +50,9 @@ export default function EstatisticasScreen() {
   const [period] = useState<'semana' | 'mes' | 'acumulado'>('semana');
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Até a primeira carga terminar, os anéis e o relatório mostram o carregamento em vez de
+  // "0H" e "nenhuma sessão" (o que piscava por um instante ao abrir a aba).
+  const [carregou, setCarregou] = useState(false);
   const [sessoesRelatorio, setSessoesRelatorio] = useState<SessaoRelatorio[]>([]);
 
   const [weekHours, setWeekHours] = useState(0);
@@ -155,6 +159,7 @@ export default function EstatisticasScreen() {
       console.error('Error loading stats:', e);
     } finally {
       setLoading(false);
+      setCarregou(true);
     }
   };
 
@@ -198,7 +203,7 @@ export default function EstatisticasScreen() {
   };
 
   const metas = metasDeEstudo(session?.horas_diarias, weekHours, monthHours);
-  const rotuloMeta = (meta: number) => `${metas.sugerida ? 'Meta sugerida' : 'Meta'}: ${meta}H`;
+  const rotuloMeta = (meta: number) => `${metas.sugerida ? 'Meta sugerida' : 'Meta'}: ${decimalBR(meta)}h`;
   const { nivel: currentLevel, faltam, progresso } = progressoNivel(session?.xp || 0);
   const currentXp = session?.xp || 0;
   const levelProgress = Math.min(1, Math.max(0.05, progresso));
@@ -213,51 +218,57 @@ export default function EstatisticasScreen() {
       >
         {/* Total Hours Progress Rings */}
         <Text style={styles.sectionTitle}>Total de Horas Estudadas</Text>
-        <View style={styles.summaryRingsRow}>
-          <Card style={styles.ringCard}>
-            <ProgressRing
-              size={90}
-              strokeWidth={8}
-              progress={metas.semana.percentual / 100}
-              color={COLORS.primary}
-            >
-              <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>{weekHours}H</Text>
-                <Text style={styles.ringSub}>Semana</Text>
-              </View>
-            </ProgressRing>
-            <Text style={styles.ringMeta}>{rotuloMeta(metas.semana.meta)}</Text>
-          </Card>
+        {!carregou ? (
+          <View accessibilityLabel="Carregando estatísticas" style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          </View>
+        ) : (
+          <View style={styles.summaryRingsRow}>
+            <Card style={styles.ringCard}>
+              <ProgressRing
+                size={90}
+                strokeWidth={8}
+                progress={metas.semana.percentual / 100}
+                color={COLORS.primary}
+              >
+                <View style={styles.ringInner}>
+                  <Text style={styles.ringValue}>{decimalBR(weekHours)}h</Text>
+                  <Text style={styles.ringSub}>Semana</Text>
+                </View>
+              </ProgressRing>
+              <Text style={styles.ringMeta}>{rotuloMeta(metas.semana.meta)}</Text>
+            </Card>
 
-          <Card style={styles.ringCard}>
-            <ProgressRing
-              size={90}
-              strokeWidth={8}
-              progress={metas.mes.percentual / 100}
-              color="#348e83"
-            >
-              <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>{monthHours}H</Text>
-                <Text style={styles.ringSub}>Mês</Text>
-              </View>
-            </ProgressRing>
-            <Text style={styles.ringMeta}>{rotuloMeta(metas.mes.meta)}</Text>
-          </Card>
+            <Card style={styles.ringCard}>
+              <ProgressRing
+                size={90}
+                strokeWidth={8}
+                progress={metas.mes.percentual / 100}
+                color="#348e83"
+              >
+                <View style={styles.ringInner}>
+                  <Text style={styles.ringValue}>{decimalBR(monthHours)}h</Text>
+                  <Text style={styles.ringSub}>Mês</Text>
+                </View>
+              </ProgressRing>
+              <Text style={styles.ringMeta}>{rotuloMeta(metas.mes.meta)}</Text>
+            </Card>
 
-          <Card style={styles.ringCard}>
-            <ProgressRing
-              size={90}
-              strokeWidth={8}
-              progress={totalHours > 0 ? 1 : 0}
-              color={COLORS.gold}
-            >
-              <View style={styles.ringInner}>
-                <Text style={styles.ringValue}>{totalHours}H</Text>
-                <Text style={styles.ringSub}>Total</Text>
-              </View>
-            </ProgressRing>
-          </Card>
-        </View>
+            <Card style={styles.ringCard}>
+              <ProgressRing
+                size={90}
+                strokeWidth={8}
+                progress={totalHours > 0 ? 1 : 0}
+                color={COLORS.gold}
+              >
+                <View style={styles.ringInner}>
+                  <Text style={styles.ringValue}>{decimalBR(totalHours)}h</Text>
+                  <Text style={styles.ringSub}>Total</Text>
+                </View>
+              </ProgressRing>
+            </Card>
+          </View>
+        )}
 
         {/* Gamification Level & XP Card */}
         <Card style={styles.levelCard}>
@@ -297,7 +308,13 @@ export default function EstatisticasScreen() {
         </Card>
 
         {/* Study Distribution */}
-        <RelatorioEstudos sessoes={sessoesRelatorio} />
+        {carregou ? (
+          <RelatorioEstudos sessoes={sessoesRelatorio} />
+        ) : (
+          <View accessibilityLabel="Carregando relatório de estudos" style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          </View>
+        )}
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Distribuição por Matéria</Text>
@@ -319,7 +336,7 @@ export default function EstatisticasScreen() {
               <View key={idx} style={styles.barItemRow}>
                 <View style={styles.barLabelsRow}>
                   <Text style={styles.barName}>{item.name}</Text>
-                  <Text style={styles.barHours}>{item.hours}h</Text>
+                  <Text style={styles.barHours}>{decimalBR(item.hours)}h</Text>
                 </View>
                 <View style={styles.barTrack}>
                   <View

@@ -1,7 +1,68 @@
 import { describe, expect, it } from 'vitest';
 
 
-import { aulasNoPeriodo, deLinha, formatarHorario, ocupadosNoPeriodo, paraLinha, proximasEntregas, rotinasNoPeriodo, validarCompromisso, type CompromissoForm } from './agenda';
+import { aulasNoPeriodo, deLinha, diasAte, focoSugerido, formatarHorario, ocupadosNoPeriodo, paraLinha, proximasEntregas, rotinasNoPeriodo, rotuloProfessor, validarCompromisso, type CompromissoForm } from './agenda';
+
+describe('diasAte', () => {
+  it('deveContarDiasCorridos', () => {
+    expect(diasAte('2026-12-03', '2026-11-26')).toBe(7);
+    expect(diasAte('2026-11-26', '2026-11-26')).toBe(0);
+    expect(diasAte('2026-11-25', '2026-11-26')).toBe(-1);
+  });
+});
+
+describe('focoSugerido', () => {
+  const HOJE = '2026-11-26';
+  const disciplinas = [
+    { id: 'c', nome: 'Cálculo I' },
+    { id: 'f', nome: 'Física II' },
+  ];
+  const prova = (data: string, extra: object = {}) => ({ titulo: 'P1', tipo: 'prova' as const, disciplinaId: 'c', data, concluido: false, ...extra });
+
+  it('quandoProvaNosProximos7Dias_deveSugerirAMateriaDaProva', () => {
+    expect(focoSugerido([prova('2026-12-03')], disciplinas, [], HOJE)).toBe('P1 (Cálculo I) é em 7 dias. Priorize essa matéria.');
+    expect(focoSugerido([prova('2026-11-26')], disciplinas, [], HOJE)).toBe('P1 (Cálculo I) é hoje. Priorize essa matéria.');
+    expect(focoSugerido([prova('2026-11-27', { disciplinaId: null })], disciplinas, [], HOJE)).toBe('P1 é amanhã. Priorize essa matéria.');
+  });
+
+  it('quandoProvaPassadaConcluidaOuLonge_deveIgnorar', () => {
+    const dist = [{ name: 'Cálculo I' }, { name: 'Física II' }];
+    const ignoradas = [prova('2026-11-25'), prova('2026-12-04'), prova('2026-11-28', { concluido: true })];
+    expect(focoSugerido(ignoradas, disciplinas, dist, HOJE)).toBe('Física II é a disciplina com menos horas registradas.');
+  });
+
+  it('quandoDisciplinaSemSessoes_deveSugeriLa', () => {
+    expect(focoSugerido([], disciplinas, [{ name: 'Cálculo I' }], HOJE)).toBe('Você ainda não registrou sessões de Física II.');
+  });
+
+  it('quandoNadaParaSugerir_deveDevolverNull', () => {
+    expect(focoSugerido([], [], undefined, HOJE)).toBeNull();
+  });
+});
+
+describe('rotuloProfessor', () => {
+  it('quandoSemTitulo_deveAcrescentarProf', () => {
+    expect(rotuloProfessor('Ana Souza')).toBe('Prof. Ana Souza');
+    expect(rotuloProfessor('  Ana  ')).toBe('Prof. Ana');
+  });
+
+  it('quandoJaTemTitulo_naoDeveRepetir', () => {
+    for (const nome of ['Prof. Teste', 'prof Teste', 'Profa. Maria', 'Professor João', 'Professora Lia', 'PROF. X', 'Prof.Ana', 'Profª Bia', 'Profª. Bia']) {
+      expect(rotuloProfessor(nome)).toBe(nome);
+    }
+  });
+
+  it('quandoNomeComecaComProfMasNaoEhTitulo_deveAcrescentar', () => {
+    expect(rotuloProfessor('Profeta Silva')).toBe('Prof. Profeta Silva');
+  });
+
+  it('quandoVazio_deveDevolverVazio', () => {
+    expect(rotuloProfessor('')).toBe('');
+    expect(rotuloProfessor('   ')).toBe('');
+    expect(rotuloProfessor(null)).toBe('');
+    expect(rotuloProfessor(undefined)).toBe('');
+  });
+});
 
 const base: CompromissoForm = {
   titulo: 'P1',

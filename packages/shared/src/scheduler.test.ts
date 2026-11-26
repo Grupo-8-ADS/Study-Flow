@@ -421,9 +421,9 @@ describe('scheduler.ts - Suíte de Testes Unitários', () => {
       expect(total.B).toBeGreaterThan(total.C);
     });
 
-    it('gerarCronograma_quandoHaMaisDeUmaDisciplina_naoDeveRepetirDisciplinaEmBlocosConsecutivos', () => {
-      // Arrange (pesos muito desbalanceados forçariam repetição sem a regra)
-      const disciplinas = [disc('A', 5), disc('B', 1), disc('C', 1)];
+    it('gerarCronograma_quandoPesosIguais_naoDeveRepetirDisciplinaEmBlocosConsecutivos', () => {
+      // Arrange
+      const disciplinas = [disc('A', 2), disc('B', 2), disc('C', 2)];
 
       // Act
       const blocos = gerarCronograma({ disciplinas, rotina: rotinaDiaria, dataInicio: SEGUNDA, semanas: 3 });
@@ -434,18 +434,47 @@ describe('scheduler.ts - Suíte de Testes Unitários', () => {
       }
     });
 
-    it('gerarCronograma_quandoDuasDisciplinasComPesosDesiguais_deveAlternarSempre', () => {
-      // Arrange
-      const disciplinas = [disc('A', 5), disc('B', 1)];
+    it('gerarCronograma_quandoDuasDisciplinasComPesosDesiguais_deveRespeitarAProporcao', () => {
+      // Arrange (antes, a regra de não repetir forçava 50% para cada uma)
+      const disciplinas = [disc('A', 3), disc('B', 1)];
 
       // Act
-      const blocos = gerarCronograma({ disciplinas, rotina: rotinaDiaria, dataInicio: SEGUNDA, semanas: 1 });
+      const blocos = gerarCronograma({ disciplinas, rotina: rotinaDiaria, dataInicio: SEGUNDA, semanas: 2 });
+      const total = contar(blocos);
+
+      // Assert (3:1, com tolerância de um bloco)
+      expect(blocos[0].disciplina_id).toBe('A');
+      expect(Math.abs(total.A - 3 * total.B)).toBeLessThanOrEqual(3);
+      expect(total.A).toBeGreaterThan(2 * total.B);
+    });
+
+    it('gerarCronograma_quandoDuasDisciplinasComPesosDesiguais_deveIntercalarAMenosPrioritaria', () => {
+      // Arrange
+      const disciplinas = [disc('A', 3), disc('B', 1)];
+
+      // Act
+      const blocos = gerarCronograma({ disciplinas, rotina: rotinaDiaria, dataInicio: SEGUNDA, semanas: 2 });
+
+      // Assert (B aparece cedo, e A nunca fica mais de 4 blocos seguidos)
+      expect(blocos.slice(0, 4).some((b) => b.disciplina_id === 'B')).toBe(true);
+      let seguidos = 1;
+      for (let i = 1; i < blocos.length; i++) {
+        seguidos = blocos[i].disciplina_id === blocos[i - 1].disciplina_id ? seguidos + 1 : 1;
+        expect(seguidos).toBeLessThanOrEqual(4);
+      }
+    });
+
+    it('gerarCronograma_quandoDuasDisciplinasEProvaProxima_deveDarMaisBlocosAQueTemProva', () => {
+      // Arrange (caso do teste manual: alta com prova × baixa; antes ficava 3 a 3)
+      const rotina = [slot(1, '14:00', '17:00'), slot(3, '14:00', '16:00')];
+      const disciplinas = [disc('A', 3, '2026-11-04'), disc('B', 1)];
+
+      // Act
+      const blocos = gerarCronograma({ disciplinas, rotina, dataInicio: SEGUNDA, semanas: 2 });
+      const total = contar(blocos);
 
       // Assert
-      blocos.forEach((b, i) => {
-        if (i > 0) expect(b.disciplina_id).not.toBe(blocos[i - 1].disciplina_id);
-      });
-      expect(blocos[0].disciplina_id).toBe('A');
+      expect(total.A).toBeGreaterThan(total.B);
     });
 
     it('gerarCronograma_quandoApenasUmaDisciplina_devePermitirRepeticao', () => {
@@ -663,7 +692,6 @@ describe('gerarCronograma - limite diário e entregas', () => {
   });
 
   it('gerarCronograma_quandoEntregaNoPeriodo_deveReforcarAteAData', () => {
-    // Três disciplinas: com duas, a regra de não repetir em sequência força a alternância.
     const blocos = gerarCronograma({ ...base, disciplinas: [disc('A', 1), { ...disc('B', 1), proximaEntrega: '2026-03-03' }, disc('C', 1)] });
     const b = blocos.filter((x) => x.disciplina_id === 'B').length;
     const a = blocos.filter((x) => x.disciplina_id === 'A').length;

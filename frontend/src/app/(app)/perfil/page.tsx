@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, Check, Crop, ImageIcon, KeyRound, Pencil, Shuffle, Trash2, Trophy, Upload, UserRound } from "lucide-react";
+import { Camera, Crop, ImageIcon, KeyRound, Pencil, Shuffle, Trash2, Trophy, Upload, UserRound } from "lucide-react";
 import { ImageCropper } from "@/components/image-cropper";
 import { FundoBanner, MolduraAvatar } from "@/components/moldura-avatar";
 
@@ -335,10 +335,7 @@ function PerfilConteudo({ perfil }: { perfil: PerfilUsuario }) {
           ) : null}
           {saveSuccess ? (
             <Alert className="mt-4" tone="success">
-              <span className="inline-flex items-center gap-1.5">
-                <Check aria-hidden size={15} />
-                {saveSuccess}
-              </span>
+              {saveSuccess}
             </Alert>
           ) : null}
         </Card>

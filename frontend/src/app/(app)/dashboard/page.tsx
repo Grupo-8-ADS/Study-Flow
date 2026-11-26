@@ -7,13 +7,11 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { CHAVES, SemSessaoError, useConsulta } from "@/lib/consultas";
 import { usePerfil } from "@/lib/perfil";
-import { distribuicaoEstudo, sequenciaAtual, type StudyDistribution } from "@studyflow/shared";
+import { diasAte, distribuicaoEstudo, focoSugerido, sequenciaAtual, type StudyDistribution } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
   alternarConcluido,
-  dataLocal,
   formatarData,
-  hojeStr,
   useAgenda,
   type Compromisso,
   type CompromissoForm,
@@ -54,11 +52,6 @@ async function carregarResumo(): Promise<Resumo> {
 /** Prazos (prova, trabalho, atividade) pendentes: atrasados + próximos 14 dias. */
 const JANELA_DIAS = 14;
 
-const diasAte = (data: string) => {
-  const hoje = dataLocal(hojeStr());
-  return Math.round((dataLocal(data).getTime() - hoje.getTime()) / 86_400_000);
-};
-
 export default function DashboardPage() {
   const { dados } = useAgenda();
   const { dados: perfil } = usePerfil();
@@ -81,20 +74,10 @@ export default function DashboardPage() {
     [dados],
   );
 
-  const sugestao = useMemo(() => {
-    if (!dados) return null;
-    const prova = dados.compromissos.find((c) => c.tipo === "prova" && !c.concluido && diasAte(c.data) >= 0 && diasAte(c.data) <= 7);
-    if (prova) {
-      const disc = dados.disciplinas.find((d) => d.id === prova.disciplinaId)?.nome;
-      const quando = diasAte(prova.data) === 0 ? "hoje" : diasAte(prova.data) === 1 ? "amanhã" : `em ${diasAte(prova.data)} dias`;
-      return `${prova.titulo}${disc ? ` (${disc})` : ""} é ${quando}. Priorize essa matéria.`;
-    }
-    const estudado = new Set(resumo?.distribuicao.map((d) => d.name));
-    const semEstudo = dados.disciplinas.find((d) => !estudado.has(d.nome));
-    if (semEstudo) return `Você ainda não registrou sessões de ${semEstudo.nome}.`;
-    const menos = resumo?.distribuicao.at(-1);
-    return menos ? `${menos.name} é a disciplina com menos horas registradas.` : null;
-  }, [dados, resumo]);
+  const sugestao = useMemo(
+    () => (dados ? focoSugerido(dados.compromissos, dados.disciplinas, resumo?.distribuicao) : null),
+    [dados, resumo],
+  );
 
   if (!nome) return <PageLoading label="Carregando painel..." />;
 
