@@ -209,6 +209,53 @@ describe("Integração com API externa: Gmail (RF012)", () => {
       expect(await resposta.json()).toEqual({ encontrados: 4, criados: 2, jaImportados: 1, semData: 1 });
     });
 
+    it("deve ler o corpo inteiro (texto ou HTML) e criar um item por data de evento", async () => {
+      const b64 = (texto: string) => Buffer.from(texto, "utf8").toString("base64url");
+      const mensagens: Record<string, object> = {
+        v1: {
+          id: "v1",
+          snippet: "Pessoal, seguem as datas...",
+          internalDate: String(Date.parse("2026-11-01T12:00:00Z")),
+          payload: {
+            mimeType: "multipart/alternative",
+            headers: [{ name: "Subject", value: "Calendário de Cálculo" }],
+            parts: [
+              { mimeType: "text/plain", body: { data: b64("Pessoal, seguem as datas.\nA P1 será dia 05/12 e a P2 dia 19/12.\nNota mínima 6.0") } },
+              { mimeType: "text/html", body: { data: b64("<p>versão HTML ignorada 25/12</p>") } },
+              { mimeType: "application/pdf", filename: "ementa.pdf", body: { size: 10 } },
+            ],
+          },
+        },
+        v2: {
+          id: "v2",
+          snippet: "Aviso",
+          internalDate: String(Date.parse("2026-11-01T12:00:00Z")),
+          payload: {
+            mimeType: "text/html",
+            headers: [{ name: "Subject", value: "Aviso da coordenação" }],
+            body: { data: b64("<div>Bom dia!</div><div>O relatório de estágio deve ser entregue até <b>10 de dezembro</b>.</div>") },
+          },
+        },
+      };
+      server.use(
+        http.get(`${ENV.GOOGLE_API_BASE}/gmail/v1/users/me/messages`, () => HttpResponse.json({ messages: [{ id: "v1" }, { id: "v2" }] })),
+        http.get(`${ENV.GOOGLE_API_BASE}/gmail/v1/users/me/messages/:id`, ({ request, params }) => {
+          expect(new URL(request.url).searchParams.get("format")).toBe("full");
+          return HttpResponse.json(mensagens[String(params.id)]);
+        })
+      );
+
+      const resposta = await sincronizar(requisicao("http://localhost/api/gmail/sincronizar"));
+
+      expect(await resposta.json()).toEqual({ encontrados: 2, criados: 3, jaImportados: 0, semData: 0 });
+      const novos = banco.itens_cronograma.filter((i) => i.origem_externa_id !== "gmail:m4");
+      expect(novos.map((i) => [i.nome, i.tipo, i.data_inicio, i.origem_externa_id])).toEqual([
+        ["Calendário de Cálculo — P1", "prova", "2026-12-05T00:00:00-03:00", "gmail:v1:2026-12-05"],
+        ["Calendário de Cálculo — P2", "prova", "2026-12-19T00:00:00-03:00", "gmail:v1:2026-12-19"],
+        ["Aviso da coordenação", "trabalho", "2026-12-10T00:00:00-03:00", "gmail:v2"],
+      ]);
+    });
+
     it("não deve falhar quando outra sincronização simultânea já importou parte dos itens", async () => {
       // A checagem de duplicados não vê m1, mas outra requisição o insere antes deste insert.
       server.use(http.get("*/rest/v1/itens_cronograma", () => HttpResponse.json([])));

@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
-import type { LocalizacaoPalavra } from "@studyflow/shared";
+import { LOCALIZACOES_PALAVRA as LOCALIZACOES, type LocalizacaoPalavra } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
 import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,6 @@ type Palavra = { id: string; palavra: string; localizacao: LocalizacaoPalavra };
 type StatusGmail = { email_sinc: string | null; data_ultima_sinc: string | null } | null;
 type Aviso = { tipo: "sucesso" | "erro"; texto: string } | null;
 
-const LOCALIZACOES: Array<{ valor: LocalizacaoPalavra; rotulo: string }> = [
-  { valor: "assunto", rotulo: "Assunto" },
-  { valor: "corpo", rotulo: "Corpo do e-mail" },
-  { valor: "remetente", rotulo: "Remetente" },
-  { valor: "destinatario", rotulo: "Destinatário" },
-];
 
 const RETORNO_OAUTH: Record<string, Aviso> = {
   conectado: { tipo: "sucesso", texto: "Gmail conectado! Agora é só sincronizar." },
@@ -49,7 +43,7 @@ function IntegracoesConteudo() {
   const [palavras, setPalavras] = useState<Palavra[]>([]);
   const [status, setStatus] = useState<StatusGmail>(null);
   const [novaPalavra, setNovaPalavra] = useState("");
-  const [localizacao, setLocalizacao] = useState<LocalizacaoPalavra>("assunto");
+  const [localizacao, setLocalizacao] = useState<LocalizacaoPalavra>("corpo");
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<Aviso>(() => RETORNO_OAUTH[searchParams.get("gmail") ?? ""] ?? null);
 
@@ -83,7 +77,7 @@ function IntegracoesConteudo() {
     const palavra = novaPalavra.trim();
     if (!userId || !palavra) return;
     if (palavras.some((p) => p.palavra.toLowerCase() === palavra.toLowerCase() && p.localizacao === localizacao)) {
-      setAviso({ tipo: "erro", texto: `"${palavra}" já está cadastrada para ${LOCALIZACOES.find((l) => l.valor === localizacao)?.rotulo.toLowerCase()}.` });
+      setAviso({ tipo: "erro", texto: `"${palavra}" já está cadastrada em "${LOCALIZACOES.find((l) => l.valor === localizacao)?.rotulo}".` });
       return;
     }
     const { error } = await supabase.from("palavras_chave").insert({ user_id: userId, palavra, localizacao });

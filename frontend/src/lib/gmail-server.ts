@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { APP_RETORNO_GMAIL, type EmailResumo } from "@studyflow/shared";
+import { APP_RETORNO_GMAIL, textoDeHtml, type EmailResumo } from "@studyflow/shared";
 import { supabase, SUPABASE_FALLBACK_URL } from "@/lib/supabase";
 import { clienteServidor } from "@/lib/supabase-servidor";
 
@@ -168,17 +168,44 @@ export async function emailDaConta(config: GmailConfig, accessToken: string): Pr
   return perfil.emailAddress ?? null;
 }
 
+interface ParteGmail {
+  mimeType?: string;
+  filename?: string;
+  headers?: Array<{ name: string; value: string }>;
+  body?: { data?: string; size?: number };
+  parts?: ParteGmail[];
+}
+
 interface MensagemGmail {
   id: string;
   snippet?: string;
   internalDate?: string;
-  payload?: { headers?: Array<{ name: string; value: string }> };
+  payload?: ParteGmail;
 }
 
-/** Busca até `limite` e-mails da consulta e devolve assunto, trecho e data de cada um. */
 /**
- * Lista as mensagens da busca, página a página, até `limite`.
- * `completo` é false quando sobraram mensagens além do limite.
+ * Texto do corpo a partir das partes MIME (format=full): junta as partes text/plain;
+ * se o e-mail só tiver HTML, converte o HTML. Anexos ficam de fora.
+ */
+export function corpoDaMensagem(payload: ParteGmail | undefined): string | null {
+  const planos: string[] = [];
+  const htmls: string[] = [];
+  const visitar = (parte: ParteGmail) => {
+    if (parte.filename) return;
+    const dados = parte.body?.data;
+    if (dados && parte.mimeType === "text/plain") planos.push(Buffer.from(dados, "base64url").toString("utf8"));
+    else if (dados && parte.mimeType === "text/html") htmls.push(Buffer.from(dados, "base64url").toString("utf8"));
+    parte.parts?.forEach(visitar);
+  };
+  if (payload) visitar(payload);
+  if (planos.length) return planos.join("\n");
+  if (htmls.length) return textoDeHtml(htmls.join("\n"));
+  return null;
+}
+
+/**
+ * Lista as mensagens da busca, página a página, até `limite`, e lê cada uma inteira
+ * (assunto e corpo). `completo` é false quando sobraram mensagens além do limite.
  */
 export async function buscarEmails(
   config: GmailConfig,
@@ -198,7 +225,7 @@ export async function buscarEmails(
 
   const mensagens = await Promise.all(
     ids.map((id) =>
-      getGmail<MensagemGmail>(config, accessToken, `messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=Subject`),
+      getGmail<MensagemGmail>(config, accessToken, `messages/${encodeURIComponent(id)}?format=full`),
     ),
   );
 
@@ -206,6 +233,7 @@ export async function buscarEmails(
     id: m.id,
     assunto: m.payload?.headers?.find((h) => h.name.toLowerCase() === "subject")?.value ?? "",
     trecho: m.snippet ?? null,
+    corpo: corpoDaMensagem(m.payload),
     recebidoEm: new Date(Number(m.internalDate) || Date.now()),
   }));
   return { emails, completo: !pageToken };

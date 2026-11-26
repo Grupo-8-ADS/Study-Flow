@@ -65,7 +65,7 @@ test.describe("Fluxo 3: e-mails do Gmail viram itens do cronograma", () => {
     await expect(integracoes.palavrasCadastradas()).toContainText("entrega");
     await integracoes.adicionarPalavra("Entrega");
 
-    await expect(integracoes.aviso()).toContainText('"Entrega" já está cadastrada para assunto.');
+    await expect(integracoes.aviso()).toContainText('"Entrega" já está cadastrada em "Em qualquer lugar".');
     await expect(integracoes.palavrasCadastradas().getByRole("listitem")).toHaveCount(1);
     await evidencia(page, testInfo, "fluxo3-05-palavra-repetida");
   });

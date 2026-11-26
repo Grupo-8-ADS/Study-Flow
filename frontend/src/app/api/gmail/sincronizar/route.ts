@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extrairEventoDoEmail, montarConsultaGmail, type PalavraChave } from "@studyflow/shared";
+import { extrairEventosDoEmail, montarConsultaGmail, type PalavraChave } from "@studyflow/shared";
 import {
   GmailErro,
   buscarEmails,
@@ -50,8 +50,10 @@ export async function POST(request: Request) {
   try {
     const accessToken = await renovarAcesso(config, token.refresh_token);
     const { emails, completo } = await buscarEmails(config, accessToken, consulta);
-    const eventos = emails.map(extrairEventoDoEmail).filter((e) => e !== null);
-    const comData = eventos.filter((e) => e.data);
+    // Um e-mail pode virar vários itens (ex.: P1 e P2 no mesmo aviso) ou nenhum (sem data de evento).
+    const porEmail = emails.map(extrairEventosDoEmail);
+    const comData = porEmail.flat();
+    const semData = porEmail.filter((eventos) => eventos.length === 0).length;
 
     const { data: existentes } = comData.length
       ? await db
@@ -99,7 +101,7 @@ export async function POST(request: Request) {
       encontrados: emails.length,
       criados,
       jaImportados: comData.length - criados,
-      semData: eventos.length - comData.length,
+      semData,
     });
   } catch (err: unknown) {
     if (err instanceof GmailErro && err.codigo === "TOKEN_INVALIDO") {
