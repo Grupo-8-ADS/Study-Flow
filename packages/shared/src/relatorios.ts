@@ -166,8 +166,17 @@ export function relatorioParaCSV(relatorio: RelatorioPeriodo): string {
   return linhas.map((l) => l.map(celula).join(';')).join('\r\n') + '\r\n';
 }
 
-/** Metas sugeridas quando o perfil não tem horas diárias definidas. */
-export const META_SUGERIDA_H = { semana: 28, mes: 80 } as const;
+/** Horas diárias sugeridas quando o perfil não tem meta definida. */
+export const META_SUGERIDA_DIARIA_H = 4;
+
+/**
+ * Metas sugeridas quando o perfil não tem horas diárias definidas. Vêm da mesma meta diária
+ * e da mesma conta da meta do perfil (semana = 7 dias, mês = 30 dias), para as duas baterem.
+ */
+export const META_SUGERIDA_H = { semana: META_SUGERIDA_DIARIA_H * 7, mes: META_SUGERIDA_DIARIA_H * 30 } as const;
+
+/** Número com uma casa decimal e vírgula ("0,3"), sem depender do Intl (Hermes, no app). */
+export const decimalBR = (n: number) => String(Number((Number.isFinite(n) ? n : 0).toFixed(1))).replace('.', ',');
 
 export interface MetaPeriodo {
   /** Meta em horas. */

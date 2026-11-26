@@ -27,6 +27,7 @@ export function HorariosSemanaisEditor({
   onChange,
   novo,
   vazio,
+  feminino = false,
 }: {
   titulo: string;
   /** Nome de um item ("aula", "horário"), usado no botão e nos rótulos acessíveis. */
@@ -36,7 +37,10 @@ export function HorariosSemanaisEditor({
   /** Horário sugerido ao adicionar. */
   novo: HorarioSemanal;
   vazio: string;
+  /** O rótulo é feminino ("aula"): os rótulos acessíveis usam "da" em vez de "do". */
+  feminino?: boolean;
 }) {
+  const de = feminino ? 'da' : 'do';
   const mudar = (i: number, parcial: Partial<HorarioSemanal>) => onChange(horarios.map((h, j) => (j === i ? { ...h, ...parcial } : h)));
 
   return (
@@ -55,7 +59,7 @@ export function HorariosSemanaisEditor({
           </ScrollView>
           <View style={styles.horas}>
             <Input
-              accessibilityLabel={`Início do ${rotulo} ${i + 1}`}
+              accessibilityLabel={`Início ${de} ${rotulo} ${i + 1}`}
               containerStyle={{ flex: 1 }}
               keyboardType="number-pad"
               label="Início"
@@ -65,7 +69,7 @@ export function HorariosSemanaisEditor({
               value={h.inicio}
             />
             <Input
-              accessibilityLabel={`Fim do ${rotulo} ${i + 1}`}
+              accessibilityLabel={`Fim ${de} ${rotulo} ${i + 1}`}
               containerStyle={{ flex: 1 }}
               keyboardType="number-pad"
               label="Fim"

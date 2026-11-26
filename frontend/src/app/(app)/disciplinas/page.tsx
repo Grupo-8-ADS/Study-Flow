@@ -8,7 +8,7 @@
 
 import { useState, type FormEvent } from "react";
 import { BookOpen, Clock, Pencil, Plus, Trash2 } from "lucide-react";
-import { conflitosAoSalvar, resumoHorarios, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
+import { conflitosAoSalvar, resumoHorarios, rotuloProfessor, type ConflitoHorario, type ItemComHorarios } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
   excluirDisciplina,
@@ -108,7 +108,7 @@ export default function DisciplinasPage() {
                   <div className="flex items-start justify-between gap-2">
                     <button className="min-w-0 flex-1 text-left" onClick={() => setVendo(d.id)} type="button">
                       <p className="truncate font-semibold text-ink-900">{d.nome}</p>
-                      {d.professor ? <p className="truncate text-sm text-ink-500">Prof. {d.professor}</p> : null}
+                      {d.professor ? <p className="truncate text-sm text-ink-500">{rotuloProfessor(d.professor)}</p> : null}
                     </button>
                     <div className="flex shrink-0 gap-1">
                       <Button aria-label={`Editar ${d.nome}`} onClick={() => setEditando({ id: d.id, form: { ...d } })} size="icon-sm" variant="ghost">
@@ -164,7 +164,7 @@ export default function DisciplinasPage() {
           title={disciplinaVista.nome}
         >
           <div className="grid gap-5 text-sm">
-            {disciplinaVista.professor ? <p className="text-ink-600">Prof. {disciplinaVista.professor}</p> : null}
+            {disciplinaVista.professor ? <p className="text-ink-600">{rotuloProfessor(disciplinaVista.professor)}</p> : null}
             <section>
               <h3 className="mb-1.5 font-semibold text-ink-800">Aulas</h3>
               <p className="tabular text-ink-600">{resumoAulas(disciplinaVista.aulas)}</p>

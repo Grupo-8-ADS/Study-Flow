@@ -3,6 +3,7 @@ import { DISTRIBUTION_COLORS } from './constants';
 import {
   BOM_UTF8,
   META_SUGERIDA_H,
+  decimalBR,
   formatarDataISO,
   formatarHoras,
   formatarMinutos,
@@ -489,6 +490,26 @@ describe('metasDeEstudo', () => {
     expect(r.semana).toEqual({ meta: META_SUGERIDA_H.semana, percentual: 100 });
     expect(r.mes).toEqual({ meta: META_SUGERIDA_H.mes, percentual: 0 });
     expect(metasDeEstudo(null, 1, 1).sugerida).toBe(true);
+  });
+
+  it('quandoSemMeta_asSugeridasDaSemanaEDoMesDevemVirDaMesmaMetaDiaria', () => {
+    // Antes eram 28 h/semana (4 h/dia) e 80 h/mês (≈2,7 h/dia).
+    expect(META_SUGERIDA_H.semana / 7).toBe(META_SUGERIDA_H.mes / 30);
+    expect(metasDeEstudo(0, 0, 0).mes.meta).toBe(metasDeEstudo(META_SUGERIDA_H.semana / 7, 0, 0).mes.meta);
+  });
+});
+
+describe('decimalBR', () => {
+  it('deveUsarVirgulaEUmaCasa', () => {
+    expect(decimalBR(0.3)).toBe('0,3');
+    expect(decimalBR(0.25)).toBe('0,3');
+    expect(decimalBR(2)).toBe('2');
+    expect(decimalBR(12.04)).toBe('12');
+  });
+
+  it('quandoNaoForNumeroFinito_deveMostrarZero', () => {
+    expect(decimalBR(Number.NaN)).toBe('0');
+    expect(decimalBR(Number.POSITIVE_INFINITY)).toBe('0');
   });
 });
 

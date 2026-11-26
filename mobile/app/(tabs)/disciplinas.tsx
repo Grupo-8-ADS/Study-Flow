@@ -9,6 +9,7 @@ import {
   hojeStr,
   itensComHorarios,
   resumoHorarios,
+  rotuloProfessor,
   type Compromisso,
   type CompromissoForm,
   type DisciplinaAgenda,
@@ -91,7 +92,7 @@ export default function DisciplinasScreen() {
                 <View style={styles.cardTopo}>
                   <TouchableOpacity style={{ flex: 1 }} onPress={() => setVendo(d.id)}>
                     <Text style={styles.nome}>{d.nome}</Text>
-                    {d.professor ? <Text style={styles.meta}>Prof. {d.professor}</Text> : null}
+                    {d.professor ? <Text style={styles.meta}>{rotuloProfessor(d.professor)}</Text> : null}
                   </TouchableOpacity>
                   <TouchableOpacity accessibilityLabel={`Editar ${d.nome}`} onPress={() => setEditando({ id: d.id, form: { ...d } })} style={styles.icone}>
                     <Edit2 size={17} color={COLORS.textSecondary} />
@@ -127,7 +128,7 @@ export default function DisciplinasScreen() {
       <Modal visible={Boolean(vista) && !compromisso} onClose={() => setVendo(null)} title={vista?.nome} variant="bottom">
         {vista ? (
           <>
-            {vista.professor ? <Text style={styles.meta}>Prof. {vista.professor}</Text> : null}
+            {vista.professor ? <Text style={styles.meta}>{rotuloProfessor(vista.professor)}</Text> : null}
             <Text style={styles.secao}>Aulas</Text>
             <Text style={styles.meta}>{resumoAulas(vista.aulas)}</Text>
             <View style={styles.secaoTopo}>
@@ -203,6 +204,7 @@ function DisciplinaEditor({ inicial, onClose, outros }: { inicial: { id?: string
         horarios={form.aulas}
         novo={{ dia_semana: 1, inicio: '19:00', fim: '20:40' }}
         onChange={(aulas) => mudar({ aulas })}
+        feminino
         rotulo="aula"
         titulo="Horários de aula"
         vazio="As aulas aparecem toda semana no calendário e o cronograma não marca estudo por cima delas."

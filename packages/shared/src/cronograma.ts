@@ -117,7 +117,7 @@ export const COMO_O_CRONOGRAMA_E_MONTADO: readonly string[] = [
   'Cada horário livre é dividido em blocos do tamanho escolhido, com 10 min de pausa entre eles.',
   'Horários que batem com aulas, atividades da rotina, compromissos com horário ou que já passaram são pulados.',
   'Cada dia recebe no máximo as horas de estudo escolhidas (começa pela sua meta diária do perfil); o resto do estudo vai para os dias seguintes.',
-  'As disciplinas se revezam de forma proporcional à prioridade (alta = 3×, média = 2×, baixa = 1×), sem repetir a mesma em sequência.',
+  'As disciplinas se revezam de forma proporcional à prioridade (alta = 3×, média = 2×, baixa = 1×); a mesma só se repete em sequência quando a proporção pede.',
   'Disciplinas com prova dentro do período ganham o dobro de peso até o dia da prova, e as com entrega de trabalho ganham 1,5× até a entrega.',
   'Não há sorteio: as mesmas entradas geram sempre o mesmo cronograma.',
 ];

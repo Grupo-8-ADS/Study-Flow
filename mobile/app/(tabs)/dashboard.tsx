@@ -20,13 +20,16 @@ import {
   Gift,
   Settings,
   Check,
+  Sparkles,
 } from 'lucide-react-native';
 import {
   COLORS,
   ROTULO_TIPO,
   StudyDistribution,
   dataStr,
+  decimalBR,
   distribuicaoEstudo,
+  focoSugerido,
   sequenciaAtual,
   formatarData,
   formatarHorario,
@@ -54,6 +57,8 @@ export default function DashboardScreen() {
   const [streak, setStreak] = useState(0);
   const [totalHours, setTotalHours] = useState(0);
   const [distribution, setDistribution] = useState<StudyDistribution[]>([]);
+  // Só sugere foco depois de ler as sessões (antes disso toda disciplina parece "sem sessões").
+  const [sessoesCarregadas, setSessoesCarregadas] = useState(false);
 
   const { dados: agenda, carregando: carregandoAgenda, recarregar: recarregarAgenda } = useAgenda();
   const [editor, setEditor] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
@@ -91,6 +96,7 @@ export default function DashboardScreen() {
         setStreak(0);
         setDistribution([]);
       }
+      setSessoesCarregadas(true);
     } catch (e) {
       console.error('Error fetching dashboard data:', e);
     } finally {
@@ -128,6 +134,7 @@ export default function DashboardScreen() {
   const nomeDisciplina = (id: string | null) => agenda?.disciplinas.find((d) => d.id === id)?.nome;
 
   const pendingCount = tasks.length;
+  const sugestao = agenda && sessoesCarregadas ? focoSugerido(agenda.compromissos, agenda.disciplinas, distribution) : null;
 
   return (
     <View style={styles.container}>
@@ -171,8 +178,8 @@ export default function DashboardScreen() {
             <View style={[styles.metricIconCircle, { backgroundColor: '#ecfdf5' }]}>
               <Clock size={20} color={COLORS.primary} />
             </View>
-            <Text style={styles.metricValue}>{totalHours}h</Text>
-            <Text style={styles.metricLabel}>Horas de Foco</Text>
+            <Text style={styles.metricValue}>{decimalBR(totalHours)}h</Text>
+            <Text style={styles.metricLabel}>Horas estudadas</Text>
           </Card>
 
           <Card style={styles.metricCard}>
@@ -180,15 +187,15 @@ export default function DashboardScreen() {
               <CheckSquare size={20} color="#2563eb" />
             </View>
             <Text style={styles.metricValue}>{pendingCount}</Text>
-            <Text style={styles.metricLabel}>Tarefas Ativas</Text>
+            <Text style={styles.metricLabel}>Prazos pendentes</Text>
           </Card>
 
           <Card style={styles.metricCard}>
             <View style={[styles.metricIconCircle, { backgroundColor: '#fff7ed' }]}>
               <Flame size={20} color="#ea580c" />
             </View>
-            <Text style={styles.metricValue}>{streak} dias</Text>
-            <Text style={styles.metricLabel}>Sequência</Text>
+            <Text style={styles.metricValue}>{streak} {streak === 1 ? 'dia' : 'dias'}</Text>
+            <Text style={styles.metricLabel}>Sequência atual</Text>
           </Card>
         </View>
 
@@ -310,7 +317,7 @@ export default function DashboardScreen() {
                 <View key={idx} style={styles.distributionRow}>
                   <View style={styles.distHeader}>
                     <Text style={styles.distName}>{item.name}</Text>
-                    <Text style={styles.distHours}>{item.hours}h</Text>
+                    <Text style={styles.distHours}>{decimalBR(item.hours)}h</Text>
                   </View>
                   <View style={styles.distProgressBarBg}>
                     <View
@@ -328,6 +335,17 @@ export default function DashboardScreen() {
             </Card>
           </>
         )}
+
+        {/* Mesma dica do Início do site (focoSugerido, em @studyflow/shared). */}
+        {sugestao ? (
+          <View style={styles.sugestao}>
+            <Sparkles size={18} color={COLORS.primary} />
+            <View style={styles.sugestaoTexto}>
+              <Text style={styles.sugestaoTitulo}>Foco sugerido</Text>
+              <Text style={styles.sugestaoCorpo}>{sugestao}</Text>
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
 
       <CompromissoEditor visible={Boolean(editor)} disciplinas={agenda?.disciplinas ?? []} inicial={editor} onClose={() => setEditor(null)} />
@@ -520,6 +538,28 @@ const styles = StyleSheet.create({
   },
   distributionCard: {
     padding: 16,
+  },
+  sugestao: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryMuted,
+  },
+  sugestaoTexto: {
+    flex: 1,
+  },
+  sugestaoTitulo: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  sugestaoCorpo: {
+    marginTop: 2,
+    fontSize: 13,
+    color: COLORS.text,
   },
   distributionRow: {
     marginBottom: 12,
