@@ -5,15 +5,38 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    groups:
-      # O Expo exige versões casadas do SDK; atualizações dele são feitas com `npx expo install --fix`.
-      expo:
-        patterns: ["expo", "expo-*", "react-native", "react-native-*", "@expo/*"]
     ignore:
+      # O SDK do Expo fixa a versão de tudo que entra no app (expo/bundledNativeModules.json).
+      # Esses pacotes só mudam com `cd mobile && npx expo install --fix`, ou numa troca de SDK.
+      # Uma versão fora do SDK passa no bundle JS e quebra no Gradle; o doctor:mobile recusa.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-async-storage/*"
+      - dependency-name: "babel-preset-expo"
+      - dependency-name: "eslint-config-expo"
+      - dependency-name: "jest-expo"
+      # React e React DOM seguem o SDK do Expo, e a web usa a mesma versão.
       - dependency-name: "react"
       - dependency-name: "react-dom"
+    groups:
+      # Atualizações menores e correções saem num PR só por semana; versões major, uma por PR.
+      dependencias:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # A v6 move o cache para um componente comercial e exige aceitar os termos de uso da
+      # Gradle (https://blog.gradle.org/github-actions-for-gradle-v6). Fica na v5, MIT,
+      # até essa decisão ser tomada.
+      - dependency-name: "gradle/actions"
+        versions: [">= 6"]
+    groups:
+      actions:
+        patterns: ["*"]
