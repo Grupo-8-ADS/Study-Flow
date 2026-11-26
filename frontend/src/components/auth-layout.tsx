@@ -37,7 +37,8 @@ export function AuthLayout({ title, description, children }: { title: string; de
           </ul>
         </div>
 
-        <p className="relative hidden text-sm text-primary-200 lg:block">Projeto acadêmico · ADS</p>
+        {/* Ocupa o lugar do rodapé para o texto do meio continuar centralizado (justify-between). */}
+        <div aria-hidden className="hidden lg:block" />
       </aside>
 
       <main className="-mt-4 flex flex-1 items-start justify-center rounded-t-[20px] bg-canvas px-5 py-10 sm:px-8 lg:mt-0 lg:items-center lg:rounded-none lg:py-12">
