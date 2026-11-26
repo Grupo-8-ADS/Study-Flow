@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Check, Gift, Image as ImageIcon, Lock, Palette, Sparkles, Trophy } from "lucide-react";
 import {
   BANNERS,
@@ -10,28 +9,21 @@ import {
   equiparRecompensa,
   gradienteCss,
   nomeConquista,
-  progressoNivel,
   resumoColecao,
   textoProximaRecompensa,
   valorBanner,
   type CampoRecompensa,
 } from "@studyflow/shared";
 import { supabase } from "@/lib/supabase";
-import { limparAgenda } from "@/lib/agenda";
-import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { getCurrentSupabaseUserId } from "@/lib/studyflow-data";
+import { CHAVES, SemSessaoError, useConsulta } from "@/lib/consultas";
+import { atualizarPerfilEmCache, usePerfil } from "@/lib/perfil";
 import { ConquistaIcone } from "@/components/conquista-icone";
 import { MolduraAvatar, PreviaBanner } from "@/components/moldura-avatar";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoading } from "@/components/ui/feedback";
 import { PageHeader } from "@/components/ui/page-header";
-
-type UserSession = {
-  avatar_url?: string | null;
-  email: string;
-  nome: string;
-  username: string;
-};
 
 type ConquistaLinha = {
   id: string;
@@ -41,13 +33,25 @@ type ConquistaLinha = {
   tier: number | null;
 };
 
-type Perfil = {
-  nivel: number;
-  xp: number;
-  avatar_url: string | null;
-  banner_url: string | null;
-  moldura: string | null;
+type ConquistasUsuario = {
+  todas: ConquistaLinha[];
+  /** Conquistas ganhas: id → disciplina gravada no desbloqueio (nomes com {disciplina}). */
+  ganhas: Map<string, string | null>;
 };
+
+async function carregarConquistas(): Promise<ConquistasUsuario> {
+  const userId = await getCurrentSupabaseUserId();
+  if (!userId) throw new SemSessaoError();
+  const [ganhas, todas] = await Promise.all([
+    supabase.from("user_conquistas").select("conquista_id,detalhe").eq("user_id", userId),
+    supabase.from("conquistas").select("id,nome,descricao,icone,tier").order("tier", { ascending: true }),
+  ]);
+  if (ganhas.error || todas.error) throw new Error("Não foi possível carregar as conquistas.");
+  return {
+    todas: (todas.data ?? []) as ConquistaLinha[],
+    ganhas: new Map((ganhas.data ?? []).map((u) => [u.conquista_id as string, (u.detalhe as string | null) ?? null])),
+  };
+}
 
 type Aba = "conquistas" | "molduras" | "banners";
 
@@ -76,86 +80,38 @@ const ABAS: { id: Aba; titulo: string; descricao: string; icon: typeof Trophy; c
 ];
 
 export default function RewardsPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<UserSession | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { dados: perfil, erro: erroPerfil } = usePerfil();
+  const { dados: dadosConquistas, erro: erroConquistas } = useConsulta(CHAVES.conquistas, carregarConquistas);
   const [aba, setAba] = useState<Aba>("conquistas");
-  const [perfil, setPerfil] = useState<Perfil>({ nivel: 1, xp: 0, avatar_url: null, banner_url: null, moldura: null });
-  const [conquistas, setConquistas] = useState<ConquistaLinha[]>([]);
-  const [ganhas, setGanhas] = useState<Map<string, string | null>>(new Map());
   const [salvando, setSalvando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadRewards() {
-      const parsedSession = getStoredSession();
-
-      if (!parsedSession) {
-        router.push("/");
-        return;
-      }
-
-      try {
-        setUser(parsedSession);
-        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
-        if (!currentUserId) return;
-        setUserId(currentUserId);
-
-        const [{ data: unlocked }, { data: todas }, { data: profile }] = await Promise.all([
-          supabase.from("user_conquistas").select("conquista_id,detalhe").eq("user_id", currentUserId),
-          supabase.from("conquistas").select("id,nome,descricao,icone,tier").order("tier", { ascending: true }),
-          supabase.from("profiles").select("avatar_url,banner_url,moldura,nivel_atual,xp").eq("id", currentUserId).maybeSingle(),
-        ]);
-
-        if (profile) {
-          setPerfil({
-            nivel: profile.nivel_atual ?? progressoNivel(profile.xp ?? 0).nivel,
-            xp: profile.xp ?? 0,
-            avatar_url: profile.avatar_url,
-            banner_url: profile.banner_url,
-            moldura: profile.moldura,
-          });
-        }
-        setConquistas((todas ?? []) as ConquistaLinha[]);
-        setGanhas(new Map((unlocked ?? []).map((u) => [u.conquista_id as string, (u.detalhe as string | null) ?? null])));
-      } catch {
-        localStorage.removeItem("studyflow_session");
-        limparAgenda();
-        router.push("/");
-      }
-    }
-
-    void loadRewards();
-  }, [router]);
-
-  if (!user) {
-    return <PageLoading label="Carregando recompensas..." />;
+  if (!perfil || !dadosConquistas) {
+    const falha = erroPerfil ?? erroConquistas;
+    return falha ? <Alert tone="danger">{falha}</Alert> : <PageLoading label="Carregando recompensas..." />;
   }
 
-  const resumo = resumoColecao(perfil.nivel, { feitos: conquistas.filter((c) => ganhas.has(c.id)).length, total: conquistas.length });
+  const { todas: conquistas, ganhas } = dadosConquistas;
+  const nivel = perfil.nivel_atual;
+  const resumo = resumoColecao(nivel, { feitos: conquistas.filter((c) => ganhas.has(c.id)).length, total: conquistas.length });
   const contagem: Record<Aba, { feitos: number; total: number }> = resumo;
   const { feitos, total, percentual: progressoGeral } = resumo;
 
   async function equipar(campo: CampoRecompensa, valor: string | null) {
-    if (!userId) return;
+    if (!perfil) return;
     setErro(null);
     setSalvando(`${campo}:${valor}`);
-    const falha = await equiparRecompensa(supabase, userId, campo, valor);
+    const falha = await equiparRecompensa(supabase, perfil.id, campo, valor);
     setSalvando(null);
     if (falha) {
       setErro(falha);
       return;
     }
-    setPerfil((p) => ({ ...p, [campo]: valor }));
-    // O menu lateral relê a sessão para mostrar a moldura nova.
-    const sessao = getStoredSession();
-    if (sessao) {
-      localStorage.setItem("studyflow_session", JSON.stringify({ ...sessao, [campo]: valor }));
-      window.dispatchEvent(new Event("studyflow:sessao"));
-    }
+    // O menu e o perfil leem o mesmo cache: a moldura nova aparece neles na hora.
+    atualizarPerfilEmCache(campo === "moldura" ? { moldura: valor } : { banner_url: valor });
   }
 
-  const inicial = user.nome?.trim()?.[0]?.toUpperCase() ?? "?";
+  const inicial = perfil.nome.trim()[0]?.toUpperCase() ?? "?";
   const avatar = (moldura: string | null, tamanho = 56) => (
     <MolduraAvatar espessura={3} moldura={moldura}>
       <span
@@ -179,8 +135,8 @@ export default function RewardsPage() {
               <Gift size={22} />
             </span>
             <div>
-              <h2 className="text-lg font-semibold !text-white">Nível {perfil.nivel}</h2>
-              <p className="mt-1 max-w-xl text-sm text-primary-100">{textoProximaRecompensa(perfil.nivel, perfil.xp)}</p>
+              <h2 className="text-lg font-semibold !text-white">Nível {nivel}</h2>
+              <p className="mt-1 max-w-xl text-sm text-primary-100">{textoProximaRecompensa(nivel, perfil.xp)}</p>
             </div>
           </div>
           <div className="min-w-[220px] rounded-card bg-white/10 p-4">
@@ -293,7 +249,7 @@ export default function RewardsPage() {
             />
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {MOLDURAS.map((m) => {
-                const livre = desbloqueado(m, perfil.nivel);
+                const livre = desbloqueado(m, nivel);
                 const equipada = perfil.moldura === m.id;
                 return (
                   <li className={`flex items-center gap-4 rounded-control border p-4 ${equipada ? "border-primary-500 bg-primary-50" : "border-line bg-white"}`} key={m.id}>
@@ -330,7 +286,7 @@ export default function RewardsPage() {
             <p className="-mt-2 mb-4 text-sm text-ink-500">Equipar um banner pronto substitui a imagem enviada no perfil. Você pode enviar outra imagem quando quiser.</p>
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {BANNERS.map((b) => {
-                const livre = desbloqueado(b, perfil.nivel);
+                const livre = desbloqueado(b, nivel);
                 const valor = valorBanner(b);
                 const equipado = perfil.banner_url === valor;
                 return (

@@ -1,19 +1,37 @@
 import { supabase } from "@/lib/supabase";
 
+/**
+ * Sessão guardada no navegador após o login: só o que identifica a conta. Foto, banner,
+ * nível e o resto do perfil vêm do banco pelo `usePerfil`.
+ */
 export type StudyFlowSession = {
   email: string;
   nome: string;
   username: string;
-  avatar_url?: string | null;
-  banner_url?: string | null;
-  moldura?: string | null;
 };
 
+const CHAVE_SESSAO = "studyflow_session";
+/** Campos que versões antigas guardavam na sessão (imagens de centenas de KB). */
+const CAMPOS_ANTIGOS = ["avatar_url", "banner_url", "moldura"] as const;
+
 export function getStoredSession(): StudyFlowSession | null {
-  const storedSession = localStorage.getItem("studyflow_session");
+  const storedSession = localStorage.getItem(CHAVE_SESSAO);
   if (!storedSession) return null;
 
   return JSON.parse(storedSession) as StudyFlowSession;
+}
+
+/** Grava a sessão local sem as imagens que versões antigas guardavam nela. */
+export function salvarSessaoLocal(sessao: StudyFlowSession & Record<string, unknown>) {
+  const limpa: Record<string, unknown> = { ...sessao };
+  for (const campo of CAMPOS_ANTIGOS) delete limpa[campo];
+  localStorage.setItem(CHAVE_SESSAO, JSON.stringify(limpa));
+}
+
+/** Tira da sessão local as imagens gravadas por versões antigas (lida em toda troca de tela). */
+export function enxugarSessaoLocal() {
+  const sessao = getStoredSession() as (StudyFlowSession & Record<string, unknown>) | null;
+  if (sessao && CAMPOS_ANTIGOS.some((campo) => campo in sessao)) salvarSessaoLocal(sessao);
 }
 
 /**
@@ -26,12 +44,3 @@ export async function getCurrentSupabaseUserId(session?: StudyFlowSession) {
   const { data } = await supabase.auth.getSession();
   return data.session?.user?.id ?? null;
 }
-
-export function getLocalStudyMinutes(email: string) {
-  const storedActivity = localStorage.getItem(`studyflow_activity_${email}`);
-  if (!storedActivity) return 0;
-
-  const parsedActivity = JSON.parse(storedActivity) as Array<{ type?: string }>;
-  return parsedActivity.filter((activity) => activity.type === "foco").length * 25;
-}
-

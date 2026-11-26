@@ -35,7 +35,10 @@ Legenda: ✔ igual nas duas plataformas · ✔\* igual, com diferença só de in
 | Relatório de estudos (RF011) e CSV | ✔ | ✔ | `montarRelatorio`, `relatorioParaCSV`, `resumoRelatorio`, `nomeArquivoRelatorio` | ✔\* site baixa o arquivo; app salva e abre o menu de compartilhamento (expo-sharing) |
 | Notificações (sino e lembretes) | ✔ | ✔ | tabela `notificacoes` + `gerar_notificacoes_prazos` | ✔\* o app também agenda lembretes locais do aparelho |
 | Integração com o Gmail | ✔ | ✔ | rotas `/api/gmail/*` (o app chama por `chamarApi`) | ✔ |
-| Perfil (nome, usuário, avatar, banner, cor) | ✔ | ✔ | Supabase `profiles` | ✔\* recorte da foto: componente próprio no site, editor nativo no app |
+| Perfil (nome, usuário, banner, cor) | ✔ | ✔ | Supabase `profiles`, `validarPerfil`, `mensagemErroPerfil` | ✔\* o site grava ao clicar em salvar; o app grava a imagem na hora |
+| Foto de perfil: enviar, gerar avatar e remover | ✔ | ✔ | `ESTILOS_AVATAR`, `urlAvatar`, `novasSementes` | ✔\* recorte da foto: componente próprio no site, editor nativo no app (antes o app não removia nem gerava avatar) |
+| E-mail da conta | ✔ | ✔ | só leitura nas duas | ✔ (o site deixava editar, e o login por usuário passava a procurar um e-mail ainda não confirmado) |
+| Troca de senha | ✔ | ✔ | `validarNovaSenha`, `SENHA_MINIMA` | ✔ (o site pedia um "código por e-mail" que nunca era enviado) |
 | FAQ e termos de serviço | ✔ | ✔ | `FAQ`, `TERMOS_SERVICO` | ✔ |
 | Excluir conta (e conta de demonstração protegida) | ✔ | ✔ | `delete_own_account`, `contaDemonstracao`, `TEXTO_EXCLUIR_CONTA` | ✔ (o app não protegia a conta demo) |
 

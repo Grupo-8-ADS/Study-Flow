@@ -69,10 +69,11 @@ function IntegracoesConteudo() {
       return;
     }
     async function iniciar() {
-      setUser(sessao as UserSession);
       const id = await getCurrentSupabaseUserId();
       setUserId(id);
       if (id) await carregar(id);
+      // Só sai do esqueleto com o status real: antes, quem estava conectado via "Desconectado".
+      setUser(sessao as UserSession);
     }
     void iniciar();
   }, [router, carregar]);

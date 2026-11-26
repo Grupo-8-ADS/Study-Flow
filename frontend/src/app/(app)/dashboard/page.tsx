@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, CalendarCheck, CheckCircle2, Circle, Clock, Flame, Plus, Sparkles, Timer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getCurrentSupabaseUserId, getLocalStudyMinutes, getStoredSession } from "@/lib/studyflow-data";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { CHAVES, SemSessaoError, useConsulta } from "@/lib/consultas";
+import { usePerfil } from "@/lib/perfil";
 import { distribuicaoEstudo, sequenciaAtual, type StudyDistribution } from "@studyflow/shared";
 import {
   ROTULO_TIPO,
@@ -25,6 +27,30 @@ import { PageHeader } from "@/components/ui/page-header";
 
 type Resumo = { horas: number; sequencia: number; distribuicao: StudyDistribution[] };
 
+/** Horas, sequência e distribuição por disciplina das sessões concluídas. */
+async function carregarResumo(): Promise<Resumo> {
+  const userId = await getCurrentSupabaseUserId();
+  if (!userId) throw new SemSessaoError();
+  const { data: sessoes, error } = await supabase
+    .from("sessoes_estudo")
+    .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
+    .eq("user_id", userId)
+    .eq("status", "concluida");
+  if (error) throw new Error("Não foi possível carregar o resumo de estudos.");
+  const lista = sessoes ?? [];
+  const minutos = lista.reduce((s, x) => s + (x.duracao_efetiva_min ?? 0), 0);
+  return {
+    horas: Number((minutos / 60).toFixed(1)),
+    sequencia: sequenciaAtual(lista.map((x) => String(x.data_inicio))),
+    distribuicao: distribuicaoEstudo(
+      lista.map((x) => {
+        const d = Array.isArray(x.disciplinas) ? x.disciplinas[0] : x.disciplinas;
+        return { disciplina: d?.nome ?? null, minutos: x.duracao_efetiva_min ?? 0 };
+      }),
+    ),
+  };
+}
+
 /** Prazos (prova, trabalho, atividade) pendentes: atrasados + próximos 14 dias. */
 const JANELA_DIAS = 14;
 
@@ -35,41 +61,19 @@ const diasAte = (data: string) => {
 
 export default function DashboardPage() {
   const { dados } = useAgenda();
-  const [nome, setNome] = useState<string | null>(null);
-  const [resumo, setResumo] = useState<Resumo | null>(null);
+  const { dados: perfil } = usePerfil();
+  const { dados: resumo } = useConsulta(CHAVES.resumoEstudo, carregarResumo);
+  // Nome da sessão local enquanto o perfil não chega.
+  const [nomeLocal, setNomeLocal] = useState<string | null>(null);
   const [editor, setEditor] = useState<Compromisso | Partial<CompromissoForm> | null>(null);
 
   useEffect(() => {
-    const sessao = getStoredSession();
-    if (!sessao) return;
+    // Sessão lida do localStorage só existe no cliente; sincroniza após montar.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNome(sessao.nome);
-
-    void (async () => {
-      const userId = await getCurrentSupabaseUserId();
-      if (!userId) {
-        setResumo({ horas: Number((getLocalStudyMinutes(sessao.email) / 60).toFixed(1)), sequencia: 0, distribuicao: [] });
-        return;
-      }
-      const { data: sessoes } = await supabase
-        .from("sessoes_estudo")
-        .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
-        .eq("user_id", userId)
-        .eq("status", "concluida");
-      const lista = sessoes ?? [];
-      const minutos = lista.reduce((s, x) => s + (x.duracao_efetiva_min ?? 0), 0);
-      setResumo({
-        horas: Number((minutos / 60).toFixed(1)),
-        sequencia: sequenciaAtual(lista.map((x) => String(x.data_inicio))),
-        distribuicao: distribuicaoEstudo(
-          lista.map((x) => {
-            const d = Array.isArray(x.disciplinas) ? x.disciplinas[0] : x.disciplinas;
-            return { disciplina: d?.nome ?? null, minutos: x.duracao_efetiva_min ?? 0 };
-          }),
-        ),
-      });
-    })();
+    setNomeLocal(getStoredSession()?.nome ?? null);
   }, []);
+
+  const nome = perfil?.nome ?? nomeLocal;
 
   const prazos = useMemo(
     () =>

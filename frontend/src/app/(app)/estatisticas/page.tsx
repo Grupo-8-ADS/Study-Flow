@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { BarChart3, Check, Download, FileText, Share2, Trophy } from "lucide-react";
 import { CompartilharProgressoModal } from "@/components/compartilhar-progresso";
 import { ConquistaIcone } from "@/components/conquista-icone";
 import { supabase } from "@/lib/supabase";
-import { limparAgenda } from "@/lib/agenda";
-import {
-  getCurrentSupabaseUserId,
-  getLocalStudyMinutes,
-  getStoredSession,
-} from "@/lib/studyflow-data";
+import { getCurrentSupabaseUserId, getStoredSession } from "@/lib/studyflow-data";
+import { CHAVES, SemSessaoError, useConsulta } from "@/lib/consultas";
+import { usePerfil } from "@/lib/perfil";
 import { carregarPrivacidadeUsuario } from "@/lib/privacidade";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader } from "@/components/ui/card";
@@ -52,12 +48,6 @@ type ReportMode = "semana" | "mes" | "personalizado";
 
 // Metas sugeridas (horas) usadas quando o usuário ainda não definiu horas diárias no perfil.
 
-type UserSession = {
-  avatar_url?: string | null;
-  email: string;
-  nome: string;
-  username: string;
-};
 
 
 type PeriodStats = Record<Period, { chart: Array<{ label: string; value: number }>; label: string; topic: string; topicHours: string }>;
@@ -125,9 +115,89 @@ function buildStats(sessoes: Array<{ data_inicio: string; duracao_efetiva_min: n
   };
 }
 
+/** Sessões e conquistas do usuário, já agregadas para os gráficos, metas e relatório. */
+async function carregarEstatisticas() {
+  const userId = await getCurrentSupabaseUserId();
+  if (!userId) throw new SemSessaoError();
+  const [{ data: sessoes, error: e1 }, { data: conquistas, error: e2 }, { data: todasConquistas, error: e3 }] = await Promise.all([
+    supabase
+      .from("sessoes_estudo")
+      .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
+      .eq("user_id", userId),
+    supabase
+      .from("user_conquistas")
+      .select("detalhe,conquistas(id,nome,descricao,icone,tier)")
+      .eq("user_id", userId)
+      .order("data_conquista", { ascending: false }),
+    supabase.from("conquistas").select("id,nome,descricao,criterio,icone,tier").order("tier").order("created_at"),
+  ]);
+  if (e1 || e2 || e3) throw new Error("Não foi possível carregar as estatísticas.");
+
+  const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
+  const reportSessions: SessaoRelatorio[] = completedSessions.map((sessao) => {
+    const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+    return {
+      data_inicio: sessao.data_inicio,
+      disciplina_nome: disciplina?.nome ?? null,
+      duracao_efetiva_min: sessao.duracao_efetiva_min,
+      status: sessao.status,
+    };
+  });
+  const achievementStats = {
+    minutosEstudados: 0,
+    sessoesConcluidas: completedSessions.length,
+    sessoesPorDisciplina: {} as Record<string, number>,
+    diasSeguidos: maiorSequencia(
+      completedSessions.filter((sessao) => sessao.data_inicio).map((sessao) => dataStr(new Date(sessao.data_inicio as string))),
+    ),
+  };
+  for (const sessao of completedSessions) {
+    const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
+    const nome = disciplina?.nome ?? "";
+    achievementStats.minutosEstudados += sessao.duracao_efetiva_min ?? 0;
+    if (nome) achievementStats.sessoesPorDisciplina[nome] = (achievementStats.sessoesPorDisciplina[nome] ?? 0) + 1;
+  }
+  const periodStats = buildStats(completedSessions);
+  const completedAchievements = (conquistas ?? []).map((item) => {
+    const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
+    return {
+      detail: conquista?.descricao ?? "Conquista desbloqueada",
+      icon: conquista?.icone ?? null,
+      id: conquista?.id ?? "",
+      name: nomeConquista(conquista?.nome ?? "Conquista", item.detalhe, achievementStats),
+      tier: conquista?.tier ?? 1,
+    };
+  });
+  const completedIds = new Set(completedAchievements.map((achievement) => achievement.id));
+  // Conquistas ainda bloqueadas: progresso real calculado das sessões concluídas (RF004).
+  const lockedAchievements = (todasConquistas ?? [])
+    .filter((achievement) => !completedIds.has(achievement.id))
+    .map((achievement) => {
+      const progress = progressoConquista(achievement.criterio as CriterioConquista | null, achievementStats);
+      return {
+        detail: achievement.descricao ?? "Continue estudando para desbloquear",
+        icon: achievement.icone ?? null,
+        id: achievement.id,
+        name: nomeConquista(achievement.nome, null, achievementStats),
+        tier: achievement.tier ?? 1,
+        progress: progress.percentual,
+        progressLabel: `${Math.floor(progress.atual)} / ${progress.alvo}`,
+      };
+    });
+  const inProgressAchievements = lockedAchievements.filter((achievement) => achievement.progress > 0);
+  const availableAchievements = lockedAchievements.filter((achievement) => achievement.progress === 0);
+
+  return {
+    statsData: periodStats,
+    featuredAchievements: completedAchievements.slice(0, 4),
+    allAchievements: { available: availableAchievements, completed: completedAchievements, inProgress: inProgressAchievements },
+    reportSessions,
+  };
+}
+
 export default function EstatisticasPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<UserSession | null>(null);
+  const { dados: perfil, erro: erroPerfil } = usePerfil();
+  const { dados: estatisticas, erro: erroEstatisticas } = useConsulta(CHAVES.estatisticas, carregarEstatisticas);
   const [period, setPeriod] = useState<Period>("semana");
   const [compartilhando, setCompartilhando] = useState(false);
   const [privacidadeLida, setPrivacidadeLida] = useState<{ privacidade: Privacidade; carregada: boolean }>({
@@ -142,131 +212,29 @@ export default function EstatisticasPage() {
     setPrivacidadeLida(await carregarPrivacidadeUsuario(await getCurrentSupabaseUserId(sessao), sessao.email));
   };
   const [showAchievements, setShowAchievements] = useState(false);
-  const [statsData, setStatsData] = useState<PeriodStats>(emptyPeriodData);
-  const [featuredAchievements, setFeaturedAchievements] = useState<AchievementItem[]>([]);
-  const [allAchievements, setAllAchievements] = useState(emptyAchievements);
-  const [level, setLevel] = useState(progressoNivel(0));
-  const [dailyHours, setDailyHours] = useState(0);
-  const [reportSessions, setReportSessions] = useState<SessaoRelatorio[]>([]);
+  // Antes da primeira carga a tela mostra o esqueleto; estes vazios só existem para os tipos.
+  const statsData = estatisticas?.statsData ?? emptyPeriodData;
+  const featuredAchievements = estatisticas?.featuredAchievements ?? [];
+  const allAchievements = estatisticas?.allAchievements ?? emptyAchievements;
+  const reportSessions = estatisticas?.reportSessions ?? [];
+  const level = progressoNivel(perfil?.xp ?? 0);
+  const dailyHours = perfil?.horas_diarias ?? 0;
   const [reportMode, setReportMode] = useState<ReportMode>("semana");
   const [customStart, setCustomStart] = useState(() => dataLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [customEnd, setCustomEnd] = useState(() => dataLocalISO(new Date()));
 
   useEffect(() => {
-    async function loadStats() {
-      const parsedSession = getStoredSession();
-
-      if (!parsedSession) {
-        router.push("/");
-        return;
-      }
-
-      try {
-        setUser(parsedSession);
-        const currentUserId = await getCurrentSupabaseUserId(parsedSession);
-        setPrivacidadeLida(await carregarPrivacidadeUsuario(currentUserId, parsedSession.email));
-
-        if (!currentUserId) {
-          const localMinutes = getLocalStudyMinutes(parsedSession.email);
-          const localHours = Number((localMinutes / 60).toFixed(1));
-          setStatsData({
-            acumulado: { chart: localHours ? [{ label: "Sessões locais", value: localHours }] : [], label: "Acumulado", topic: localHours ? "Sessões locais" : "Sem dados", topicHours: `${localHours}H` },
-            mes: { chart: [], label: "Mês", topic: "Sem dados", topicHours: "0H" },
-            semana: { chart: [], label: "Semana", topic: "Sem dados", topicHours: "0H" },
-          });
-          return;
-        }
-
-        const [{ data: sessoes }, { data: conquistas }, { data: todasConquistas }, { data: profile }] = await Promise.all([
-          supabase
-            .from("sessoes_estudo")
-            .select("duracao_efetiva_min,status,data_inicio,disciplinas(nome)")
-            .eq("user_id", currentUserId),
-          supabase
-            .from("user_conquistas")
-            .select("detalhe,conquistas(id,nome,descricao,icone,tier)")
-            .eq("user_id", currentUserId)
-            .order("data_conquista", { ascending: false }),
-          supabase.from("conquistas").select("id,nome,descricao,criterio,icone,tier").order("tier").order("created_at"),
-          supabase.from("profiles").select("avatar_url,xp,horas_diarias").eq("id", currentUserId).maybeSingle(),
-        ]);
-
-        if (profile?.avatar_url) {
-          setUser((curr) => curr ? { ...curr, avatar_url: profile.avatar_url } : null);
-        }
-
-        // O XP e o nível são mantidos pelo banco (trigger); aqui só leitura.
-        setLevel(progressoNivel(profile?.xp ?? 0));
-        setDailyHours(profile?.horas_diarias ?? 0);
-
-        const completedSessions = (sessoes ?? []).filter((sessao) => sessao.status === "concluida");
-        setReportSessions(
-          completedSessions.map((sessao) => {
-            const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
-            return {
-              data_inicio: sessao.data_inicio,
-              disciplina_nome: disciplina?.nome ?? null,
-              duracao_efetiva_min: sessao.duracao_efetiva_min,
-              status: sessao.status,
-            };
-          }),
-        );
-        const achievementStats = {
-          minutosEstudados: 0,
-          sessoesConcluidas: completedSessions.length,
-          sessoesPorDisciplina: {} as Record<string, number>,
-          diasSeguidos: maiorSequencia(
-            completedSessions.filter((sessao) => sessao.data_inicio).map((sessao) => dataStr(new Date(sessao.data_inicio as string))),
-          ),
-        };
-        for (const sessao of completedSessions) {
-          const disciplina = Array.isArray(sessao.disciplinas) ? sessao.disciplinas[0] : sessao.disciplinas;
-          const nome = disciplina?.nome ?? "";
-          achievementStats.minutosEstudados += sessao.duracao_efetiva_min ?? 0;
-          if (nome) achievementStats.sessoesPorDisciplina[nome] = (achievementStats.sessoesPorDisciplina[nome] ?? 0) + 1;
-        }
-        const periodStats = buildStats(completedSessions);
-        const completedAchievements = (conquistas ?? []).map((item) => {
-          const conquista = Array.isArray(item.conquistas) ? item.conquistas[0] : item.conquistas;
-          return {
-            detail: conquista?.descricao ?? "Conquista desbloqueada",
-            icon: conquista?.icone ?? null,
-            id: conquista?.id ?? "",
-            name: nomeConquista(conquista?.nome ?? "Conquista", item.detalhe, achievementStats),
-            tier: conquista?.tier ?? 1,
-          };
-        });
-        const completedIds = new Set(completedAchievements.map((achievement) => achievement.id));
-        // Conquistas ainda bloqueadas: progresso real calculado das sessões concluídas (RF004).
-        const lockedAchievements = (todasConquistas ?? [])
-          .filter((achievement) => !completedIds.has(achievement.id))
-          .map((achievement) => {
-            const progress = progressoConquista(achievement.criterio as CriterioConquista | null, achievementStats);
-            return {
-              detail: achievement.descricao ?? "Continue estudando para desbloquear",
-              icon: achievement.icone ?? null,
-              id: achievement.id,
-              name: nomeConquista(achievement.nome, null, achievementStats),
-              tier: achievement.tier ?? 1,
-              progress: progress.percentual,
-              progressLabel: `${Math.floor(progress.atual)} / ${progress.alvo}`,
-            };
-          });
-        const inProgressAchievements = lockedAchievements.filter((achievement) => achievement.progress > 0);
-        const availableAchievements = lockedAchievements.filter((achievement) => achievement.progress === 0);
-
-        setStatsData(periodStats);
-        setFeaturedAchievements(completedAchievements.slice(0, 4));
-        setAllAchievements({ available: availableAchievements, completed: completedAchievements, inProgress: inProgressAchievements });
-      } catch {
-        localStorage.removeItem("studyflow_session");
-        limparAgenda();
-        router.push("/");
-      }
-    }
-
-    void loadStats();
-  }, [router]);
+    let ativo = true;
+    void (async () => {
+      const sessao = getStoredSession();
+      if (!sessao) return;
+      const lida = await carregarPrivacidadeUsuario(await getCurrentSupabaseUserId(), sessao.email);
+      if (ativo) setPrivacidadeLida(lida);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
 
   /** Texto do compartilhamento do período escolhido, respeitando a privacidade do usuário. */
@@ -304,8 +272,9 @@ export default function EstatisticasPage() {
     URL.revokeObjectURL(url);
   };
 
-  if (!user) {
-    return <PageLoading label="Carregando estatísticas..." />;
+  if (!perfil || !estatisticas) {
+    const falha = erroPerfil ?? erroEstatisticas;
+    return falha ? <Alert tone="danger">{falha}</Alert> : <PageLoading label="Carregando estatísticas..." />;
   }
 
   const current = statsData[period];
