@@ -1,0 +1,59 @@
+name: Mobile Native Build
+
+# Compila o app Android de verdade (Gradle) quando muda algo que entra no binário: dependências,
+# configuração do Expo ou config plugins. O job "mobile" do CI só gera o bundle JS, que não pega
+# módulo nativo incompatível com o React Native do SDK; sem este build, isso só aparecia no
+# workflow de release, depois do merge.
+on:
+  pull_request:
+    paths:
+      - package-lock.json
+      - mobile/package.json
+      - mobile/app.json
+      - mobile/app.config.ts
+      - mobile/plugins/**
+      - .github/workflows/mobile-native.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: 'npm'
+
+    - name: Use Java 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Setup Gradle (cache)
+      uses: gradle/actions/setup-gradle@v4
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Prebuild Android
+      working-directory: mobile
+      run: npx expo prebuild --platform android --clean --no-install
+
+    # Mesma task do workflow de release. Sem a keystore, o plugin withReleaseSigning assina
+    # com a chave debug: nenhum secret entra em build de PR.
+    - name: Build APK (release, assinatura debug)
+      working-directory: mobile/android
+      run: ./gradlew assembleRelease --no-daemon

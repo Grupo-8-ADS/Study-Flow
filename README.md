@@ -187,7 +187,8 @@ O E2E do fluxo do Gmail só roda com `SUPABASE_SERVICE_ROLE_KEY` definida (no `.
 
 ## ⚙️ CI/CD & Releases <a name="ci-cd"></a>
 
-- **CI** (`.github/workflows/frontend-ci.yml`): em cada PR roda lint, tipos, testes unitários com cobertura, integração, E2E e as checagens do mobile (tipos, lint, `expo-doctor`, bundle Android).
+- **CI** (`.github/workflows/frontend-ci.yml`): em cada PR roda lint, tipos, testes unitários com cobertura, integração, E2E e as checagens do mobile (tipos, lint, `doctor:mobile`, bundle Android).
+- **Build nativo** (`.github/workflows/mobile-native.yml`): quando o PR muda dependências, a configuração do Expo ou os config plugins, compila o APK com o Gradle, como na release. Assim, um módulo nativo incompatível com o React Native do SDK aparece no PR, e não só depois do merge.
 - **Web**: cada merge no `main` é publicado automaticamente na Vercel.
 - **APK** (`.github/workflows/mobile-release.yml`): gera o APK assinado e versionado e anexa em [Releases](https://github.com/Grupo-8-ADS/Study-Flow/releases). Para lançar uma versão nova a partir do `main` atualizado:
   ```bash
