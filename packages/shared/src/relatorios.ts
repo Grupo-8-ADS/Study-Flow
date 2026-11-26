@@ -136,8 +136,14 @@ export function gerarRelatorioPeriodo(sessoes: SessaoRelatorio[], intervalo: Int
   };
 }
 
+/**
+ * Célula do CSV. Texto que começa com = + - @, tab ou CR é lido como fórmula pelo Excel
+ * (CSV injection, ex.: uma disciplina "=HYPERLINK(...)"): recebe um apóstrofo na frente.
+ * Números ficam como estão.
+ */
 const celula = (valor: string | number) => {
-  const texto = String(valor);
+  let texto = String(valor);
+  if (typeof valor === 'string' && /^[=+\-@\t\r]/.test(texto)) texto = `'${texto}`;
   return /[";\n\r]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
 };
 

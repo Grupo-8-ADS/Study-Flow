@@ -553,3 +553,26 @@ describe('montarRelatorio e formatação', () => {
     ]);
   });
 });
+
+describe('relatorioParaCSV - CSV injection', () => {
+  it('prefixaComApostrofoTextoQueOExcelLeriaComoFormula', () => {
+    const intervalo = intervaloPersonalizado('2026-11-24', '2026-11-24');
+    const nomes = ['=HYPERLINK("http://x","clique")', '+SOMA(1)', '-2+3', '@cmd', '\tTab', 'Cálculo'];
+    const sessoes = nomes.map((disciplina_nome, i) => ({
+      data_inicio: new Date(2026, 10, 24, 8 + i).toISOString(),
+      duracao_efetiva_min: 10 + i,
+      disciplina_nome,
+      status: 'concluida',
+    }));
+    const linhas = relatorioParaCSV(gerarRelatorioPeriodo(sessoes, intervalo)).split('\r\n');
+    const primeira = (prefixo: string) => linhas.find((l) => l.replace(/^"/, '').startsWith(prefixo));
+
+    expect(primeira(`'=HYPERLINK`)).toBe(`"'=HYPERLINK(""http://x"",""clique"")";10;1;13%`);
+    expect(primeira(`'+SOMA(1)`)).toBeDefined();
+    expect(primeira(`'-2+3`)).toBeDefined();
+    expect(primeira(`'@cmd`)).toBeDefined();
+    expect(primeira(`'\tTab`)).toBeDefined();
+    expect(primeira('Cálculo')).toBeDefined();
+    expect(linhas.some((l) => /^[=+\-@\t]/.test(l))).toBe(false);
+  });
+});
