@@ -22,6 +22,10 @@ updates:
       # React e React DOM seguem o SDK do Expo, e a web usa a mesma versão.
       - dependency-name: "react"
       - dependency-name: "react-dom"
+      # Versão major quebra compatibilidade (ESLint 10, MSW 3, Supabase CLI 3...) e pede uma
+      # migração planejada, num PR próprio. O @types/node também segue o Node do .nvmrc (22).
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       # Atualizações menores e correções saem num PR só por semana; versões major, uma por PR.
       dependencias:

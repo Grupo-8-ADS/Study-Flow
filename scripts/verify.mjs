@@ -22,17 +22,11 @@ const args = process.argv.slice(2);
 const semE2e = args.includes("--sem-e2e");
 
 /**
- * Mesmos jobs do CI. O E2E vem depois do build da web e reaproveita esse build
- * (E2E_BUILD_PRONTO), em vez de rodar um segundo build em paralelo na mesma pasta .next.
+ * Mesmos jobs do CI. O E2E (scripts/e2e.mjs) sobe o Supabase local no Docker e gera o próprio
+ * build apontando para ele; vem depois do build:web para os dois não escreverem juntos na .next.
  */
 const GRUPOS = {
-  web: [
-    "lint:web",
-    "typecheck:web",
-    "test:coverage",
-    "build:web",
-    ...(semE2e ? [] : [{ script: "test:e2e", env: { E2E_BUILD_PRONTO: "1" } }]),
-  ],
+  web: ["lint:web", "typecheck:web", "test:coverage", "build:web", ...(semE2e ? [] : ["test:e2e"])],
   mobile: ["typecheck:mobile", "lint:mobile", "doctor:mobile", "export:mobile"],
   integracao: ["test:integration"],
 };
@@ -46,13 +40,14 @@ if (desconhecidos.length) {
 const grupos = pedidos.length ? pedidos : Object.keys(GRUPOS);
 
 const segundos = (ms) => `${(ms / 1000).toFixed(0)}s`;
+const pulados = [];
 
-function rodar({ script, env = {} }) {
+function rodar(script) {
   return new Promise((resolve) => {
     const inicio = Date.now();
     // Sem --silent: ele vira npm_config_loglevel=silent nos filhos e quebra quem chama o
     // npm por baixo (o expo-doctor usa `npm explain --json`).
-    const filho = spawn("npm", ["run", script], { cwd: RAIZ, shell: true, env: { ...process.env, ...env, FORCE_COLOR: "0" } });
+    const filho = spawn("npm", ["run", script], { cwd: RAIZ, shell: true, env: { ...process.env, FORCE_COLOR: "0" } });
     let saida = "";
     filho.stdout.on("data", (d) => (saida += d));
     filho.stderr.on("data", (d) => (saida += d));
@@ -61,9 +56,14 @@ function rodar({ script, env = {} }) {
 }
 
 async function rodarGrupo(grupo) {
-  for (const etapa of GRUPOS[grupo]) {
-    const { script, env } = typeof etapa === "string" ? { script: etapa, env: {} } : etapa;
-    const { ok, saida, ms } = await rodar({ script, env });
+  for (const script of GRUPOS[grupo]) {
+    const { ok, saida, ms } = await rodar(script);
+    // Sem Docker, o E2E é pulado (o CI roda); não pode aparecer como aprovado.
+    if (ok && script === "test:e2e" && saida.includes("E2E pulado")) {
+      console.log(`⚠ ${grupo} › ${script} pulado: sem Docker nesta máquina, só o CI roda (${segundos(ms)})`);
+      pulados.push(script);
+      continue;
+    }
     console.log(`${ok ? "✔" : "✖"} ${grupo} › ${script} (${segundos(ms)})`);
     if (!ok) {
       const ultimas = saida.trimEnd().split(/\r?\n/).slice(-60).join("\n");
@@ -83,4 +83,5 @@ if (falhas.length) {
   console.log(`\n✖ Falhou em ${falhas.join(", ")} (${segundos(Date.now() - inicio)}). Corrija antes de subir.`);
   process.exit(1);
 }
-console.log(`\n✔ Tudo certo (${segundos(Date.now() - inicio)}).`);
+const ressalva = pulados.length ? ` Pulado nesta máquina: ${pulados.join(", ")} (o CI roda).` : "";
+console.log(`\n✔ Tudo certo (${segundos(Date.now() - inicio)}).${ressalva}`);

@@ -1,15 +1,21 @@
 import { test as base, expect, type Page, type TestInfo } from "@playwright/test";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://fsevgdeegpaxdhcwkkcz.supabase.co";
-const SUPABASE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-  // Chave publishable (pública por definição), a mesma usada como fallback no frontend.
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzZXZnZGVlZ3BheGRoY3dra2N6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2Mjg2MDYsImV4cCI6MjA5OTIwNDYwNn0.J8rWkpAeueZ2-ji4gG4-IFlrq1Z4Na0K73muaySkf-4";
+/**
+ * Cliente admin do Supabase local, com a chave secreta que o scripts/e2e.mjs lê do
+ * `supabase status`. O playwright.config recusa rodar se a URL não for a local.
+ */
+let clienteAdmin: SupabaseClient | null = null;
+function admin(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !chave) throw new Error("Supabase local sem URL ou chave: rode com `npm run test:e2e`.");
+  clienteAdmin ??= createClient(url, chave, { auth: { persistSession: false, autoRefreshToken: false } });
+  return clienteAdmin;
+}
 
 export type UsuarioE2E = {
   nome: string;
@@ -30,21 +36,36 @@ export function novoUsuario(): UsuarioE2E {
 }
 
 /**
- * API Data Seeding: cria o usuário direto no Supabase Auth (sem passar pela UI),
- * para fluxos cujo foco não é o cadastro.
+ * API Data Seeding: cria o usuário já confirmado pela API admin do Supabase Auth (sem passar
+ * pela UI), para fluxos cujo foco não é o cadastro. O trigger do banco cria o perfil com o
+ * nome e o username do metadata, como no cadastro pela tela.
  */
 export async function criarUsuarioViaApi(usuario: UsuarioE2E): Promise<void> {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: usuario.email,
-      password: usuario.senha,
-      data: { nome: usuario.nome, username: usuario.username },
-    }),
+  const { error } = await admin().auth.admin.createUser({
+    email: usuario.email,
+    password: usuario.senha,
+    email_confirm: true,
+    user_metadata: { nome: usuario.nome, username: usuario.username },
   });
-  if (!res.ok) {
-    throw new Error(`Falha no seeding do usuário (${res.status}): ${await res.text()}`);
+  if (error) throw new Error(`Falha no seeding do usuário: ${error.message}`);
+}
+
+/**
+ * Apaga o usuário do teste, se ele chegou a existir (pela API ou pelo cadastro na tela).
+ * As chaves estrangeiras com `on delete cascade` levam junto o perfil e os dados dele.
+ */
+async function apagarUsuario(email: string): Promise<void> {
+  const porPagina = 200;
+  for (let page = 1; ; page++) {
+    const { data, error } = await admin().auth.admin.listUsers({ page, perPage: porPagina });
+    if (error) throw new Error(`Falha ao listar os usuários de teste: ${error.message}`);
+    const usuario = data.users.find((u) => u.email === email);
+    if (usuario) {
+      const { error: erroAoApagar } = await admin().auth.admin.deleteUser(usuario.id);
+      if (erroAoApagar) throw new Error(`Falha ao apagar o usuário de teste: ${erroAoApagar.message}`);
+      return;
+    }
+    if (data.users.length < porPagina) return;
   }
 }
 
@@ -78,7 +99,9 @@ export const test = base.extend<{ usuario: UsuarioE2E }>({
     await use(page);
   },
   usuario: async ({}, use) => {
-    await use(novoUsuario());
+    const usuario = novoUsuario();
+    await use(usuario);
+    await apagarUsuario(usuario.email);
   },
 });
 
