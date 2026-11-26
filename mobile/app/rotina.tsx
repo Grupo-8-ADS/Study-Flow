@@ -89,7 +89,8 @@ export default function RotinaScreen() {
   const adicionar = async () => {
     setSucesso(null);
     setPrevia(null);
-    if (!userId) return;
+    // Sem a lista carregada, a checagem de sobreposição seria feita contra nada.
+    if (!userId || erroCarga) return;
     setSalvandoSlot(true);
     const r = await adicionarHorarioLivre(supabase, userId, slots, { dia_semana: dia, hora_inicio: inicio, hora_fim: fim });
     setSalvandoSlot(false);
@@ -117,7 +118,7 @@ export default function RotinaScreen() {
     setPrevia(null);
     setErroGeracao(null);
     setSemDisciplinas(false);
-    if (!agenda) return;
+    if (!agenda || erroCarga) return;
     const resultado = planejarCronograma({ agenda, rotina: slots, semanas, duracaoBloco: duracao, limiteHoras, substituir });
     if (resultado.ok) {
       setPrevia(resultado);
@@ -157,6 +158,9 @@ export default function RotinaScreen() {
           {erroCarga ? (
             <View accessibilityLiveRegion="polite" style={[styles.alert, styles.alertDanger]}>
               <Text style={styles.alertDangerText}>{erroCarga}</Text>
+              <Text accessibilityRole="button" onPress={() => void carregar()} style={styles.alertLink}>
+                Tentar de novo
+              </Text>
             </View>
           ) : null}
 
@@ -202,7 +206,7 @@ export default function RotinaScreen() {
               />
             </View>
             <Button
-              disabled={salvandoSlot}
+              disabled={salvandoSlot || loading || Boolean(erroCarga)}
               icon={<Plus size={18} color={COLORS.primary} />}
               loading={salvandoSlot}
               onPress={() => void adicionar()}
@@ -300,7 +304,7 @@ export default function RotinaScreen() {
               </View>
             ) : null}
 
-            <Button icon={<Sparkles size={18} color="#ffffff" />} onPress={gerar} title="Gerar cronograma" />
+            <Button disabled={loading || Boolean(erroCarga)} icon={<Sparkles size={18} color="#ffffff" />} onPress={gerar} title="Gerar cronograma" />
             <View style={styles.regras}>
               <Text style={styles.regrasTitulo}>Como o cronograma é montado</Text>
               {COMO_O_CRONOGRAMA_E_MONTADO.map((regra) => (

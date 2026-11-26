@@ -99,7 +99,8 @@ export default function RotinaPage() {
     event.preventDefault();
     setSucesso(null);
     setPrevia(null);
-    if (!supabaseUserId) return;
+    // Sem a lista carregada, a checagem de sobreposição seria feita contra nada.
+    if (!supabaseUserId || erroCarga) return;
 
     const novo = { dia_semana: Number(dia), hora_inicio: inicio, hora_fim: fim };
     // Limpa o formulário já no envio: se limpasse após o await, apagaria o que o
@@ -136,7 +137,7 @@ export default function RotinaPage() {
     setSucesso(null);
     setPrevia(null);
     setErroGeracao(null);
-    if (!agenda) return;
+    if (!agenda || erroCarga) return;
 
     const resultado = planejarCronograma({
       agenda,
@@ -208,7 +209,7 @@ export default function RotinaPage() {
             </Field>
             {/* Desabilitado durante o carregamento inicial e o salvamento para evitar que
                 a rotina carregada sobrescreva um horário recém-adicionado (condição de corrida). */}
-            <Button className="col-span-2" disabled={loadingData || salvandoSlot} type="submit" variant="secondary">
+            <Button className="col-span-2" disabled={loadingData || salvandoSlot || Boolean(erroCarga)} type="submit" variant="secondary">
               <Plus aria-hidden size={18} />
               Adicionar horário
             </Button>
@@ -264,7 +265,7 @@ export default function RotinaPage() {
             <Field htmlFor="cron-limite" label="Máximo por dia (h)">
               <Input id="cron-limite" inputMode="decimal" max={24} min={0.5} onChange={(e) => setLimiteHoras(e.target.value)} placeholder="Sem limite" step={0.5} type="number" value={limiteHoras} />
             </Field>
-            <Button className="sm:col-span-3" onClick={gerar}>
+            <Button className="sm:col-span-3" disabled={loadingData || Boolean(erroCarga)} onClick={gerar}>
               <Sparkles aria-hidden size={18} />
               Gerar cronograma
             </Button>
